@@ -113,6 +113,7 @@ export class Game {
     network.on('roundStart', (payload) => this.newRound(payload));
     network.on('spawnChoice', ({ choice }) => { this.spawnChoice = choice; });
     network.on('attackerSpawn', ({ state }) => { if (this.running) this.local?.teleport(state); });
+    network.on('defenderSpawn', ({ state }) => { if (this.running) this.local?.teleport(state); });
     network.on('pingResult', ({ hit }) => this.audio.beep(hit ? 1500 : 300, hit ? 0.09 : 0.06, 0.15, 'triangle'));
     network.on('droneDestroyed', (msg) => {
       if (!this.running) return;

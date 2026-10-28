@@ -282,6 +282,17 @@ for (const site of SITES) {
 }
 export const OBJECTIVE = SITES[0];   // kept for older callers; use SITES
 
+// Where the defenders start once a site has been voted for: in or right next to its
+// zone, facing the objective. (They spawn at SPAWNS.defense until the vote is decided.)
+const SITE_SPAWN_XZ = [
+  [[6.2, 4.2], [8.8, 1.4], [7.5, 5.2], [9.0, 3.8], [6.4, 1.8]],        // upstairs office
+  [[-2.6, 3.4], [0.7, 3.6], [-2.2, 5.4], [1.8, 4.8], [-0.9, 2.4]],     // back room
+  [[-9.5, 3.0], [-6.5, 1.0], [-8.0, 3.6], [-9.6, 0.6], [-6.5, 3.0]],   // upstairs west room
+];
+export const SITE_SPAWNS = SITES.map((site, i) => SITE_SPAWN_XZ[i].map(([x, z]) => ({
+  x, y: site.y, z, yaw: Math.atan2(-(site.x - x), -(site.z - z)),
+})));
+
 // yaw 0 faces -z, yaw PI faces +z
 export const SPAWNS = {
   // Three entry points around the outside of the map, far from the building.
@@ -306,6 +317,7 @@ export const MAP = {
   details,
   objective: OBJECTIVE,
   sites: SITES,
+  siteSpawns: SITE_SPAWNS,
   spawns: SPAWNS,
 };
 
