@@ -2,7 +2,7 @@
 
 A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite on the client, Node.js + Socket.IO on an authoritative server. One Node process serves both the game client and the realtime server, so the whole thing deploys as a single Render web service.
 
-## Status: Stage 4 (rounds)
+## Status: Stage 5 (drones)
 
 - Enter a name, create a room (4-letter code) or join one
 - Pick Attack or Defense in the lobby (max 5 per team); the host starts the match
@@ -20,6 +20,9 @@ A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite o
 - Attackers win by eliminating all defenders or holding the objective zone for 10 s (frozen while a defender contests it, reset if nobody holds it); defenders win by eliminating all attackers or running out the clock
 - Dead players spectate teammates until the round ends (no respawns); sides swap after round 3; late joiners wait for the next round
 - Breach charges only work in the action phase, wall reinforcement only in prep, and attackers wait in spawn during prep (drones arrive in stage 5)
+- During the 30 s prep phase every attacker pilots a rolling drone (WASD, mouse, Shift to go faster; X switches drone when an operator has several) while their body waits in spawn; drones are recalled when the action phase starts
+- Drones fit through doors and windows and climb stairs. Defenders can shoot them (40 HP: two rifle shots)
+- A drone spots defenders inside its view cone (22 m, with line of sight): they get a red silhouette, through walls, for 5 s for the whole attacking team
 - Defenders reinforce wall sections (V, 10 per team): darker, immune to bullets and basic charges; only a heavy charge (Spark, stage 6) breaks them
 
 ## Run locally
@@ -51,6 +54,7 @@ shared/            Code used by BOTH client and server
   weapons.js       weapon stats + deterministic ammo/fire-rate/reload/spread
   raycast.js       ray tests against the map and player hitboxes
   world.js         destructible wall panels/sections + the collidable world
+  drone.js         drone physics (shared prediction + authority) and tuning
   rules.js         which inputs are allowed in each round phase, objective zone test
 server/
   index.js         Express static hosting + Socket.IO events
@@ -69,6 +73,7 @@ client/
   src/weapons.js   first-person gun models, recoil/reload animation
   src/effects.js   tracers, bullet holes, impact puffs
   src/audio.js     synthesised gunshots, explosions and UI sounds
+  src/drones.js    drone models for everyone, smoothing, destroyed effect
   src/destruction.js  instanced wall panels, charges, explosions
   src/map.js       renders the shared map, lighting
   src/ui.js        lobby and HUD DOM
@@ -86,6 +91,10 @@ client/
 ## Rounds
 
 `server/rounds.js` runs `intro → prep → action → roundEnd`. Scores belong to a *squad* (A starts attacking, B starts defending), so they follow the players when sides swap after round 3; the HUD shows them by current side. The server broadcasts `roundStart` (full reset: map, spawns, health, charges), `phase` and `roundEnd` events plus the capture progress inside each snapshot. Phase rules in `shared/rules.js` are applied by both the server and the client's prediction, so frozen players don't rubber-band. Set `TIME_SCALE=0.1` when starting the server to run every phase 10× faster for testing.
+
+## Drones
+
+Drone control rides the normal input stream: during prep, an attacker's inputs steer their active drone instead of their body (`input.drone` tags each input so reconciliation replays it correctly). Drone state is in every snapshot, so defenders see and can shoot the drones; the server applies damage and broadcasts `droneDestroyed`. Spotting runs on the server ten times a second (view cone + raycast) and marks defenders with `spottedUntil`, sent as `sp` in snapshots; only the attacking team's clients draw the outline. `DRONES_PER_ATTACKER` in `shared/constants.js` is the hook operators use in stage 6 (Hawk).
 
 ## Destruction
 

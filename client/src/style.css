@@ -420,3 +420,26 @@ button.ghost { background: transparent; }
 #round-end-reason { margin-top: 4px; color: var(--muted); }
 #round-end-score { margin-top: 10px; font-size: 22px; font-weight: 800; }
 #round-end-note { margin-top: 8px; font-size: 13px; color: var(--accent); }
+
+/* ---------------------------------------------------------------- drone cam */
+#drone-overlay {
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.14) 0 1px, transparent 1px 3px),
+    radial-gradient(ellipse at center, transparent 50%, rgba(0, 20, 8, 0.7) 100%);
+  box-shadow: inset 0 0 0 3px rgba(80, 255, 140, 0.35);
+}
+#drone-hud {
+  position: absolute;
+  left: 16px;
+  bottom: 44px;
+  font-size: 13px;
+  color: #7dffa8;
+  background: rgba(0, 20, 8, 0.6);
+  padding: 8px 12px;
+  border-radius: 6px;
+}
+#drone-hud .drone-title { font-weight: 800; letter-spacing: 0.12em; margin-bottom: 2px; }
+#hud.in-drone #crosshair, #hud.in-drone #health-box, #hud.in-drone #ammo-box,
+#hud.in-drone #gadget-box, #hud.in-drone #prompt { display: none; }

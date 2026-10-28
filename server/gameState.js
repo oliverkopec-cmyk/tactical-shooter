@@ -10,7 +10,14 @@ import { createWeaponState, stepWeapon, WEAPON_ORDER } from '../shared/weapons.j
 import { World } from '../shared/world.js';
 import { maskKeys } from '../shared/rules.js';
 import {
+  DRONE, DRONE_KEYS, createDroneState, stepDrone, droneEye,
+} from '../shared/drone.js';
+import { forwardVec, rightVec } from '../shared/movement.js';
+import { aimDirection } from '../shared/weapons.js';
+import { raycastWorld } from '../shared/raycast.js';
+import {
   SNAPSHOT_RATE, MAX_INPUT_DT, MAX_TIME_BUDGET, KEY_MASK, MAX_HEALTH, BASIC_CHARGES, PHASE, CAPTURE_TIME,
+  DRONES_PER_ATTACKER, SPOT_DURATION_MS,
 } from '../shared/constants.js';
 import { PoseHistory, resolveShot } from './combat.js';
 import { Destruction } from './destruction.js';
@@ -28,6 +35,8 @@ export class GameState {
     this.rounds = new RoundManager(this);
     this.players = new Map(); // id -> ServerPlayer
     this.history = new PoseHistory();
+    this.drones = new Map();   // id -> { id, owner, state, hp, alive }
+    this.nextDroneId = 1;
     this.timer = null;
     this.tick = 0;
     this.lastTickTime = 0;
@@ -55,6 +64,8 @@ export class GameState {
       alive: joinsAlive,
       charges: member.team === 'attack' ? BASIC_CHARGES : 0,
       placedCharge: null,
+      activeDrone: null,
+      spottedUntil: 0,
       queue: [],
       lastSeq: -1,
       timeBudget: 0,
@@ -63,6 +74,7 @@ export class GameState {
 
   removePlayer(id) {
     this.players.delete(id);
+    for (const d of [...this.drones.values()]) if (d.owner === id) this.drones.delete(d.id);
     this.destruction.removeChargesOf(id);
     this.destruction.reinforcing.delete(id);
   }
@@ -73,6 +85,96 @@ export class GameState {
     if (!p) return;
     if (type === 'breach') this.destruction.useBreach(id, p);
     else if (type === 'reinforce') this.destruction.startReinforce(id, p);
+    else if (type === 'droneNext') this.cycleDrone(p);
+  }
+
+  // ---------------------------------------------------------------- drones
+
+  /** Prep phase begins: every living attacker gets their drone(s) a few metres ahead. */
+  spawnDrones() {
+    this.drones.clear();
+    for (const [id, p] of this.players) {
+      p.activeDrone = null;
+      if (!p.alive || p.member.team !== 'attack') continue;
+      const [fx, fz] = forwardVec(p.state.yaw), [rx, rz] = rightVec(p.state.yaw);
+      for (let i = 0; i < DRONES_PER_ATTACKER; i++) {
+        const side = (i - (DRONES_PER_ATTACKER - 1) / 2) * 0.7;
+        const drone = {
+          id: this.nextDroneId++, owner: id, hp: DRONE.hp, alive: true,
+          state: createDroneState(
+            p.state.x + fx * DRONE.spawnOffset + rx * side, p.state.y,
+            p.state.z + fz * DRONE.spawnOffset + rz * side, p.state.yaw,
+          ),
+        };
+        this.drones.set(drone.id, drone);
+        if (p.activeDrone === null) p.activeDrone = drone.id;
+      }
+    }
+  }
+
+  /** Prep is over: drones are recalled. */
+  clearDrones() {
+    this.drones.clear();
+    for (const p of this.players.values()) p.activeDrone = null;
+  }
+
+  activeDroneOf(p) {
+    const d = p.activeDrone !== null ? this.drones.get(p.activeDrone) : null;
+    return d && d.alive ? d : null;
+  }
+
+  cycleDrone(p) {
+    const mine = [...this.drones.values()].filter((d) => d.owner === p.member.id && d.alive);
+    if (mine.length < 2) return;
+    const i = mine.findIndex((d) => d.id === p.activeDrone);
+    p.activeDrone = mine[(i + 1) % mine.length].id;
+  }
+
+  damageDrone(droneId, attackerId, amount) {
+    const drone = this.drones.get(droneId);
+    if (!drone || !drone.alive) return;
+    drone.hp -= amount;
+    const killed = drone.hp <= 0;
+    this.io.to(attackerId).emit('hitConfirm', { victim: droneId, damage: Math.round(amount), head: false, killed });
+    if (!killed) return;
+    drone.alive = false;
+    this.drones.delete(droneId);
+    const owner = this.players.get(drone.owner);
+    if (owner && owner.activeDrone === droneId) {
+      owner.activeDrone = null;
+      this.cycleToFirstDrone(owner);
+    }
+    this.emitAll('droneDestroyed', { id: droneId, owner: drone.owner, pos: [drone.state.x, drone.state.y + 0.15, drone.state.z] });
+  }
+
+  cycleToFirstDrone(p) {
+    const next = [...this.drones.values()].find((d) => d.owner === p.member.id && d.alive);
+    p.activeDrone = next ? next.id : null;
+  }
+
+  /** Enemies inside a drone's view cone, in line of sight, are marked for the whole attack team. */
+  updateSpotting(now) {
+    const defenders = [...this.players.values()].filter((p) => p.alive && p.member.team === 'defense');
+    if (!defenders.length) return;
+    for (const p of this.players.values()) {
+      const drone = p.alive ? this.activeDroneOf(p) : null;
+      if (!drone) continue;
+      const eye = droneEye(drone.state);
+      const aim = aimDirection(drone.state.yaw, drone.state.pitch);
+      for (const q of defenders) {
+        for (const h of [1.0, 1.55]) {
+          const v = [q.state.x - eye[0], q.state.y + h - eye[1], q.state.z - eye[2]];
+          const dist = Math.hypot(v[0], v[1], v[2]);
+          if (dist > DRONE.sightRange || dist < 0.1) continue;
+          const dir = [v[0] / dist, v[1] / dist, v[2] / dist];
+          if (dir[0] * aim[0] + dir[1] * aim[1] + dir[2] * aim[2] < DRONE.sightCos) continue;
+          const wall = raycastWorld(this.world, eye, dir, dist);
+          if (wall && wall.t < dist - 0.25) continue;
+          q.spottedUntil = now + SPOT_DURATION_MS;
+          break;
+        }
+      }
+    }
   }
 
   sendLoadout(id, p) {
@@ -97,6 +199,7 @@ export class GameState {
     this.world.reset();
     this.destruction.reset();
     this.history.frames.length = 0;
+    this.clearDrones();
     const used = { attack: 0, defense: 0 };
     for (const p of this.players.values()) {
       const team = p.member.team;
@@ -109,6 +212,7 @@ export class GameState {
       p.timeBudget = 0;
       p.charges = team === 'attack' ? BASIC_CHARGES : 0;
       p.placedCharge = null;
+      p.spottedUntil = 0;
     }
   }
 
@@ -157,14 +261,21 @@ export class GameState {
       while (p.alive && p.queue.length && p.queue[0].dt <= p.timeBudget + 1e-6) {
         const input = p.queue.shift();
         p.timeBudget -= input.dt;
-        input.keys = maskKeys(input.keys, p.member.team, phase);
-        stepPlayer(p.state, input, input.dt, this.world);
-        if (stepWeapon(p.weapon, input, input.dt)) this.fire(id, p, input, wallNow);
+        const drone = phase === PHASE.PREP ? this.activeDroneOf(p) : null;
+        if (drone) {
+          // Piloting a drone: inputs steer it, the operator's body stays put.
+          stepDrone(drone.state, { ...input, keys: input.keys & DRONE_KEYS }, input.dt, this.world);
+        } else {
+          input.keys = maskKeys(input.keys, p.member.team, phase);
+          stepPlayer(p.state, input, input.dt, this.world);
+          if (stepWeapon(p.weapon, input, input.dt)) this.fire(id, p, input, wallNow);
+        }
         p.lastSeq = input.seq;
       }
     }
 
     this.rounds.update(wallNow, realDt);
+    if (phase === PHASE.PREP && this.tick % 6 === 0) this.updateSpotting(wallNow);
     this.destruction.update(wallNow);
     this.history.record(wallNow, this.players);
     if (this.tick % Math.round(TICK_RATE / SNAPSHOT_RATE) === 0) this.broadcastSnapshot();
@@ -173,6 +284,7 @@ export class GameState {
   fire(shooterId, shooter, input, now) {
     const shot = resolveShot({
       shooterId, shooter, input, world: this.world, players: this.players, history: this.history, now,
+      drones: this.drones.values(),
     });
 
     // Total damage per victim across pellets
@@ -195,6 +307,11 @@ export class GameState {
     for (const pellet of shot.pellets) {
       if (pellet.panelId !== null && this.rounds.phase === PHASE.ACTION) this.destruction.damagePanel(pellet.panelId, pellet.panelDamage);
     }
+    const droneDamage = new Map();
+    for (const pellet of shot.pellets) {
+      if (pellet.droneId !== null) droneDamage.set(pellet.droneId, (droneDamage.get(pellet.droneId) || 0) + pellet.droneDamage);
+    }
+    for (const [droneId, amount] of droneDamage) this.damageDrone(droneId, shooterId, amount);
     for (const [victimId, { damage, head }] of damageById) {
       this.applyDamage(victimId, shooterId, damage, { head, weapon: w, from: [shot.origin[0], shot.origin[2]] });
     }
@@ -227,14 +344,22 @@ export class GameState {
     for (const [id, p] of this.players) {
       const s = p.state, w = p.weapon;
       players.push({
-        id, seq: p.lastSeq, alive: p.alive, hp: p.health,
+        id, seq: p.lastSeq, alive: p.alive, hp: p.health, sp: p.spottedUntil > Date.now() ? 1 : 0,
         x: s.x, y: s.y, z: s.z, vx: s.vx, vy: s.vy, vz: s.vz,
         yaw: s.yaw, pitch: s.pitch, crouch: s.crouch, lean: s.lean, onGround: s.onGround,
         w: { id: w.id, ammo: w.ammo, reserve: w.reserve, cooldown: w.cooldown, reload: w.reload, bloom: w.bloom, trigger: w.trigger },
       });
     }
     const cap = { p: Math.min(1, this.rounds.capture / CAPTURE_TIME), c: this.rounds.contested };
-    this.io.to(this.room.channel).volatile.emit('snapshot', { t: Date.now(), players, cap });
+    const drones = [];
+    for (const d of this.drones.values()) {
+      const s = d.state, owner = this.players.get(d.owner);
+      drones.push({
+        id: d.id, o: d.owner, a: owner?.activeDrone === d.id ? 1 : 0, hp: d.hp,
+        x: s.x, y: s.y, z: s.z, vx: s.vx, vy: s.vy, vz: s.vz, yaw: s.yaw, pitch: s.pitch, g: s.onGround,
+      });
+    }
+    this.io.to(this.room.channel).volatile.emit('snapshot', { t: Date.now(), players, cap, drones });
   }
 
   startPayload() {

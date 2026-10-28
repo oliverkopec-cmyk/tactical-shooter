@@ -5,6 +5,7 @@
 import {
   KEY, MAX_INPUT_DT, INPUT_SEND_RATE, LEAN_ROLL,
 } from '../../shared/constants.js';
+import { stepDrone, copyDroneState, droneEye, DRONE_KEYS } from '../../shared/drone.js';
 import { createPlayerState, copyPlayerState, stepPlayer, getEyePosition } from '../../shared/movement.js';
 import {
   WEAPONS, createWeaponState, copyWeaponState, stepWeapon, currentSpread, shotDirections,
@@ -24,7 +25,7 @@ const KEY_BINDINGS = {
 // Temporary weapon selection for testing until operators pick weapons (stage 6)
 const WEAPON_KEYS = { Digit1: 1, Digit2: 2, Digit3: 3 };
 // One-shot actions sent as events: breach charge (attack), reinforce (defense)
-const ACTION_KEYS = { KeyG: 'breach', KeyV: 'reinforce' };
+const ACTION_KEYS = { KeyG: 'breach', KeyV: 'reinforce', KeyX: 'droneNext' };
 
 const MOUSE_SENSITIVITY = 0.0022;
 const TWO_PI = Math.PI * 2;
@@ -69,6 +70,9 @@ export class LocalPlayer {
     this.lastCorrection = 0;
     this.sprinting = false;
     this.dragging = false;
+    this.droneState = null;  // set while piloting a drone (prep phase)
+    this.droneId = null;
+    this.savedView = null;
 
     this.listeners = {
       keydown: (e) => this.handleKey(e, true),
@@ -138,13 +142,20 @@ export class LocalPlayer {
   update(frameDt) {
     const firingHeld = (this.keys & KEY.FIRE) !== 0;
     if (this.alive) {
-      const keys = this.mask(this.keys | this.tapped);
+      const droneMode = !!this.droneState;
+      if (droneMode) this.pitch = Math.max(-0.7, Math.min(0.7, this.pitch));
+      const raw = this.keys | this.tapped;
+      const keys = droneMode ? raw & DRONE_KEYS : this.mask(raw);
       // Long frames are split so each simulated step stays within server limits.
       let remaining = Math.min(frameDt, 0.25);
       while (remaining > 1e-4) {
         const dt = Math.min(remaining, MAX_INPUT_DT);
         remaining -= dt;
-        const input = { seq: this.seq++, dt, keys, yaw: this.aimYaw, pitch: this.aimPitch };
+        const input = {
+          seq: this.seq++, dt, keys,
+          yaw: droneMode ? this.yaw : this.aimYaw, pitch: droneMode ? this.pitch : this.aimPitch,
+          drone: droneMode,
+        };
         if (this.wsel) { input.wsel = this.wsel; this.wsel = 0; }
         if (keys & KEY.FIRE) input.rt = Math.round(this.renderTime());
         this.simulate(input, true);
@@ -181,6 +192,10 @@ export class LocalPlayer {
 
   /** Run one input through movement + weapon. Effects only on the first (live) run. */
   simulate(input, live) {
+    if (input.drone) {
+      if (this.droneState) stepDrone(this.droneState, input, input.dt, this.world);
+      return;
+    }
     stepPlayer(this.state, input, input.dt, this.world);
     const fired = stepWeapon(this.weapon, input, input.dt);
     if (!live) return;
@@ -200,7 +215,30 @@ export class LocalPlayer {
   }
 
   /** Server state for this player arrived: rewind to it and replay unacknowledged inputs. */
-  reconcile(serverState) {
+  /** Start, switch or stop piloting. `entry` is the server's drone record or null. */
+  setDrone(entry) {
+    if (!entry) {
+      if (!this.droneState) return;
+      this.droneState = null;
+      this.droneId = null;
+      this.pending = this.pending.filter((i) => !i.drone);
+      if (this.savedView) { this.yaw = this.savedView.yaw; this.pitch = this.savedView.pitch; this.savedView = null; }
+      this.keys &= ~KEY.FIRE;
+      return;
+    }
+    if (entry.id === this.droneId) return;
+    if (!this.droneState) this.savedView = { yaw: this.yaw, pitch: this.pitch };
+    this.droneId = entry.id;
+    this.droneState = {
+      x: entry.x, y: entry.y, z: entry.z, vx: entry.vx, vy: entry.vy, vz: entry.vz,
+      yaw: entry.yaw, pitch: entry.pitch, onGround: !!entry.g,
+    };
+    this.yaw = entry.yaw;
+    this.pitch = 0;
+    this.pending.length = 0;
+  }
+
+  reconcile(serverState, droneEntry = null) {
     if (!this.alive || !serverState.alive) return;
     const before = { x: this.state.x, y: this.state.y, z: this.state.z };
 
@@ -209,6 +247,11 @@ export class LocalPlayer {
     const s = this.state;
     for (const key of ['x', 'y', 'z', 'vx', 'vy', 'vz', 'crouch', 'lean', 'onGround']) s[key] = serverState[key];
     if (serverState.w) Object.assign(this.weapon, serverState.w);
+    const ds = this.droneState;
+    if (ds && droneEntry && droneEntry.id === this.droneId) {
+      for (const k of ['x', 'y', 'z', 'vx', 'vy', 'vz']) ds[k] = droneEntry[k];
+      ds.onGround = !!droneEntry.g;
+    }
     for (const input of this.pending) this.simulate(input, false);
 
     const dx = before.x - s.x, dy = before.y - s.y, dz = before.z - s.z;
@@ -243,6 +286,12 @@ export class LocalPlayer {
   }
 
   updateCamera() {
+    if (this.droneState) {
+      const e = droneEye(this.droneState);
+      this.camera.position.set(e[0], e[1], e[2]);
+      this.camera.rotation.set(this.droneState.pitch, this.droneState.yaw, 0, 'YXZ');
+      return;
+    }
     const eye = getEyePosition(this.state, this.world);
     this.camera.position.set(eye.x + this.smoothing.x, eye.y + this.smoothing.y, eye.z + this.smoothing.z);
     this.camera.rotation.set(this.aimPitch, this.aimYaw, -eye.lean * LEAN_ROLL, 'YXZ');

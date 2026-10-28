@@ -16,6 +16,8 @@ import { ViewModel } from './weapons.js';
 import { Effects } from './effects.js';
 import { Audio } from './audio.js';
 import { DestructionView } from './destruction.js';
+import { DroneView } from './drones.js';
+import { DRONE } from '../../shared/drone.js';
 
 const FOV = 78;
 const TRACER_OFFSET = new THREE.Vector3(0.2, -0.17, -0.9); // muzzle, roughly, in camera space
@@ -42,6 +44,7 @@ export class Game {
     this.effects = new Effects(this.scene);
     this.audio = new Audio();
     this.destruction = new DestructionView(this.scene, this.world, this.effects, this.audio);
+    this.drones = new DroneView(this.scene, this.effects, this.audio);
     this.loadout = { charges: 0, placed: false };
     this.reinforcementsLeft = TEAM_REINFORCEMENTS;
     this.reinforcing = null; // { start, ms }
@@ -75,6 +78,11 @@ export class Game {
     network.on('damaged', (msg) => this.onDamaged(msg));
     network.on('kill', (msg) => this.onKill(msg));
     network.on('roundStart', (payload) => this.newRound(payload));
+    network.on('droneDestroyed', (msg) => {
+      if (!this.running) return;
+      this.drones.destroyed(msg);
+      if (msg.owner === this.network.id) this.ui.toast('Your drone was destroyed');
+    });
     network.on('phase', (info) => this.onPhase(info));
     network.on('roundEnd', (msg) => this.onRoundEnd(msg));
 
@@ -189,6 +197,8 @@ export class Game {
     this.myTeam = me.team;
     this.members.clear();
     for (const p of payload.players) this.members.set(p.id, { name: p.name, team: p.team });
+    this.local.setDrone(null);
+    this.drones.clear();
     this.local.respawn(me.state, me.weapon, me.team);
     this.loadRound(payload, me);
     this.ui.hideRoundEnd();
@@ -223,6 +233,8 @@ export class Game {
   }
 
   stop() {
+    this.drones.clear();
+    this.ui.setDroneHud(false, '');
     this.ui.hideRoundEnd();
     this.ui.hideDeath();
     this.running = false;
@@ -257,12 +269,18 @@ export class Game {
   onSnapshot(snap) {
     if (!this.running) return;
     if (snap.cap) this.capture = snap.cap;
+    const myId = this.network.id;
+    const drones = snap.drones || [];
+    this.drones.sync(drones, myId);
+    const myDrone = drones.find((d) => d.o === myId && d.a) || null;
+    if (this.local?.alive) this.local.setDrone(myDrone);
     for (const p of snap.players) {
       if (p.id === this.network.id) {
-        this.local?.reconcile(p);
+        this.local?.reconcile(p, myDrone);
         if (typeof p.hp === 'number' && this.local?.alive) this.health = p.hp;
       } else {
-        this.remotes.get(p.id)?.push(snap.t, p);
+        const r = this.remotes.get(p.id);
+        if (r) { r.spotted = !!p.sp && this.myTeam === 'attack'; r.push(snap.t, p); }
       }
     }
   }
@@ -422,6 +440,13 @@ export class Game {
       : { label: 'Team reinforcements', key: 'V', value: `${this.reinforcementsLeft} left` }, local.alive);
   }
 
+  droneInfo() {
+    const mine = [...this.drones.drones.values()].filter((e) => e.target.o === this.network.id);
+    const idx = mine.findIndex((e) => e.target.id === this.local.droneId) + 1;
+    const hp = mine.find((e) => e.target.id === this.local.droneId)?.target.hp ?? 0;
+    return `Drone ${idx}/${mine.length} · integrity ${Math.round((hp / DRONE.hp) * 100)}% · WASD drive · Shift fast${mine.length > 1 ? ' · X switch drone' : ''}`;
+  }
+
   updateRoundHud() {
     const { phase, endsAt, scores } = this.round;
     const serverNow = Date.now() + (this.network.serverOffset ?? 0);
@@ -459,7 +484,10 @@ export class Game {
 
     // View model and HUD
     const s = local.state;
-    this.viewModel.visible = local.alive;
+    const inDrone = !!local.droneState;
+    this.viewModel.visible = local.alive && !inDrone;
+    this.drones.update(dt);
+    this.ui.setDroneHud(inDrone, inDrone ? this.droneInfo() : '');
     this.viewModel.setWeapon(local.weapon.id);
     const w = local.weaponDef;
     this.viewModel.update(dt, {

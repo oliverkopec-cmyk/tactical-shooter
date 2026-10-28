@@ -203,6 +203,16 @@ export class UI {
     $('score-defense-box').classList.toggle('mine', myTeam === 'defense');
   }
 
+  setDroneHud(on, info) {
+    if (on !== this.droneOn) {
+      this.droneOn = on;
+      $('drone-overlay').classList.toggle('hidden', !on);
+      $('drone-hud').classList.toggle('hidden', !on);
+      this.hud.classList.toggle('in-drone', on);
+    }
+    if (on && info !== this.droneInfo) { this.droneInfo = info; $('drone-info').textContent = info; }
+  }
+
   setCapture(frac, contested) {
     const el = $('capture');
     el.classList.toggle('hidden', frac === null);
