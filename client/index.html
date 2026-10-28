@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Breachline</title>
+  <link rel="stylesheet" href="./src/style.css" />
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <!-- Name + create/join -->
+  <div id="screen-home" class="screen">
+    <div class="panel">
+      <h1>BREACHLINE</h1>
+      <p class="tagline">Attack. Defend. Break through.</p>
+      <label>Your name
+        <input id="name-input" maxlength="16" placeholder="Enter a name" autocomplete="off" />
+      </label>
+      <button id="create-btn" class="primary">Create room</button>
+      <div class="join-row">
+        <input id="code-input" maxlength="4" placeholder="CODE" autocomplete="off" />
+        <button id="join-btn">Join room</button>
+      </div>
+      <p id="home-error" class="error"></p>
+    </div>
+  </div>
+
+  <!-- Room lobby -->
+  <div id="screen-lobby" class="screen hidden">
+    <div class="panel wide">
+      <div class="lobby-header">
+        <div>
+          <div class="muted">Room code</div>
+          <div id="room-code" class="room-code">----</div>
+        </div>
+        <button id="leave-btn" class="ghost">Leave</button>
+      </div>
+      <div class="teams">
+        <div class="team attack">
+          <h2>Attack</h2>
+          <ul id="team-attack"></ul>
+          <button data-team="attack" class="team-btn">Join Attack</button>
+        </div>
+        <div class="team defense">
+          <h2>Defense</h2>
+          <ul id="team-defense"></ul>
+          <button data-team="defense" class="team-btn">Join Defense</button>
+        </div>
+      </div>
+      <button id="start-btn" class="primary">Start match</button>
+      <p id="lobby-status" class="muted center"></p>
+      <p id="lobby-error" class="error center"></p>
+    </div>
+  </div>
+
+  <!-- In-game overlay -->
+  <div id="hud" class="hidden">
+    <div id="crosshair"></div>
+    <div id="hud-room" class="hud-chip"></div>
+    <div id="controls-hint" class="hud-chip">
+      WASD move · Shift sprint · Ctrl/Z crouch · Q/E lean · Esc release mouse
+    </div>
+    <div id="click-to-play" class="hidden">Click to play</div>
+    <div id="net-stats" class="hud-chip"></div>
+  </div>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
