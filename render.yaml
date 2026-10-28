@@ -1,0 +1,14 @@
+# Render Blueprint: one Node web service that builds the client and serves it
+# alongside the Socket.IO game server.
+services:
+  - type: web
+    name: breachline
+    runtime: node
+    plan: free
+    buildCommand: npm install --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
