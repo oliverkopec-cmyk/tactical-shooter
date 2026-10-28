@@ -43,7 +43,16 @@ export const KEY = {
   CROUCH: 32,
   LEAN_LEFT: 64,
   LEAN_RIGHT: 128,
+  FIRE: 256,
+  RELOAD: 512,
 };
+export const KEY_MASK = 1023;
+
+// Combat
+export const MAX_HEALTH = 100;
+export const RESPAWN_MS = 5000;           // temporary until the round system (stage 4)
+export const LAG_COMP_MAX_MS = 350;       // furthest back the server rewinds players for hits
+export const MAX_SHOT_RANGE = 150;
 
 export const TEAM_COLORS = {
   attack: 0xe8833a,
