@@ -39,7 +39,7 @@ export class LocalPlayer {
    * opts.renderTime() gives the time remote players are currently drawn at.
    * opts.canFireUnlocked() says whether clicks should fire without pointer lock.
    */
-  constructor({ id, team, state, weapon, world, network, camera, canvas, onShot, renderTime, canFireUnlocked, onAction }) {
+  constructor({ id, team, state, weapon, world, network, camera, canvas, onShot, renderTime, canFireUnlocked, onAction, mask }) {
     this.id = id;
     this.team = team;
     this.world = world;
@@ -50,6 +50,7 @@ export class LocalPlayer {
     this.renderTime = renderTime;
     this.canFireUnlocked = canFireUnlocked;
     this.onAction = onAction;
+    this.mask = mask || ((k) => k);   // which inputs count in the current round phase
 
     this.state = copyPlayerState(state || createPlayerState({ x: 0, y: 0, z: 0 }));
     this.weapon = copyWeaponState(weapon || createWeaponState());
@@ -137,7 +138,7 @@ export class LocalPlayer {
   update(frameDt) {
     const firingHeld = (this.keys & KEY.FIRE) !== 0;
     if (this.alive) {
-      const keys = this.keys | this.tapped;
+      const keys = this.mask(this.keys | this.tapped);
       // Long frames are split so each simulated step stays within server limits.
       let remaining = Math.min(frameDt, 0.25);
       while (remaining > 1e-4) {
@@ -228,7 +229,8 @@ export class LocalPlayer {
   }
 
   /** Hard reset (respawn) */
-  respawn(state, weapon) {
+  respawn(state, weapon, team) {
+    if (team) this.team = team;
     this.state = copyPlayerState(state);
     this.weapon = copyWeaponState(weapon);
     this.yaw = state.yaw;

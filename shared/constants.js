@@ -50,7 +50,6 @@ export const KEY_MASK = 1023;
 
 // Combat
 export const MAX_HEALTH = 100;
-export const RESPAWN_MS = 5000;           // temporary until the round system (stage 4)
 export const LAG_COMP_MAX_MS = 350;       // furthest back the server rewinds players for hits
 export const MAX_SHOT_RANGE = 150;
 
@@ -69,3 +68,14 @@ export const TEAM_COLORS = {
   attack: 0xe8833a,
   defense: 0x3a8de8,
 };
+
+// Rounds
+export const PHASE = { INTRO: 'intro', PREP: 'prep', ACTION: 'action', ROUND_END: 'roundEnd' };
+export const INTRO_MS = 6000;             // operator select goes here in stage 6
+export const PREP_MS = 30000;
+export const ACTION_MS = 180000;
+export const ROUND_END_MS = 6000;
+export const MATCH_END_MS = 10000;
+export const ROUNDS_TO_WIN = 4;
+export const HALFTIME_AFTER_ROUND = 3;    // sides swap after this round
+export const CAPTURE_TIME = 10;           // seconds attackers must hold the objective zone

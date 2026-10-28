@@ -2,7 +2,7 @@
 
 A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite on the client, Node.js + Socket.IO on an authoritative server. One Node process serves both the game client and the realtime server, so the whole thing deploys as a single Render web service.
 
-## Status: Stage 3 (destruction)
+## Status: Stage 4 (rounds)
 
 - Enter a name, create a room (4-letter code) or join one
 - Pick Attack or Defense in the lobby (max 5 per team); the host starts the match
@@ -16,6 +16,10 @@ A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite o
 - Keys 1/2/3 switch weapon for testing until operators choose weapons
 - Interior walls are grids of ~0.5 m panels; bullets knock panels out, synced to everyone
 - Attackers carry 1 breach charge (G to plant on a wall, G again to detonate)
+- Round flow: get ready (6 s) → prep (30 s) → action (3 min) → score screen; first team to 4 rounds wins the match, then everyone returns to the lobby
+- Attackers win by eliminating all defenders or holding the objective zone for 10 s (frozen while a defender contests it, reset if nobody holds it); defenders win by eliminating all attackers or running out the clock
+- Dead players spectate teammates until the round ends (no respawns); sides swap after round 3; late joiners wait for the next round
+- Breach charges only work in the action phase, wall reinforcement only in prep, and attackers wait in spawn during prep (drones arrive in stage 5)
 - Defenders reinforce wall sections (V, 10 per team): darker, immune to bullets and basic charges; only a heavy charge (Spark, stage 6) breaks them
 
 ## Run locally
@@ -47,12 +51,14 @@ shared/            Code used by BOTH client and server
   weapons.js       weapon stats + deterministic ammo/fire-rate/reload/spread
   raycast.js       ray tests against the map and player hitboxes
   world.js         destructible wall panels/sections + the collidable world
+  rules.js         which inputs are allowed in each round phase, objective zone test
 server/
   index.js         Express static hosting + Socket.IO events
   rooms.js         room codes, join/leave, teams, host
   gameState.js     authoritative simulation and snapshots per room
   combat.js        pose history (lag compensation) and shot resolution
   destruction.js   panel damage, breach charges, reinforcement
+  rounds.js        round/match state machine, scores, halftime, win conditions
 client/
   index.html       lobby screens + HUD markup
   src/main.js      wires UI, network, game
@@ -76,6 +82,10 @@ client/
 - The local player rewinds to the server state and replays unacknowledged inputs; any small difference is smoothed out over a few frames.
 - Other players are drawn 100 ms in the past, interpolated between snapshots.
 - Firing is part of the input stream, so ammo, fire rate and spread are simulated identically on both sides (spread uses a PRNG seeded by the input number). Each firing input carries the time the shooter was viewing other players at; the server rewinds targets to that moment (at most 350 ms) and tests the ray against their hitboxes and the map.
+
+## Rounds
+
+`server/rounds.js` runs `intro → prep → action → roundEnd`. Scores belong to a *squad* (A starts attacking, B starts defending), so they follow the players when sides swap after round 3; the HUD shows them by current side. The server broadcasts `roundStart` (full reset: map, spawns, health, charges), `phase` and `roundEnd` events plus the capture progress inside each snapshot. Phase rules in `shared/rules.js` are applied by both the server and the client's prediction, so frozen players don't rubber-band. Set `TIME_SCALE=0.1` when starting the server to run every phase 10× faster for testing.
 
 ## Destruction
 

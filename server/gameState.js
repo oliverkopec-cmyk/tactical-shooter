@@ -8,11 +8,13 @@ import { MAP } from '../shared/map.js';
 import { createPlayerState, stepPlayer } from '../shared/movement.js';
 import { createWeaponState, stepWeapon, WEAPON_ORDER } from '../shared/weapons.js';
 import { World } from '../shared/world.js';
+import { maskKeys } from '../shared/rules.js';
 import {
-  SNAPSHOT_RATE, MAX_INPUT_DT, MAX_TIME_BUDGET, KEY_MASK, MAX_HEALTH, RESPAWN_MS, BASIC_CHARGES,
+  SNAPSHOT_RATE, MAX_INPUT_DT, MAX_TIME_BUDGET, KEY_MASK, MAX_HEALTH, BASIC_CHARGES, PHASE, CAPTURE_TIME,
 } from '../shared/constants.js';
 import { PoseHistory, resolveShot } from './combat.js';
 import { Destruction } from './destruction.js';
+import { RoundManager } from './rounds.js';
 
 const TICK_RATE = 60;
 const MAX_QUEUED_INPUTS = 120;
@@ -23,6 +25,7 @@ export class GameState {
     this.room = room;
     this.world = new World();
     this.destruction = new Destruction(this);
+    this.rounds = new RoundManager(this);
     this.players = new Map(); // id -> ServerPlayer
     this.history = new PoseHistory();
     this.timer = null;
@@ -39,13 +42,17 @@ export class GameState {
   }
 
   addPlayer(member) {
+    // Score follows the squad, which is fixed for the whole match.
+    member.squad = this.rounds.squadOf(member.team);
+    member.startTeam = this.rounds.swapped ? opposite(member.team) : member.team;
+    // Joining mid-round: sit out until the next round starts.
+    const joinsAlive = this.rounds.round === 0 || this.rounds.phase === PHASE.INTRO;
     this.players.set(member.id, {
-      member,                          // shared with the room (name, team)
+      member,                          // shared with the room (name, team, squad)
       state: createPlayerState(this.pickSpawn(member.team)),
       weapon: createWeaponState('rifle'),
       health: MAX_HEALTH,
-      alive: true,
-      respawnAt: 0,
+      alive: joinsAlive,
       charges: member.team === 'attack' ? BASIC_CHARGES : 0,
       placedCharge: null,
       queue: [],
@@ -82,6 +89,41 @@ export class GameState {
   start() {
     this.lastTickTime = performance.now();
     this.timer = setInterval(() => this.update(), 1000 / TICK_RATE);
+    this.rounds.start();
+  }
+
+  /** Put everyone back at their spawn with full health and a fresh map. */
+  resetRound() {
+    this.world.reset();
+    this.destruction.reset();
+    this.history.frames.length = 0;
+    const used = { attack: 0, defense: 0 };
+    for (const p of this.players.values()) {
+      const team = p.member.team;
+      const spawns = MAP.spawns[team];
+      p.state = createPlayerState(spawns[used[team]++ % spawns.length]);
+      p.weapon = createWeaponState(p.weapon.id);
+      p.health = MAX_HEALTH;
+      p.alive = true;
+      p.queue.length = 0;
+      p.timeBudget = 0;
+      p.charges = team === 'attack' ? BASIC_CHARGES : 0;
+      p.placedCharge = null;
+    }
+  }
+
+  /** Halftime: everyone changes sides. */
+  swapSides() {
+    for (const p of this.players.values()) p.member.team = opposite(p.member.team);
+  }
+
+  hasBothSides() {
+    const sides = new Set([...this.players.values()].map((p) => p.member.team));
+    return sides.has('attack') && sides.has('defense');
+  }
+
+  finishMatch() {
+    this.room.endMatch();
   }
 
   stop() {
@@ -108,21 +150,21 @@ export class GameState {
     this.tick++;
     const wallNow = Date.now();
 
+    const phase = this.rounds.phase;
     for (const [id, p] of this.players) {
-      if (!p.alive) {
-        if (p.respawnAt && wallNow >= p.respawnAt) this.respawn(id, p);
-        continue;
-      }
+      if (!p.alive) continue;
       p.timeBudget = Math.min(MAX_TIME_BUDGET, p.timeBudget + realDt);
       while (p.alive && p.queue.length && p.queue[0].dt <= p.timeBudget + 1e-6) {
         const input = p.queue.shift();
         p.timeBudget -= input.dt;
+        input.keys = maskKeys(input.keys, p.member.team, phase);
         stepPlayer(p.state, input, input.dt, this.world);
         if (stepWeapon(p.weapon, input, input.dt)) this.fire(id, p, input, wallNow);
         p.lastSeq = input.seq;
       }
     }
 
+    this.rounds.update(wallNow, realDt);
     this.destruction.update(wallNow);
     this.history.record(wallNow, this.players);
     if (this.tick % Math.round(TICK_RATE / SNAPSHOT_RATE) === 0) this.broadcastSnapshot();
@@ -151,7 +193,7 @@ export class GameState {
 
     const w = shooter.weapon.id;
     for (const pellet of shot.pellets) {
-      if (pellet.panelId !== null) this.destruction.damagePanel(pellet.panelId, pellet.panelDamage);
+      if (pellet.panelId !== null && this.rounds.phase === PHASE.ACTION) this.destruction.damagePanel(pellet.panelId, pellet.panelDamage);
     }
     for (const [victimId, { damage, head }] of damageById) {
       this.applyDamage(victimId, shooterId, damage, { head, weapon: w, from: [shot.origin[0], shot.origin[2]] });
@@ -176,21 +218,8 @@ export class GameState {
   kill(victimId, victim, killerId, weaponId, head) {
     victim.alive = false;
     victim.queue.length = 0;
-    victim.respawnAt = Date.now() + RESPAWN_MS;
     this.destruction.cancelReinforce(victimId, 'You were eliminated.');
     this.emitAll('kill', { killer: killerId, victim: victimId, weapon: weaponId, head });
-  }
-
-  respawn(id, p) {
-    p.state = createPlayerState(this.pickSpawn(p.member.team, true));
-    p.weapon = createWeaponState(p.weapon.id);
-    p.health = MAX_HEALTH;
-    p.alive = true;
-    p.respawnAt = 0;
-    p.timeBudget = 0;
-    if (p.member.team === 'attack' && !p.placedCharge) p.charges = BASIC_CHARGES; // temporary until rounds
-    this.sendLoadout(id, p);
-    this.io.to(id).emit('respawn', { state: p.state, weapon: p.weapon, health: p.health, seq: p.lastSeq });
   }
 
   broadcastSnapshot() {
@@ -204,7 +233,8 @@ export class GameState {
         w: { id: w.id, ammo: w.ammo, reserve: w.reserve, cooldown: w.cooldown, reload: w.reload, bloom: w.bloom, trigger: w.trigger },
       });
     }
-    this.io.to(this.room.channel).volatile.emit('snapshot', { t: Date.now(), players });
+    const cap = { p: Math.min(1, this.rounds.capture / CAPTURE_TIME), c: this.rounds.contested };
+    this.io.to(this.room.channel).volatile.emit('snapshot', { t: Date.now(), players, cap });
   }
 
   startPayload() {
@@ -216,11 +246,13 @@ export class GameState {
         charges: p.charges, placed: !!p.placedCharge,
       })),
       destruction: this.destruction.snapshot(),
+      round: this.rounds.info(),
     };
   }
 }
 
 const round2 = (v) => Math.round(v * 100) / 100;
+const opposite = (team) => (team === 'attack' ? 'defense' : 'attack');
 
 function sanitizeInput(raw) {
   if (!raw || typeof raw !== 'object') return null;

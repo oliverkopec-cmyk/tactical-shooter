@@ -188,6 +188,44 @@ export class UI {
     this.toastTimer = setTimeout(() => el.classList.add('hidden'), 2200);
   }
 
+  // ---------------------------------------------------------------- rounds
+
+  updateRound({ attack, defense, time, label, urgent, myTeam }) {
+    const sig = `${attack}|${defense}|${time}|${label}|${urgent}|${myTeam}`;
+    if (sig === this.lastRound) return;
+    this.lastRound = sig;
+    $('score-attack').textContent = attack;
+    $('score-defense').textContent = defense;
+    $('round-time').textContent = time;
+    $('round-time').classList.toggle('urgent', urgent);
+    $('round-label').textContent = label;
+    $('score-attack-box').classList.toggle('mine', myTeam === 'attack');
+    $('score-defense-box').classList.toggle('mine', myTeam === 'defense');
+  }
+
+  setCapture(frac, contested) {
+    const el = $('capture');
+    el.classList.toggle('hidden', frac === null);
+    if (frac === null) return;
+    el.classList.toggle('contested', contested);
+    $('capture-label').textContent = contested ? 'Objective contested' : 'Securing objective';
+    $('capture-bar').style.width = `${Math.round(frac * 100)}%`;
+  }
+
+  /** kind: 'attack' | 'defense' (round) or 'win' | 'lose' (match). */
+  showRoundEnd({ title, reason, score, note, kind }) {
+    const el = $('round-end');
+    el.className = kind;
+    $('round-end-title').textContent = title;
+    $('round-end-reason').textContent = reason;
+    $('round-end-score').textContent = score;
+    $('round-end-note').textContent = note;
+  }
+
+  hideRoundEnd() {
+    $('round-end').className = 'hidden';
+  }
+
   showDeath(title, sub) {
     $('death-overlay').classList.remove('hidden');
     $('death-title').textContent = title;

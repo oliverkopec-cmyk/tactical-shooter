@@ -45,7 +45,10 @@ ui.bindLobby({
 network.on('roomState', (state) => {
   room = state;
   ui.renderLobby(state, network.id);
-  if (state.phase === 'lobby') ui.show('lobby');
+  if (state.phase === 'lobby') {
+    if (game.running) game.stop();
+    ui.show('lobby');
+  }
   else game.syncRoster(state.players);
 });
 
@@ -53,6 +56,9 @@ network.on('matchStart', (payload) => {
   ui.show('game');
   game.start(payload);
 });
+
+network.on('matchStart', () => ui.lobbyError(''));
+network.on('notice', ({ message }) => ui.lobbyError(message));
 
 network.on('disconnect', () => {
   if (!room) return;
