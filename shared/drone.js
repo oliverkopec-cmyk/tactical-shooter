@@ -16,8 +16,8 @@ export const DRONE = {
   maxPitch: 0.7,
   hp: 40,
   spawnOffset: 1.8,     // metres in front of the owner
-  sightRange: 22,       // how far a drone can spot defenders
-  sightCos: Math.cos(0.7),   // half-angle of the spotting cone
+  pingRange: 30,        // how far a drone pilot can ping an enemy
+  pingCone: 0.07,       // aim tolerance in radians (about 4 degrees)
   hitHalf: [0.26, 0.15, 0.3],
 };
 

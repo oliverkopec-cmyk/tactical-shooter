@@ -5,6 +5,7 @@ import {
   MAX_HEALTH, MAX_SHOT_RANGE, CHARGE_REACH, REINFORCE_REACH, TEAM_REINFORCEMENTS, PHASE, ROUNDS_TO_WIN,
 } from '../../shared/constants.js';
 import { maskKeys } from '../../shared/rules.js';
+import { MAP } from '../../shared/map.js';
 import { getEyePosition } from '../../shared/movement.js';
 import { currentSpread, aimDirection } from '../../shared/weapons.js';
 import { World } from '../../shared/world.js';
@@ -58,6 +59,7 @@ export class Game {
     this.spectate = { index: 0, target: null, deathPos: null };
     this.round = { phase: PHASE.INTRO, endsAt: 0, round: 1, scores: { attack: 0, defense: 0 } };
     this.capture = { p: 0, c: false };
+    this.spawnChoice = 1;
     this.lastFrame = performance.now();
 
     this.resize();
@@ -78,6 +80,9 @@ export class Game {
     network.on('damaged', (msg) => this.onDamaged(msg));
     network.on('kill', (msg) => this.onKill(msg));
     network.on('roundStart', (payload) => this.newRound(payload));
+    network.on('spawnChoice', ({ choice }) => { this.spawnChoice = choice; });
+    network.on('attackerSpawn', ({ state }) => { if (this.running) this.local?.teleport(state); });
+    network.on('pingResult', ({ hit }) => this.audio.beep(hit ? 1500 : 300, hit ? 0.09 : 0.06, 0.15, 'triangle'));
     network.on('droneDestroyed', (msg) => {
       if (!this.running) return;
       this.drones.destroyed(msg);
@@ -146,6 +151,8 @@ export class Game {
       renderTime: () => this.network.renderTime(),
       canFireUnlocked: () => this.lockFailed,
       mask: (keys) => maskKeys(keys, this.myTeam, this.round.phase),
+      collisionWorld: () => (this.myTeam === 'defense' && this.round.phase === PHASE.PREP ? this.world.barrierView : this.world),
+      onDigit: (n) => this.pickSpawn(n),
     });
     this.loadRound(payload, me);
 
@@ -162,6 +169,7 @@ export class Game {
   loadRound(payload, me) {
     this.round = payload.round || this.round;
     this.capture = { p: 0, c: false };
+    this.spawnChoice = me.spawnChoice || 1;
     this.health = me.health ?? MAX_HEALTH;
     this.loadout = { charges: me.charges ?? 0, placed: !!me.placed };
     this.reinforcing = null;
@@ -205,8 +213,17 @@ export class Game {
     this.audio.beep(660, 0.12, 0.15, 'triangle');
   }
 
+  /** Keys 1-3 while attacking in prep choose the entry point; otherwise they pick a test weapon. */
+  pickSpawn(n) {
+    if (this.myTeam !== 'attack' || this.round.phase !== PHASE.PREP || n > MAP.spawns.attack.length) return false;
+    this.spawnChoice = n;
+    this.network.sendSpawnChoice(n);
+    return true;
+  }
+
   onPhase(info) {
     this.round = info;
+    if (info.phase === PHASE.PREP && this.myTeam === 'defense') this.ui.toast('Prep: the building exits are sealed until the action phase');
     if (info.phase === PHASE.ACTION) this.audio.beep(990, 0.25, 0.2, 'square');
     else if (info.phase === PHASE.PREP) this.audio.beep(740, 0.12, 0.15, 'triangle');
   }
@@ -444,7 +461,7 @@ export class Game {
     const mine = [...this.drones.drones.values()].filter((e) => e.target.o === this.network.id);
     const idx = mine.findIndex((e) => e.target.id === this.local.droneId) + 1;
     const hp = mine.find((e) => e.target.id === this.local.droneId)?.target.hp ?? 0;
-    return `Drone ${idx}/${mine.length} · integrity ${Math.round((hp / DRONE.hp) * 100)}% · WASD drive · Shift fast${mine.length > 1 ? ' · X switch drone' : ''}`;
+    return `Drone ${idx}/${mine.length} · integrity ${Math.round((hp / DRONE.hp) * 100)}% · WASD drive · Shift fast · Click: ping enemy${mine.length > 1 ? ' · X switch drone' : ''}`;
   }
 
   updateRoundHud() {
@@ -485,7 +502,15 @@ export class Game {
     // View model and HUD
     const s = local.state;
     const inDrone = !!local.droneState;
-    this.viewModel.visible = local.alive && !inDrone;
+    // Attackers have no body in prep: no gun, and (if the drone is lost) a view from their entry point
+    const noBody = this.myTeam === 'attack' && this.round.phase === PHASE.PREP;
+    if (noBody && !inDrone && local.alive) {
+      const sp = MAP.spawns.attack[this.spawnChoice - 1];
+      this.camera.position.set(sp.x, sp.y + 1.62, sp.z);
+      this.camera.rotation.set(0, sp.yaw, 0, 'YXZ');
+    }
+    this.viewModel.visible = local.alive && !inDrone && !noBody;
+    this.ui.updateSpawnPicker(noBody && local.alive, this.spawnChoice);
     this.drones.update(dt);
     this.ui.setDroneHud(inDrone, inDrone ? this.droneInfo() : '');
     this.viewModel.setWeapon(local.weapon.id);
@@ -502,7 +527,7 @@ export class Game {
 
     const spread = currentSpread(local.weapon, s);
     const halfFov = THREE.MathUtils.degToRad(FOV / 2);
-    this.ui.setCrosshairGap(3 + (Math.tan(spread) / Math.tan(halfFov)) * (window.innerHeight / 2));
+    this.ui.setCrosshairGap(inDrone ? 5 : 3 + (Math.tan(spread) / Math.tan(halfFov)) * (window.innerHeight / 2));
     this.ui.updateCombat({ health: this.health, weapon: local.weapon, alive: local.alive });
 
     this.updateGadgetHud(now);

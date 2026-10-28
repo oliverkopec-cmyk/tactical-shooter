@@ -2,6 +2,7 @@
 
 import { MAX_PER_TEAM, MAX_HEALTH } from '../../shared/constants.js';
 import { WEAPONS } from '../../shared/weapons.js';
+import { MAP } from '../../shared/map.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -201,6 +202,23 @@ export class UI {
     $('round-label').textContent = label;
     $('score-attack-box').classList.toggle('mine', myTeam === 'attack');
     $('score-defense-box').classList.toggle('mine', myTeam === 'defense');
+  }
+
+  updateSpawnPicker(show, choice) {
+    const box = $('spawn-box');
+    box.classList.toggle('hidden', !show);
+    if (!show) return;
+    const sig = String(choice);
+    if (sig === this.lastSpawn) return;
+    this.lastSpawn = sig;
+    const opts = $('spawn-opts');
+    opts.innerHTML = '';
+    MAP.spawns.attack.forEach((sp, i) => {
+      const el = document.createElement('span');
+      el.className = 'spawn-opt' + (i + 1 === choice ? ' selected' : '');
+      el.innerHTML = `<span class="keycap">${i + 1}</span> ${sp.name}`;
+      opts.appendChild(el);
+    });
   }
 
   setDroneHud(on, info) {

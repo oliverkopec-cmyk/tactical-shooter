@@ -91,6 +91,8 @@ export class World {
     const boxes = staticBoxes.slice();
     for (const p of panels) if (this.alive[p.id]) boxes.push(p);
     this.boxes = boxes;
+    // What defenders collide with during prep: the map plus plugs in every exterior opening.
+    this.barrierView = { boxes: boxes.concat(MAP.barriers) };
   }
 
   get panels() { return this.layout.panels; }

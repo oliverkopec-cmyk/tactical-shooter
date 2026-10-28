@@ -82,4 +82,5 @@ export const CAPTURE_TIME = 10;           // seconds attackers must hold the obj
 
 // Drones and spotting
 export const DRONES_PER_ATTACKER = 1;     // operators change this in stage 6 (Hawk gets 3)
-export const SPOT_DURATION_MS = 5000;     // how long a spotted enemy stays outlined for the attackers
+export const SPOT_DURATION_MS = 3000;     // how long a pinged enemy stays marked for the attackers
+export const PING_COOLDOWN_MS = 400;

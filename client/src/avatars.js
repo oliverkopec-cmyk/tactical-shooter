@@ -34,6 +34,27 @@ function makeLabel(text, color) {
   return sprite;
 }
 
+/** A red downward-pointing arrow that is always visible, even through walls. */
+function makeMarker() {
+  const size = 64;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  ctx.beginPath();
+  ctx.moveTo(8, 12); ctx.lineTo(56, 12); ctx.lineTo(32, 56); ctx.closePath();
+  ctx.fillStyle = '#ff2a2a';
+  ctx.fill();
+  ctx.lineWidth = 5;
+  ctx.strokeStyle = 'rgba(0,0,0,0.75)';
+  ctx.stroke();
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, depthWrite: false, transparent: true, sizeAttenuation: false }));
+  sprite.scale.set(0.045, 0.045, 1);   // screen-relative: stays readable at any distance
+  sprite.renderOrder = 20;
+  return sprite;
+}
+
 export class RemotePlayer {
   constructor(scene, { id, name, team }, isTeammate) {
     this.id = id;
@@ -66,18 +87,11 @@ export class RemotePlayer {
     this.head.add(skull, visor);
     this.lean.add(this.head);
 
-    // Red silhouette drawn through walls while this enemy is spotted by a drone
-    const outlineMat = new THREE.MeshBasicMaterial({
-      color: 0xff2a2a, transparent: true, opacity: 0.7, depthTest: false, depthWrite: false,
-    });
-    const torsoOutline = new THREE.Mesh(this.torso.geometry, outlineMat);
-    torsoOutline.scale.set(1.2, 1.04, 1.35);
-    const headOutline = new THREE.Mesh(skull.geometry, outlineMat);
-    headOutline.scale.setScalar(1.3);
-    this.outlines = [torsoOutline, headOutline];
-    for (const o of this.outlines) { o.renderOrder = 20; o.visible = false; }
-    this.torso.add(torsoOutline);
-    this.head.add(headOutline);
+    // Small red marker above the head while a drone pilot has pinged this enemy.
+    // Only the marker is drawn through walls; the body is not.
+    this.marker = makeMarker();
+    this.marker.visible = false;
+    this.root.add(this.marker);
     this.spotted = false;
 
     // Held weapon: a scaled-down copy of the first-person model
@@ -128,8 +142,10 @@ export class RemotePlayer {
   push(t, s) {
     if (s.w) this.setWeapon(s.w.id);
     // Coming back to life: don't interpolate from the death spot to the spawn.
-    if (s.alive !== false && !this.alive) this.buffer.length = 0;
-    this.alive = s.alive !== false;
+    // (attackers have no body during prep: u = not spawned yet)
+    const present = s.alive !== false && !s.u;
+    if (present && !this.alive) this.buffer.length = 0;
+    this.alive = present;
     this.buffer.push({ t, s });
     const cutoff = t - BUFFER_MS;
     while (this.buffer.length > 2 && this.buffer[0].t < cutoff) this.buffer.shift();
@@ -140,7 +156,7 @@ export class RemotePlayer {
     this.flashTime -= dt;
     this.flash.visible = this.flashTime > 0;
     this.root.visible = this.alive && !this.hiddenForSpectate;
-    for (const o of this.outlines) o.visible = this.spotted;
+    this.marker.visible = this.spotted && this.alive;
     const buf = this.buffer;
     if (!buf.length) return;
     let a = buf[0], b = buf[0];
@@ -174,6 +190,8 @@ export class RemotePlayer {
     this.gunMount.position.set(0.24, torsoH * 0.82, -0.2);
     this.gunMount.rotation.x = p.pitch;
     this.label.position.y = h + 0.35;
+    this.markerPhase = (this.markerPhase || 0) + dt * 5;
+    this.marker.position.y = h + 0.75 + Math.sin(this.markerPhase) * 0.05;
   }
 
   dispose() {

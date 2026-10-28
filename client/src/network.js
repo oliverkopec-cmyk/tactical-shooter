@@ -33,6 +33,10 @@ export class Network {
     this.socket.emit('inputs', batch);
   }
 
+  sendSpawnChoice(n) {
+    this.socket.emit('spawnChoice', n);
+  }
+
   sendAction(type) {
     this.socket.emit('action', type);
   }

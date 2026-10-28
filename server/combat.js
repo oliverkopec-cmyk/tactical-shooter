@@ -19,7 +19,7 @@ export class PoseHistory {
   record(t, players) {
     const poses = new Map();
     for (const [id, p] of players) {
-      if (!p.alive) continue;
+      if (!p.alive || p.spawned === false) continue;
       const s = p.state;
       poses.set(id, { x: s.x, y: s.y, z: s.z, yaw: s.yaw, crouch: s.crouch, lean: s.lean });
     }
@@ -69,7 +69,7 @@ export function resolveShot({ shooterId, shooter, input, world, players, history
 
   const targets = [];
   for (const [id, p] of players) {
-    if (id === shooterId || !p.alive || p.member.team === shooter.member.team) continue;
+    if (id === shooterId || !p.alive || p.spawned === false || p.member.team === shooter.member.team) continue;
     const pose = history.poseAt(id, rewindTo) || p.state;
     targets.push({ id, pose });
   }
