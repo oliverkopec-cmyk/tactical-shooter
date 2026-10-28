@@ -33,6 +33,7 @@ export class LocalPlayer {
     this.yaw = this.state.yaw;
     this.pitch = this.state.pitch;
     this.keys = 0;
+    this.tapped = 0;     // keys pressed since the last frame, so quick taps aren't lost
     this.seq = 0;
     this.pending = [];   // inputs sent but not yet acknowledged by the server
     this.outbox = [];    // inputs waiting for the next network send
@@ -43,10 +44,14 @@ export class LocalPlayer {
     this.onKeyDown = (e) => this.handleKey(e, true);
     this.onKeyUp = (e) => this.handleKey(e, false);
     this.onMouseMove = (e) => this.handleMouse(e);
-    this.onBlur = () => { this.keys = 0; };
+    this.onMouseDown = (e) => { if (e.target === this.canvas) this.dragging = true; };
+    this.onMouseUp = () => { this.dragging = false; };
+    this.onBlur = () => { this.keys = 0; this.dragging = false; };
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('keyup', this.onKeyUp);
     window.addEventListener('mousemove', this.onMouseMove);
+    window.addEventListener('mousedown', this.onMouseDown);
+    window.addEventListener('mouseup', this.onMouseUp);
     window.addEventListener('blur', this.onBlur);
   }
 
@@ -54,6 +59,8 @@ export class LocalPlayer {
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('keyup', this.onKeyUp);
     window.removeEventListener('mousemove', this.onMouseMove);
+    window.removeEventListener('mousedown', this.onMouseDown);
+    window.removeEventListener('mouseup', this.onMouseUp);
     window.removeEventListener('blur', this.onBlur);
   }
 
@@ -61,16 +68,19 @@ export class LocalPlayer {
     return document.pointerLockElement === this.canvas;
   }
 
+  // Keys work with or without pointer lock, so the game stays playable in
+  // browsers or embedded views where pointer lock is unavailable.
   handleKey(e, down) {
     const bit = KEY_BINDINGS[e.code];
     if (!bit) return;
-    if (this.pointerLocked) e.preventDefault();
-    if (down && this.pointerLocked) this.keys |= bit;
-    else this.keys &= ~bit;
+    if (down && e.target instanceof HTMLInputElement) return;
+    e.preventDefault();
+    if (down) { this.keys |= bit; this.tapped |= bit; } else this.keys &= ~bit;
   }
 
+  // Mouse look: free movement when the pointer is locked, click-and-drag otherwise.
   handleMouse(e) {
-    if (!this.pointerLocked) return;
+    if (!this.pointerLocked && !this.dragging) return;
     this.yaw -= e.movementX * MOUSE_SENSITIVITY;
     this.pitch -= e.movementY * MOUSE_SENSITIVITY;
     this.yaw = ((this.yaw % TWO_PI) + TWO_PI) % TWO_PI;
@@ -78,14 +88,14 @@ export class LocalPlayer {
   }
 
   update(frameDt) {
-    if (!this.pointerLocked) this.keys = 0;
-
     // Long frames are split so each simulated step stays within server limits.
+    const keys = this.keys | this.tapped;
+    this.tapped = 0;
     let remaining = Math.min(frameDt, 0.25);
     while (remaining > 1e-4) {
       const dt = Math.min(remaining, MAX_INPUT_DT);
       remaining -= dt;
-      const input = { seq: this.seq++, dt, keys: this.keys, yaw: this.yaw, pitch: this.pitch };
+      const input = { seq: this.seq++, dt, keys, yaw: this.yaw, pitch: this.pitch };
       stepPlayer(this.state, input, dt, this.world);
       this.pending.push(input);
       this.outbox.push(input);
