@@ -17,7 +17,7 @@ import { aimDirection } from '../shared/weapons.js';
 import { raycastWorld } from '../shared/raycast.js';
 import {
   SNAPSHOT_RATE, MAX_INPUT_DT, MAX_TIME_BUDGET, KEY_MASK, MAX_HEALTH, BASIC_CHARGES, PHASE, CAPTURE_TIME,
-  DRONES_PER_ATTACKER, SPOT_DURATION_MS,
+  DRONES_PER_ATTACKER, SPOT_DURATION_MS, PING_COOLDOWN_MS,
 } from '../shared/constants.js';
 import { PoseHistory, resolveShot } from './combat.js';
 import { Destruction } from './destruction.js';
@@ -86,6 +86,7 @@ export class GameState {
     if (type === 'breach') this.destruction.useBreach(id, p);
     else if (type === 'reinforce') this.destruction.startReinforce(id, p);
     else if (type === 'droneNext') this.cycleDrone(p);
+    else if (type === 'ping') this.pingFromDrone(id, p, Date.now());
   }
 
   // ---------------------------------------------------------------- drones
@@ -152,29 +153,35 @@ export class GameState {
     p.activeDrone = next ? next.id : null;
   }
 
-  /** Enemies inside a drone's view cone, in line of sight, are marked for the whole attack team. */
-  updateSpotting(now) {
-    const defenders = [...this.players.values()].filter((p) => p.alive && p.member.team === 'defense');
-    if (!defenders.length) return;
-    for (const p of this.players.values()) {
-      const drone = p.alive ? this.activeDroneOf(p) : null;
-      if (!drone) continue;
-      const eye = droneEye(drone.state);
-      const aim = aimDirection(drone.state.yaw, drone.state.pitch);
-      for (const q of defenders) {
-        for (const h of [1.0, 1.55]) {
-          const v = [q.state.x - eye[0], q.state.y + h - eye[1], q.state.z - eye[2]];
-          const dist = Math.hypot(v[0], v[1], v[2]);
-          if (dist > DRONE.sightRange || dist < 0.1) continue;
-          const dir = [v[0] / dist, v[1] / dist, v[2] / dist];
-          if (dir[0] * aim[0] + dir[1] * aim[1] + dir[2] * aim[2] < DRONE.sightCos) continue;
-          const wall = raycastWorld(this.world, eye, dir, dist);
-          if (wall && wall.t < dist - 0.25) continue;
-          q.spottedUntil = now + SPOT_DURATION_MS;
-          break;
-        }
+  /**
+   * Drone pilot left-click: mark the enemy under the crosshair (small aim tolerance)
+   * if the drone has a clear line of sight. The mark lasts a few seconds for the
+   * whole attacking team.
+   */
+  pingFromDrone(id, p, now) {
+    if (!p.alive || this.rounds.phase !== PHASE.PREP || now < (p.pingReadyAt || 0)) return;
+    const drone = this.activeDroneOf(p);
+    if (!drone) return;
+    p.pingReadyAt = now + PING_COOLDOWN_MS;
+    const eye = droneEye(drone.state);
+    const aim = aimDirection(drone.state.yaw, drone.state.pitch);
+    let best = null;
+    for (const q of this.players.values()) {
+      if (!q.alive || q.member.team !== 'defense') continue;
+      for (const h of [1.55, 1.0, 0.4]) {
+        const v = [q.state.x - eye[0], q.state.y + h - eye[1], q.state.z - eye[2]];
+        const dist = Math.hypot(v[0], v[1], v[2]);
+        if (dist > DRONE.pingRange || dist < 0.1) continue;
+        const dir = [v[0] / dist, v[1] / dist, v[2] / dist];
+        const angle = Math.acos(Math.min(1, dir[0] * aim[0] + dir[1] * aim[1] + dir[2] * aim[2]));
+        if (angle > DRONE.pingCone || (best && angle >= best.angle)) continue;
+        const wall = raycastWorld(this.world, eye, dir, dist);
+        if (wall && wall.t < dist - 0.25) continue;
+        best = { q, angle };
       }
     }
+    if (best) best.q.spottedUntil = now + SPOT_DURATION_MS;
+    this.io.to(id).emit('pingResult', { hit: !!best });
   }
 
   sendLoadout(id, p) {
@@ -275,7 +282,6 @@ export class GameState {
     }
 
     this.rounds.update(wallNow, realDt);
-    if (phase === PHASE.PREP && this.tick % 6 === 0) this.updateSpotting(wallNow);
     this.destruction.update(wallNow);
     this.history.record(wallNow, this.players);
     if (this.tick % Math.round(TICK_RATE / SNAPSHOT_RATE) === 0) this.broadcastSnapshot();

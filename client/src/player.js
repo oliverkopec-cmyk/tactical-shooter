@@ -120,6 +120,12 @@ export class LocalPlayer {
       return;
     }
     if (e.target !== this.canvas) return;
+    if (this.droneState) {
+      // Piloting a drone: left click pings the enemy under the crosshair instead of firing.
+      if (this.pointerLocked || this.canFireUnlocked()) this.sendAction('ping');
+      if (!this.pointerLocked) this.dragging = true;
+      return;
+    }
     if (this.pointerLocked || this.canFireUnlocked()) { this.keys |= KEY.FIRE; this.tapped |= KEY.FIRE; }
     if (!this.pointerLocked) this.dragging = true;
   }

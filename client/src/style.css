@@ -441,5 +441,5 @@ button.ghost { background: transparent; }
   border-radius: 6px;
 }
 #drone-hud .drone-title { font-weight: 800; letter-spacing: 0.12em; margin-bottom: 2px; }
-#hud.in-drone #crosshair, #hud.in-drone #health-box, #hud.in-drone #ammo-box,
+#hud.in-drone #health-box, #hud.in-drone #ammo-box,
 #hud.in-drone #gadget-box, #hud.in-drone #prompt { display: none; }

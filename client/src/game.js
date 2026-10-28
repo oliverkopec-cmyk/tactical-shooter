@@ -78,6 +78,7 @@ export class Game {
     network.on('damaged', (msg) => this.onDamaged(msg));
     network.on('kill', (msg) => this.onKill(msg));
     network.on('roundStart', (payload) => this.newRound(payload));
+    network.on('pingResult', ({ hit }) => this.audio.beep(hit ? 1500 : 300, hit ? 0.09 : 0.06, 0.15, 'triangle'));
     network.on('droneDestroyed', (msg) => {
       if (!this.running) return;
       this.drones.destroyed(msg);
@@ -444,7 +445,7 @@ export class Game {
     const mine = [...this.drones.drones.values()].filter((e) => e.target.o === this.network.id);
     const idx = mine.findIndex((e) => e.target.id === this.local.droneId) + 1;
     const hp = mine.find((e) => e.target.id === this.local.droneId)?.target.hp ?? 0;
-    return `Drone ${idx}/${mine.length} · integrity ${Math.round((hp / DRONE.hp) * 100)}% · WASD drive · Shift fast${mine.length > 1 ? ' · X switch drone' : ''}`;
+    return `Drone ${idx}/${mine.length} · integrity ${Math.round((hp / DRONE.hp) * 100)}% · WASD drive · Shift fast · Click: ping enemy${mine.length > 1 ? ' · X switch drone' : ''}`;
   }
 
   updateRoundHud() {
@@ -502,7 +503,7 @@ export class Game {
 
     const spread = currentSpread(local.weapon, s);
     const halfFov = THREE.MathUtils.degToRad(FOV / 2);
-    this.ui.setCrosshairGap(3 + (Math.tan(spread) / Math.tan(halfFov)) * (window.innerHeight / 2));
+    this.ui.setCrosshairGap(inDrone ? 5 : 3 + (Math.tan(spread) / Math.tan(halfFov)) * (window.innerHeight / 2));
     this.ui.updateCombat({ health: this.health, weapon: local.weapon, alive: local.alive });
 
     this.updateGadgetHud(now);
