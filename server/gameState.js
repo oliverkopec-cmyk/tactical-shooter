@@ -9,7 +9,7 @@ import { createPlayerState, stepPlayer, weaponInput } from '../shared/movement.j
 import { createWeaponState, stepWeapon } from '../shared/weapons.js';
 import { OPERATORS, defaultOperator, operatorsFor, speedMultiplier, damageMultiplier } from '../shared/operators.js';
 import { World } from '../shared/world.js';
-import { maskKeys, attackSpawnPoint } from '../shared/rules.js';
+import { maskKeys, attackSpawnPoint, inObjectiveZone } from '../shared/rules.js';
 import {
   DRONE, DRONE_KEYS, createDroneState, stepDrone, droneEye,
 } from '../shared/drone.js';
@@ -39,6 +39,9 @@ export class GameState {
     this.players = new Map(); // id -> ServerPlayer
     this.history = new PoseHistory();
     this.drones = new Map();   // id -> { id, owner, state, hp, alive }
+    this.site = null;          // index into MAP.sites, chosen by the defenders' vote
+    this.siteFound = false;    // attackers learn the site only once they've found it
+    this.siteVotes = new Map();// defender id -> site index
     this.nextDroneId = 1;
     this.timer = null;
     this.tick = 0;
@@ -326,6 +329,11 @@ export class GameState {
     if (phase === PHASE.ACTION) {
       const wall = raycastWorld(this.world, origin, aim, MELEE.reach);
       if (wall?.box.kind === 'barricade') this.gadgets.damageBarricadePanel(wall.box.barricadeId, wall.box.panelIndex, BARRICADE.meleeDamage);
+      else if (wall?.box.kind === 'panel') {
+        // Each melee hit knocks out one wall panel. Reinforced walls shrug it off.
+        if (this.world.isReinforcedPanel(wall.box.id)) this.io.to(id).emit('actionError', { msg: 'Reinforced walls can\'t be broken by melee.' });
+        else this.destruction.destroy([wall.box.id]);
+      }
     }
   }
 
@@ -359,6 +367,9 @@ export class GameState {
     this.destruction.reset();
     this.history.frames.length = 0;
     this.clearDrones();
+    this.site = null;
+    this.siteFound = false;
+    this.siteVotes.clear();
     const used = { attack: 0, defense: 0 };
     for (const p of this.players.values()) {
       const team = p.member.team;
@@ -429,6 +440,76 @@ export class GameState {
     this.io.to(id).emit('spawnChoice', { choice: n });
   }
 
+  // ---------------------------------------------------------------- objective sites
+
+  /** The site that counts this round (before the vote ends, the first one). */
+  activeSite() {
+    return MAP.sites[this.site ?? 0];
+  }
+
+  voteSite(id, index) {
+    const p = this.players.get(id);
+    const i = Number(index) | 0;
+    if (!p || p.member.team !== 'defense' || this.rounds.phase !== PHASE.INTRO || i < 0 || i >= MAP.sites.length) return;
+    this.siteVotes.set(id, i);
+    this.sendSiteVotes();
+  }
+
+  siteCounts() {
+    const counts = MAP.sites.map(() => 0);
+    for (const v of this.siteVotes.values()) counts[v]++;
+    return counts;
+  }
+
+  /** Only defenders see the vote. */
+  sendSiteVotes() {
+    const counts = this.siteCounts();
+    for (const [id, p] of this.players) {
+      if (p.member.team === 'defense') this.io.to(id).emit('siteVotes', { counts, mine: this.siteVotes.get(id) ?? null });
+    }
+  }
+
+  /** Select time is over: most votes wins, ties and no votes are settled at random. Defenders are told. */
+  finalizeSite() {
+    const counts = this.siteCounts();
+    const top = Math.max(...counts);
+    const tied = counts.map((c, i) => (c === top ? i : -1)).filter((i) => i >= 0);
+    this.site = tied[Math.floor(Math.random() * tied.length)];
+    this.siteFound = false;
+    for (const [id, p] of this.players) {
+      if (p.member.team === 'defense') this.io.to(id).emit('siteChosen', { site: this.site });
+    }
+  }
+
+  /**
+   * Attackers find the objective with a drone that gets close with a clear view of
+   * it, or by walking into its zone. Everyone is then told which site it is.
+   */
+  updateSiteReveal() {
+    if (this.siteFound || this.site === null) return;
+    const site = MAP.sites[this.site];
+    const centre = [site.x, site.y + site.size / 2, site.z];
+    let found = false;
+    for (const d of this.drones.values()) {
+      const owner = this.players.get(d.owner);
+      if (!d.alive || owner?.activeDrone !== d.id) continue;
+      const eye = droneEye(d.state);
+      const v = [centre[0] - eye[0], centre[1] - eye[1], centre[2] - eye[2]];
+      const dist = Math.hypot(...v);
+      if (dist > 6) continue;
+      const wall = raycastWorld(this.world, eye, v.map((c) => c / dist), dist);
+      if (!wall || wall.t > dist - 0.6) { found = true; break; }
+    }
+    if (!found) {
+      for (const p of this.players.values()) {
+        if (p.member.team === 'attack' && p.alive && p.spawned !== false && inObjectiveZone(site, p.state)) { found = true; break; }
+      }
+    }
+    if (!found) return;
+    this.siteFound = true;
+    this.emitAll('siteFound', { site: this.site });
+  }
+
   /** Halftime: everyone changes sides. */
   swapSides() {
     for (const p of this.players.values()) p.member.team = opposite(p.member.team);
@@ -491,6 +572,7 @@ export class GameState {
 
     this.rounds.update(wallNow, realDt);
     this.gadgets.update(realDt, wallNow);
+    if ((phase === PHASE.PREP || phase === PHASE.ACTION) && this.tick % 6 === 0) this.updateSiteReveal();
     this.destruction.update(wallNow);
     this.history.record(wallNow, this.players);
     if (this.tick % Math.round(TICK_RATE / SNAPSHOT_RATE) === 0) this.broadcastSnapshot();
@@ -602,6 +684,9 @@ export class GameState {
   startPayload(team = 'attack') {
     return {
       stats: this.statsPayload(),
+      // Defenders always know the site; attackers only once it has been found
+      site: this.site !== null && (team === 'defense' || this.siteFound) ? this.site : null,
+      siteVotes: team === 'defense' && this.rounds.phase === PHASE.INTRO ? { counts: this.siteCounts(), mine: null } : null,
       barricadesLeft: this.gadgets.barricadesLeft,
       gadgets: this.gadgets.list(team),
       picks: this.picksFor(team),

@@ -135,6 +135,7 @@ export class RemotePlayer {
     this.lean.add(this.head);
     this.walkPhase = 0;
     this.swingT = 0;
+    this.speed = 0; this.onGround = true; this.vy = 0; this.reloading = false;   // read by the soundscape
 
     // Small red marker above the head while a drone pilot has pinged this enemy.
     // Only the marker is drawn through walls; the body is not.
@@ -204,6 +205,7 @@ export class RemotePlayer {
   push(t, s) {
     if (s.w) this.setWeapon(s.w.id);
     if (s.o) this.setOperator(s.o);
+    this.reloading = !!(s.w && s.w.reload > 0);
     // Coming back to life: don't interpolate from the death spot to the spawn.
     // (attackers have no body during prep: u = not spawned yet)
     const present = s.alive !== false && !s.u;
@@ -247,6 +249,9 @@ export class RemotePlayer {
 
     // Pose the body from the snapshot: height from crouch, legs from speed, arms from aim
     const speed = Math.hypot(L('vx'), L('vz'));
+    this.speed = speed;
+    this.onGround = b.s.onGround !== false;
+    this.vy = L('vy');
     const sprinting = speed > 5;
     this.walkPhase += speed * dt * 2.3;
     const k = Math.min(1, speed / 4);

@@ -115,6 +115,63 @@ export class Audio {
     osc.stop(t + 0.5);
   }
 
+  /**
+   * Where a sound comes from, as the listener hears it: loudness falls off with
+   * distance and is zero beyond `range`, panning follows the listener's facing, and
+   * sounds on another floor or behind walls are quieter and duller.
+   */
+  spatialParams(pos, listener, range, clear = true) {
+    if (!pos || !listener) return { gain: 1, pan: 0, muffle: 1 };
+    const dx = pos[0] - listener.x, dz = pos[2] - listener.z;
+    const flat = Math.hypot(dx, dz);
+    const dy = Math.abs(pos[1] - (listener.y ?? pos[1]));
+    const dist = flat + (dy > 2.4 ? 6 : dy * 0.5);   // another floor counts as further away
+    if (dist >= range) return null;
+    const fall = Math.pow(1 - dist / range, 1.6);
+    const side = flat > 0.1 ? (dx * Math.cos(listener.yaw) - dz * Math.sin(listener.yaw)) / flat : 0;
+    return {
+      gain: fall * (clear ? 1 : 0.55),
+      pan: Math.max(-1, Math.min(1, side)) * Math.min(1, flat / 1.5),
+      muffle: (1 - 0.55 * (dist / range)) * (clear ? 1 : 0.45) * (dy > 2.4 ? 0.7 : 1),
+    };
+  }
+
+  /**
+   * Play a synthesised sound. spec: { noise | wave+freq(+freq2), filter, cutoff, q, dur, gain }.
+   * Pass pos/listener/range for a positional sound; omit pos for one at your own ears.
+   */
+  play(spec, pos = null, listener = null, range = 20, clear = true) {
+    const ctx = this.ctx;
+    if (!ctx || ctx.state !== 'running') return;
+    const sp = this.spatialParams(pos, listener, range, clear);
+    if (!sp) return;
+    const vol = (spec.gain ?? 0.3) * sp.gain;
+    if (vol < 0.003) return;
+    const t = ctx.currentTime;
+    let src;
+    if (spec.noise) {
+      src = ctx.createBufferSource();
+      src.buffer = this.noise;
+    } else {
+      src = ctx.createOscillator();
+      src.type = spec.wave || 'sine';
+      src.frequency.setValueAtTime(spec.freq, t);
+      if (spec.freq2) src.frequency.exponentialRampToValueAtTime(spec.freq2, t + spec.dur);
+    }
+    const filter = ctx.createBiquadFilter();
+    filter.type = spec.filter || 'lowpass';
+    filter.frequency.value = Math.max(120, (spec.cutoff || 3000) * sp.muffle);
+    filter.Q.value = spec.q || 0.8;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + spec.dur);
+    const panner = ctx.createStereoPanner();
+    panner.pan.value = sp.pan;
+    src.connect(filter).connect(g).connect(panner).connect(this.master);
+    src.start(t);
+    src.stop(t + spec.dur + 0.03);
+  }
+
   clank() { this.beep(180, 0.12, 0.2, 'square'); setTimeout(() => this.beep(140, 0.15, 0.2, 'square'), 90); }
 
   hit(head) { this.beep(head ? 1800 : 1100, 0.06, 0.12, 'triangle'); }

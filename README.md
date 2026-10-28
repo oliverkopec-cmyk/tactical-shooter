@@ -2,7 +2,7 @@
 
 A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite on the client, Node.js + Socket.IO on an authoritative server. One Node process serves both the game client and the realtime server, so the whole thing deploys as a single Render web service.
 
-## Status: Stage 8 (barricades, melee, props, models)
+## Status: Stage 9 (sound, melee on walls, objective sites)
 
 - Enter a name, create a room (4-letter code) or join one
 - Pick Attack or Defense in the lobby (max 5 per team); the host starts the match
@@ -40,10 +40,12 @@ A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite o
 - The pilot left-clicks to ping an enemy under the crosshair (30 m, clear line of sight, about 4° aim tolerance): a small red marker shows above that enemy's head for 3 s for the whole attacking team. Only the marker shows through walls, never the body
 - Polish: **Tab** shows a scoreboard (kills, deaths, your team's operators), **Esc** opens a pause menu with sensitivity, volume and field-of-view sliders (also on the home and lobby screens, saved in your browser), **H** hides the key hints (which change with your role and phase), round and phase banners, a low-health glow, a "Copy code" button and player counts in the lobby
 - **No shooting while sprinting:** pressing fire cancels a sprint, and the first shot comes 0.25 s later (you can't sprint while holding fire)
-- **Melee (right click):** 45 damage to an enemy in front of you (about 2 m), 0.8 s cooldown. It also breaks barricade planks and attackers can use it to smash cameras
+- **Melee (right click):** 45 damage to an enemy in front of you (about 2 m), 0.8 s cooldown. It also breaks barricade planks, knocks out **one wall panel per hit** (never a reinforced wall), and attackers can use it to smash cameras
 - **Barricades (B, defenders, prep only):** nail wooden planks over a doorway or window (1 second, 8 per team per round, not while someone stands in the gap). A barricade is a grid of 0.5 m planks: bullets (2 rifle hits per plank) and melee (1 hit) break them one by one, and a breach charge destroys the whole barricade at once. Planks block movement, bullets and drones until broken
 - **Props:** furniture, crates, barrels, concrete barriers, pallets, planters and parked vehicles inside and outside the building. They are solid, so waist-high ones are cover; rugs, pictures, monitors and plants are decoration only
 - **Player models:** other players are drawn as a humanoid with helmet, head, vest, arms holding the gun, and bending legs with a walk cycle, crouch pose and a melee swing
+- **Three objective sites** in different rooms (upstairs office, ground-floor back room, upstairs west room). During operator select the defenders vote on one (ties and no votes are settled at random). Attackers aren't told which; a drone that gets within 6 m with a clear view of the objective, or an attacker walking into its zone, reveals it to everyone. Only the chosen site can be captured, the three boxes look identical, and the zone ring and "Objective:" label only appear once you know the site
+- **Sound** is positional: you hear other players from the right direction, quieter and duller with distance, through walls and from another floor. Footsteps: sprinting is loud and carries about 40 m, walking about 14 m, crouch-walking only a couple of metres. Also reloading, landing from a fall, barricades and walls breaking, gadgets being placed, melee swings and drone motors. Volume is in the settings menu
 - Defenders reinforce wall sections (V, 10 per team): darker, immune to bullets and basic charges; only a heavy charge (Spark, stage 6) breaks them
 
 ## Run locally
@@ -95,7 +97,8 @@ client/
   src/avatars.js   other players: bodies, guns, name tags, interpolation
   src/weapons.js   first-person gun models, recoil/reload animation
   src/effects.js   tracers, bullet holes, impact puffs
-  src/audio.js     synthesised gunshots, explosions and UI sounds
+  src/audio.js     synthesised sound effects, positional playback (range, direction, muffling)
+  src/soundscape.js  footsteps, landing, reloads, drones, gadgets: what you hear and from where
   src/gadgets.js   visuals for operator gadgets and grenades
   src/drones.js    drone models for everyone, smoothing, destroyed effect
   src/destruction.js  instanced wall panels, charges, explosions
@@ -115,6 +118,14 @@ client/
 ## Rounds
 
 `server/rounds.js` runs `intro → prep → action → roundEnd`. Scores belong to a *squad* (A starts attacking, B starts defending), so they follow the players when sides swap after round 3; the HUD shows them by current side. The server broadcasts `roundStart` (full reset: map, spawns, health, charges), `phase` and `roundEnd` events plus the capture progress inside each snapshot. Phase rules in `shared/rules.js` are applied by both the server and the client's prediction, so frozen players don't rubber-band. Set `TIME_SCALE=0.1` when starting the server to run every phase 10× faster for testing.
+
+## Objective sites
+
+`MAP.sites` holds the three sites. `GameState` keeps `site` (chosen by `finalizeSite()` at the end of operator select) and `siteFound`. Defenders get `siteChosen` right away; attackers get nothing until `updateSiteReveal()` (every 0.1 s in prep and action) sees a drone or an attacker at the site, then everyone gets `siteFound`. Round payloads only include the site for defenders, or for attackers once it has been found, so a late joiner learns nothing early. Capture progress is counted only for the chosen site.
+
+## Sound
+
+Other players' sounds are derived on each client from the snapshots (speed, stance, reload state), so they cost no extra network traffic. `Audio.play()` takes a source position and a range, and handles falloff, stereo direction (from the camera's facing), and muffling for walls (one ray per sound) and other floors. Add a new sound by adding a recipe to `SOUNDS` in `client/src/soundscape.js`. There is no jump key in the game, so "landing" sounds play for falls only.
 
 ## Barricades, melee and props
 

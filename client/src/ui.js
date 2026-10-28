@@ -266,6 +266,35 @@ export class UI {
     }
   }
 
+  /** Defenders vote on the objective site during operator select; attackers just wait. */
+  renderSiteVote(on, { team, counts, mine, onVote }) {
+    const el = $('site-vote');
+    el.classList.toggle('hidden', !on);
+    if (!on) { this.lastSiteVote = null; return; }
+    const sig = JSON.stringify([team, counts, mine]);
+    if (sig === this.lastSiteVote) return;
+    this.lastSiteVote = sig;
+    if (team !== 'defense') {
+      el.innerHTML = '<div class="site-note">The defenders are choosing where the objective is. Find it with your drones during prep.</div>';
+      return;
+    }
+    el.innerHTML = '<div class="site-title">Vote for the objective site</div><div class="site-options"></div>';
+    const row = el.querySelector('.site-options');
+    MAP.sites.forEach((site, i) => {
+      const b = document.createElement('button');
+      b.className = `site-option${mine === i ? ' selected' : ''}`;
+      b.innerHTML = `<b>${site.name}</b><span>${site.where}</span><span class="votes">${counts[i]} vote${counts[i] === 1 ? '' : 's'}</span>`;
+      b.addEventListener('click', () => onVote(i));
+      row.appendChild(b);
+    });
+  }
+
+  setSiteChip(text) {
+    if (text === this.lastSiteChip) return;
+    this.lastSiteChip = text;
+    $('site-chip').textContent = text;
+  }
+
   /** White-out after a stun grenade. frac 1 = fully blind, 0 = clear. */
   setStun(frac) {
     const v = Math.round(frac * 100) / 100;

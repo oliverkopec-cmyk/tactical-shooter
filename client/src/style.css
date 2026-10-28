@@ -589,3 +589,14 @@ button.small { font-size: 12px; padding: 4px 10px; margin-top: 6px; }
 .board-team td.opn { color: var(--muted); font-size: 12px; }
 .board-team tr.me td { background: rgba(240, 180, 60, 0.12); }
 .board-team tr.dead td { opacity: 0.45; text-decoration: line-through; text-decoration-color: rgba(255, 255, 255, 0.25); }
+
+/* ---------------------------------------------------------------- objective sites */
+#site-chip { top: 44px; left: 12px; color: var(--accent); font-weight: 600; max-width: 260px; }
+#site-vote { text-align: center; }
+.site-title { font-size: 13px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+.site-options { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+.site-option { display: flex; flex-direction: column; gap: 3px; min-width: 190px; padding: 10px 14px; text-align: left; border: 2px solid var(--line); }
+.site-option span { font-size: 12px; color: var(--muted); font-weight: 400; }
+.site-option .votes { color: var(--accent); }
+.site-option.selected { border-color: var(--accent); background: rgba(240, 180, 60, 0.12); }
+.site-note { color: var(--accent); font-size: 14px; max-width: 520px; margin: 0 auto; }

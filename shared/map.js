@@ -269,9 +269,18 @@ detail(25.2, 1.55, 7.8, 6.7, 0.5, 2.5, 0x1a2230);                  // van window
 for (const sx of [-1, 1]) for (const sz of [-1, 1]) detail(25.2 + sx * 2.2, 0.28, 7.8 + sz * 1.2, 0.8, 0.56, 0.1, 0x16181b);
 
 // ---------------------------------------------------------------- objective & spawns
-export const OBJECTIVE = { x: 7.5, y: FLOOR2, z: 2.5, size: 0.9, zoneRadius: 2.5 };
-box(OBJECTIVE.x - OBJECTIVE.size / 2, FLOOR2, OBJECTIVE.z - OBJECTIVE.size / 2,
-  OBJECTIVE.x + OBJECTIVE.size / 2, FLOOR2 + OBJECTIVE.size, OBJECTIVE.z + OBJECTIVE.size / 2, 'objective');
+// Three possible objective sites in different rooms on both floors. Each round the
+// defenders vote on one; attackers aren't told which and must find it with drones.
+// All three boxes look identical so the box itself gives nothing away.
+export const SITES = [
+  { id: 0, name: 'Upstairs office', where: 'upper floor, east side', x: 7.5, y: FLOOR2, z: 2.5, size: 0.9, zoneRadius: 2.5 },
+  { id: 1, name: 'Back room', where: 'ground floor, rear', x: -1.0, y: FL0, z: 4.2, size: 0.9, zoneRadius: 2.2 },
+  { id: 2, name: 'Upstairs west room', where: 'upper floor, west side', x: -8.0, y: FLOOR2, z: 1.8, size: 0.9, zoneRadius: 2.3 },
+];
+for (const site of SITES) {
+  box(site.x - site.size / 2, site.y, site.z - site.size / 2, site.x + site.size / 2, site.y + site.size, site.z + site.size / 2, 'site');
+}
+export const OBJECTIVE = SITES[0];   // kept for older callers; use SITES
 
 // yaw 0 faces -z, yaw PI faces +z
 export const SPAWNS = {
@@ -296,6 +305,7 @@ export const MAP = {
   openings: allOpenings,
   details,
   objective: OBJECTIVE,
+  sites: SITES,
   spawns: SPAWNS,
 };
 

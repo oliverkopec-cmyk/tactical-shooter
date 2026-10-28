@@ -21,7 +21,7 @@ const KIND_STYLE = {
   concrete: { color: 0x9a9a98, roughness: 1 },
   pallet: { color: 0xb08a58, roughness: 0.9 },
   car: { color: 0x8b2f2f, roughness: 0.35, metalness: 0.5 },
-  objective: { color: 0xffd04a, emissive: 0xffa800, emissiveIntensity: 1.4, roughness: 0.3 },
+  site: { color: 0x3d434b, roughness: 0.5, metalness: 0.5 },
 };
 
 const unitBox = new THREE.BoxGeometry(1, 1, 1);
@@ -60,27 +60,30 @@ export function buildMap(scene) {
     group.add(mesh);
   }
 
-  // Objective glow
-  const o = MAP.objective;
-  const glow = new THREE.PointLight(0xffb020, 6, 7, 1.5);
-  glow.position.set(o.x, o.y + o.size + 0.3, o.z);
-  group.add(glow);
-
-  // Capture zone marking on the floor
-  const zoneMat = new THREE.MeshBasicMaterial({ color: 0xffc43a, transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide });
-  const ring = new THREE.Mesh(new THREE.RingGeometry(o.zoneRadius - 0.1, o.zoneRadius, 64), zoneMat);
-  ring.rotation.x = -Math.PI / 2;
-  ring.position.set(o.x, o.y + 0.03, o.z);
-  const disc = new THREE.Mesh(
-    new THREE.CircleGeometry(o.zoneRadius - 0.1, 64),
-    new THREE.MeshBasicMaterial({ color: 0xffc43a, transparent: true, opacity: 0.08, depthWrite: false, side: THREE.DoubleSide }),
-  );
-  disc.rotation.x = -Math.PI / 2;
-  disc.position.set(o.x, o.y + 0.025, o.z);
-  group.add(ring, disc);
+  // One zone marking (ring, disc, glow) per possible site. They stay hidden until the
+  // site is known to you: defenders after the vote, attackers once they find it.
+  const sites = MAP.sites.map((site) => {
+    const mat = new THREE.MeshBasicMaterial({ color: 0xffc43a, transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide });
+    const ring = new THREE.Mesh(new THREE.RingGeometry(site.zoneRadius - 0.1, site.zoneRadius, 64), mat);
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.set(site.x, site.y + 0.03, site.z);
+    const disc = new THREE.Mesh(
+      new THREE.CircleGeometry(site.zoneRadius - 0.1, 64),
+      new THREE.MeshBasicMaterial({ color: 0xffc43a, transparent: true, opacity: 0.08, depthWrite: false, side: THREE.DoubleSide }),
+    );
+    disc.rotation.x = -Math.PI / 2;
+    disc.position.set(site.x, site.y + 0.025, site.z);
+    const light = new THREE.PointLight(0xffb020, 6, 7, 1.5);
+    light.position.set(site.x, site.y + site.size + 0.3, site.z);
+    const holder = new THREE.Group();
+    holder.add(ring, disc, light);
+    holder.visible = false;
+    group.add(holder);
+    return { holder, mat };
+  });
 
   scene.add(group);
-  return { group, meshesById, objectiveLight: glow, zoneMat };
+  return { group, meshesById, sites };
 }
 
 export function setupLighting(scene) {
