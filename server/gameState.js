@@ -479,6 +479,20 @@ export class GameState {
     for (const [id, p] of this.players) {
       if (p.member.team === 'defense') this.io.to(id).emit('siteChosen', { site: this.site });
     }
+    this.placeDefenders();
+  }
+
+  /** Defenders start in or right next to the site they voted for, facing it. */
+  placeDefenders() {
+    const spawns = MAP.siteSpawns[this.site];
+    let i = 0;
+    for (const [id, p] of this.players) {
+      if (p.member.team !== 'defense') continue;
+      p.state = createPlayerState(spawns[i++ % spawns.length]);
+      p.state.speedMul = speedMultiplier(OPERATORS[p.operator]);
+      p.queue.length = 0;
+      this.io.to(id).emit('defenderSpawn', { state: p.state });
+    }
   }
 
   /**
