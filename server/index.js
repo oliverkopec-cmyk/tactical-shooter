@@ -61,6 +61,8 @@ io.on('connection', (socket) => {
     if (type === 'breach' || type === 'reinforce' || type === 'droneNext' || type === 'ping') socket.data.room?.handleAction(socket.id, type);
   });
 
+  socket.on('spawnChoice', (n) => socket.data.room?.game?.setSpawnChoice(socket.id, n));
+
   socket.on('netPing', (ack) => reply(ack));
   socket.on('leaveRoom', () => socket.data.room?.remove(socket));
   socket.on('disconnect', () => socket.data.room?.remove(socket));

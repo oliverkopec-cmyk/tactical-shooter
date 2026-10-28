@@ -142,8 +142,10 @@ export class RemotePlayer {
   push(t, s) {
     if (s.w) this.setWeapon(s.w.id);
     // Coming back to life: don't interpolate from the death spot to the spawn.
-    if (s.alive !== false && !this.alive) this.buffer.length = 0;
-    this.alive = s.alive !== false;
+    // (attackers have no body during prep: u = not spawned yet)
+    const present = s.alive !== false && !s.u;
+    if (present && !this.alive) this.buffer.length = 0;
+    this.alive = present;
     this.buffer.push({ t, s });
     const cutoff = t - BUFFER_MS;
     while (this.buffer.length > 2 && this.buffer[0].t < cutoff) this.buffer.shift();

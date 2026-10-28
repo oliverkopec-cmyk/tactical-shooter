@@ -76,8 +76,8 @@ export class RoundManager {
   setPhase(phase, duration, now) {
     this.phase = phase;
     this.endsAt = now + ms(duration);
-    if (phase === PHASE.PREP) this.game.spawnDrones();
-    else if (phase === PHASE.ACTION) this.game.clearDrones();
+    if (phase === PHASE.PREP) this.game.beginPrep();
+    else if (phase === PHASE.ACTION) this.game.beginAction();
     this.game.emitAll('phase', this.info());
   }
 

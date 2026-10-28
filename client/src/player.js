@@ -40,7 +40,7 @@ export class LocalPlayer {
    * opts.renderTime() gives the time remote players are currently drawn at.
    * opts.canFireUnlocked() says whether clicks should fire without pointer lock.
    */
-  constructor({ id, team, state, weapon, world, network, camera, canvas, onShot, renderTime, canFireUnlocked, onAction, mask }) {
+  constructor({ id, team, state, weapon, world, network, camera, canvas, onShot, renderTime, canFireUnlocked, onAction, mask, collisionWorld, onDigit }) {
     this.id = id;
     this.team = team;
     this.world = world;
@@ -51,6 +51,8 @@ export class LocalPlayer {
     this.renderTime = renderTime;
     this.canFireUnlocked = canFireUnlocked;
     this.onAction = onAction;
+    this.collisionWorld = collisionWorld || (() => world);   // defenders in prep are walled into the building
+    this.onDigit = onDigit;                                  // lets the game claim keys 1-3 (spawn choice)
     this.mask = mask || ((k) => k);   // which inputs count in the current round phase
 
     this.state = copyPlayerState(state || createPlayerState({ x: 0, y: 0, z: 0 }));
@@ -101,6 +103,7 @@ export class LocalPlayer {
   // browsers or embedded views where pointer lock is unavailable.
   handleKey(e, down) {
     if (down && e.target instanceof HTMLInputElement) return;
+    if (down && WEAPON_KEYS[e.code] && this.onDigit?.(WEAPON_KEYS[e.code])) return;
     if (down && WEAPON_KEYS[e.code]) { this.wsel = WEAPON_KEYS[e.code]; return; }
     if (ACTION_KEYS[e.code]) {
       if (down && !e.repeat && this.alive) this.sendAction(ACTION_KEYS[e.code]);
@@ -202,7 +205,7 @@ export class LocalPlayer {
       if (this.droneState) stepDrone(this.droneState, input, input.dt, this.world);
       return;
     }
-    stepPlayer(this.state, input, input.dt, this.world);
+    stepPlayer(this.state, input, input.dt, this.collisionWorld());
     const fired = stepWeapon(this.weapon, input, input.dt);
     if (!live) return;
     const s = this.state;
@@ -275,6 +278,21 @@ export class LocalPlayer {
     this.keys = 0;
     this.pending.length = 0;
     this.outbox.length = 0;
+  }
+
+  /** Moved by the server (attackers appear at their chosen entry point). */
+  teleport(state) {
+    this.state = copyPlayerState(state);
+    this.yaw = state.yaw;
+    this.pitch = 0;
+    this.recoil = { pitch: 0, yaw: 0 };
+    this.pending.length = 0;
+    this.outbox.length = 0;
+    this.smoothing = { x: 0, y: 0, z: 0 };
+    // Leaving the drone must not restore the old camera angle over the new facing
+    this.droneState = null;
+    this.droneId = null;
+    this.savedView = null;
   }
 
   /** Hard reset (respawn) */

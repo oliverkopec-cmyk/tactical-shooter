@@ -8,7 +8,7 @@ import { MAP } from '../shared/map.js';
 import { createPlayerState, stepPlayer } from '../shared/movement.js';
 import { createWeaponState, stepWeapon, WEAPON_ORDER } from '../shared/weapons.js';
 import { World } from '../shared/world.js';
-import { maskKeys } from '../shared/rules.js';
+import { maskKeys, attackSpawnPoint } from '../shared/rules.js';
 import {
   DRONE, DRONE_KEYS, createDroneState, stepDrone, droneEye,
 } from '../shared/drone.js';
@@ -64,6 +64,8 @@ export class GameState {
       alive: joinsAlive,
       charges: member.team === 'attack' ? BASIC_CHARGES : 0,
       placedCharge: null,
+      spawned: true,          // attackers have no body during prep
+      spawnChoice: 1,         // which outside entry point (1-3) they appear at
       activeDrone: null,
       spottedUntil: 0,
       queue: [],
@@ -211,7 +213,10 @@ export class GameState {
     for (const p of this.players.values()) {
       const team = p.member.team;
       const spawns = MAP.spawns[team];
-      p.state = createPlayerState(spawns[used[team]++ % spawns.length]);
+      p.state = createPlayerState(spawns[used[team] % spawns.length]);
+      if (team === 'attack') p.spawnChoice = (used[team] % MAP.spawns.attack.length) + 1;
+      used[team]++;
+      p.spawned = true;
       p.weapon = createWeaponState(p.weapon.id);
       p.health = MAX_HEALTH;
       p.alive = true;
@@ -221,6 +226,47 @@ export class GameState {
       p.placedCharge = null;
       p.spottedUntil = 0;
     }
+    this.placeAttackers();
+  }
+
+  /** Put attackers at their chosen entry points, spread out where several share one. */
+  placeAttackers() {
+    const groups = new Map();
+    for (const p of this.players.values()) {
+      if (p.member.team !== 'attack') continue;
+      if (!groups.has(p.spawnChoice)) groups.set(p.spawnChoice, []);
+      groups.get(p.spawnChoice).push(p);
+    }
+    for (const [choice, list] of groups) {
+      list.forEach((p, i) => { p.state = createPlayerState(attackSpawnPoint(choice, i, list.length)); });
+    }
+  }
+
+  /** Prep: attacker bodies vanish (so nobody can camp them); they fly drones. */
+  beginPrep() {
+    for (const p of this.players.values()) if (p.member.team === 'attack') p.spawned = false;
+    this.spawnDrones();
+  }
+
+  /** Action: drones are recalled and attackers appear where they chose. */
+  beginAction() {
+    this.clearDrones();
+    this.placeAttackers();
+    for (const [id, p] of this.players) {
+      if (p.member.team !== 'attack' || p.spawned) continue;
+      p.spawned = true;
+      p.queue.length = 0;
+      this.io.to(id).emit('attackerSpawn', { state: p.state });
+    }
+  }
+
+  setSpawnChoice(id, choice) {
+    const p = this.players.get(id);
+    const n = Number(choice) | 0;
+    if (!p || p.member.team !== 'attack' || this.rounds.phase !== PHASE.PREP) return;
+    if (n < 1 || n > MAP.spawns.attack.length) return;
+    p.spawnChoice = n;
+    this.io.to(id).emit('spawnChoice', { choice: n });
   }
 
   /** Halftime: everyone changes sides. */
@@ -274,7 +320,9 @@ export class GameState {
           stepDrone(drone.state, { ...input, keys: input.keys & DRONE_KEYS }, input.dt, this.world);
         } else {
           input.keys = maskKeys(input.keys, p.member.team, phase);
-          stepPlayer(p.state, input, input.dt, this.world);
+          // Defenders can't leave the building during prep
+          const solid = phase === PHASE.PREP && p.member.team === 'defense' ? this.world.barrierView : this.world;
+          stepPlayer(p.state, input, input.dt, solid);
           if (stepWeapon(p.weapon, input, input.dt)) this.fire(id, p, input, wallNow);
         }
         p.lastSeq = input.seq;
@@ -325,7 +373,7 @@ export class GameState {
 
   applyDamage(victimId, attackerId, amount, { head = false, weapon, from }) {
     const victim = this.players.get(victimId);
-    if (!victim || !victim.alive) return;
+    if (!victim || !victim.alive || victim.spawned === false) return;
     const dealt = Math.max(1, Math.round(amount));
     victim.health = Math.max(0, victim.health - dealt);
     const killed = victim.health === 0;
@@ -350,7 +398,7 @@ export class GameState {
     for (const [id, p] of this.players) {
       const s = p.state, w = p.weapon;
       players.push({
-        id, seq: p.lastSeq, alive: p.alive, hp: p.health, sp: p.spottedUntil > Date.now() ? 1 : 0,
+        id, seq: p.lastSeq, alive: p.alive, u: p.spawned === false ? 1 : 0, hp: p.health, sp: p.spottedUntil > Date.now() ? 1 : 0,
         x: s.x, y: s.y, z: s.z, vx: s.vx, vy: s.vy, vz: s.vz,
         yaw: s.yaw, pitch: s.pitch, crouch: s.crouch, lean: s.lean, onGround: s.onGround,
         w: { id: w.id, ammo: w.ammo, reserve: w.reserve, cooldown: w.cooldown, reload: w.reload, bloom: w.bloom, trigger: w.trigger },
@@ -374,7 +422,7 @@ export class GameState {
       players: [...this.players.entries()].map(([id, p]) => ({
         id, name: p.member.name, team: p.member.team, state: p.state,
         weapon: p.weapon, health: p.health, alive: p.alive,
-        charges: p.charges, placed: !!p.placedCharge,
+        charges: p.charges, placed: !!p.placedCharge, spawnChoice: p.spawnChoice,
       })),
       destruction: this.destruction.snapshot(),
       round: this.rounds.info(),

@@ -443,3 +443,23 @@ button.ghost { background: transparent; }
 #drone-hud .drone-title { font-weight: 800; letter-spacing: 0.12em; margin-bottom: 2px; }
 #hud.in-drone #health-box, #hud.in-drone #ammo-box,
 #hud.in-drone #gadget-box, #hud.in-drone #prompt { display: none; }
+
+#spawn-box {
+  position: absolute;
+  left: 50%;
+  bottom: 96px;
+  transform: translateX(-50%);
+  text-align: center;
+  background: rgba(10, 12, 16, 0.7);
+  padding: 8px 14px;
+  border-radius: 8px;
+}
+#spawn-opts { display: flex; gap: 8px; justify-content: center; margin-top: 6px; }
+.spawn-opt {
+  padding: 4px 12px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  font-weight: 700;
+}
+.spawn-opt.selected { background: var(--attack); border-color: var(--attack); color: #1a0e04; }
+.spawn-opt.selected .keycap { border-color: rgba(26, 14, 4, 0.6); }

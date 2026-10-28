@@ -14,6 +14,7 @@ const BX0 = -12, BX1 = 12, BZ0 = -8, BZ1 = 8;
 const IX0 = BX0 + T / 2, IX1 = BX1 - T / 2, IZ0 = BZ0 + T / 2, IZ1 = BZ1 - T / 2;
 
 const boxes = [];
+const barriers = [];   // invisible plugs in exterior openings; only defenders in prep collide with them
 let nextId = 1;
 
 function box(x0, y0, z0, x1, y1, z1, kind, extra = {}) {
@@ -55,6 +56,14 @@ function wall(axis, fixed, from, to, y0, y1, kind, openings = [], name = '') {
     cursor = op.to;
   }
   push(cursor, to, y0, y1);
+  if (kind === 'exterior') {
+    for (const op of ops) {
+      const [bx0, bz0, bx1, bz1] = axis === 'x'
+        ? [op.from, fixed - T / 2, op.to, fixed + T / 2]
+        : [fixed - T / 2, op.from, fixed + T / 2, op.to];
+      barriers.push({ id: -(barriers.length + 1), kind: 'barrier', min: [bx0, op.y0, bz0], max: [bx1, op.y1, bz1] });
+    }
+  }
   return pieces;
 }
 
@@ -152,10 +161,12 @@ box(OBJECTIVE.x - OBJECTIVE.size / 2, FLOOR2, OBJECTIVE.z - OBJECTIVE.size / 2,
 
 // yaw 0 faces -z, yaw PI faces +z
 export const SPAWNS = {
+  // Three entry points around the outside of the map, far from the building.
+  // Attackers choose one (keys 1-3) while flying their drone in prep.
   attack: [
-    { x: -6, y: 0, z: -36, yaw: Math.PI }, { x: -3, y: 0, z: -37, yaw: Math.PI },
-    { x: 0, y: 0, z: -36, yaw: Math.PI }, { x: 3, y: 0, z: -37, yaw: Math.PI },
-    { x: 6, y: 0, z: -36, yaw: Math.PI },
+    { name: 'West', x: -38, y: 0, z: 2, yaw: -Math.PI / 2 },
+    { name: 'South', x: 0, y: 0, z: -40, yaw: Math.PI },
+    { name: 'East', x: 38, y: 0, z: 2, yaw: Math.PI / 2 },
   ],
   defense: [
     { x: 7.5, y: FLOOR2, z: 5.5, yaw: 0 }, { x: 9.5, y: FLOOR2, z: 0, yaw: 0 },
@@ -167,6 +178,7 @@ export const SPAWNS = {
 export const MAP = {
   name: 'Dockside House',
   boxes,
+  barriers,
   objective: OBJECTIVE,
   spawns: SPAWNS,
 };
