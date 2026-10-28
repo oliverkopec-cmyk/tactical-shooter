@@ -7,10 +7,12 @@
 import { MAP } from '../shared/map.js';
 import { createPlayerState, stepPlayer } from '../shared/movement.js';
 import { createWeaponState, stepWeapon, WEAPON_ORDER } from '../shared/weapons.js';
+import { World } from '../shared/world.js';
 import {
-  SNAPSHOT_RATE, MAX_INPUT_DT, MAX_TIME_BUDGET, KEY_MASK, MAX_HEALTH, RESPAWN_MS,
+  SNAPSHOT_RATE, MAX_INPUT_DT, MAX_TIME_BUDGET, KEY_MASK, MAX_HEALTH, RESPAWN_MS, BASIC_CHARGES,
 } from '../shared/constants.js';
 import { PoseHistory, resolveShot } from './combat.js';
+import { Destruction } from './destruction.js';
 
 const TICK_RATE = 60;
 const MAX_QUEUED_INPUTS = 120;
@@ -19,7 +21,8 @@ const MAX_PITCH = Math.PI / 2;
 export class GameState {
   constructor(room) {
     this.room = room;
-    this.world = { boxes: MAP.boxes };
+    this.world = new World();
+    this.destruction = new Destruction(this);
     this.players = new Map(); // id -> ServerPlayer
     this.history = new PoseHistory();
     this.timer = null;
@@ -43,6 +46,8 @@ export class GameState {
       health: MAX_HEALTH,
       alive: true,
       respawnAt: 0,
+      charges: member.team === 'attack' ? BASIC_CHARGES : 0,
+      placedCharge: null,
       queue: [],
       lastSeq: -1,
       timeBudget: 0,
@@ -51,6 +56,20 @@ export class GameState {
 
   removePlayer(id) {
     this.players.delete(id);
+    this.destruction.removeChargesOf(id);
+    this.destruction.reinforcing.delete(id);
+  }
+
+  /** Discrete actions that aren't part of the movement input stream. */
+  handleAction(id, type) {
+    const p = this.players.get(id);
+    if (!p) return;
+    if (type === 'breach') this.destruction.useBreach(id, p);
+    else if (type === 'reinforce') this.destruction.startReinforce(id, p);
+  }
+
+  sendLoadout(id, p) {
+    this.io.to(id).emit('loadout', { charges: p.charges, placed: !!p.placedCharge });
   }
 
   pickSpawn(team, random = false) {
@@ -104,6 +123,7 @@ export class GameState {
       }
     }
 
+    this.destruction.update(wallNow);
     this.history.record(wallNow, this.players);
     if (this.tick % Math.round(TICK_RATE / SNAPSHOT_RATE) === 0) this.broadcastSnapshot();
   }
@@ -129,26 +149,35 @@ export class GameState {
     if (shooterSocket) shooterSocket.to(this.room.channel).emit('shot', shotMsg);
     else this.emitAll('shot', shotMsg);
 
-    for (const [victimId, { damage, head }] of damageById) {
-      const victim = this.players.get(victimId);
-      if (!victim || !victim.alive) continue;
-      const dealt = Math.max(1, Math.round(damage));
-      victim.health = Math.max(0, victim.health - dealt);
-      const killed = victim.health === 0;
-
-      this.io.to(shooterId).emit('hitConfirm', { victim: victimId, damage: dealt, head, killed });
-      this.io.to(victimId).emit('damaged', {
-        attacker: shooterId, damage: dealt, health: victim.health,
-        from: [round2(shot.origin[0]), round2(shot.origin[2])],
-      });
-      if (killed) this.kill(victimId, victim, shooterId, shooter.weapon.id, head);
+    const w = shooter.weapon.id;
+    for (const pellet of shot.pellets) {
+      if (pellet.panelId !== null) this.destruction.damagePanel(pellet.panelId, pellet.panelDamage);
     }
+    for (const [victimId, { damage, head }] of damageById) {
+      this.applyDamage(victimId, shooterId, damage, { head, weapon: w, from: [shot.origin[0], shot.origin[2]] });
+    }
+  }
+
+  applyDamage(victimId, attackerId, amount, { head = false, weapon, from }) {
+    const victim = this.players.get(victimId);
+    if (!victim || !victim.alive) return;
+    const dealt = Math.max(1, Math.round(amount));
+    victim.health = Math.max(0, victim.health - dealt);
+    const killed = victim.health === 0;
+
+    if (attackerId !== victimId) this.io.to(attackerId).emit('hitConfirm', { victim: victimId, damage: dealt, head, killed });
+    this.io.to(victimId).emit('damaged', {
+      attacker: attackerId, damage: dealt, health: victim.health,
+      from: [round2(from[0]), round2(from[1])],
+    });
+    if (killed) this.kill(victimId, victim, attackerId, weapon, head);
   }
 
   kill(victimId, victim, killerId, weaponId, head) {
     victim.alive = false;
     victim.queue.length = 0;
     victim.respawnAt = Date.now() + RESPAWN_MS;
+    this.destruction.cancelReinforce(victimId, 'You were eliminated.');
     this.emitAll('kill', { killer: killerId, victim: victimId, weapon: weaponId, head });
   }
 
@@ -159,6 +188,8 @@ export class GameState {
     p.alive = true;
     p.respawnAt = 0;
     p.timeBudget = 0;
+    if (p.member.team === 'attack' && !p.placedCharge) p.charges = BASIC_CHARGES; // temporary until rounds
+    this.sendLoadout(id, p);
     this.io.to(id).emit('respawn', { state: p.state, weapon: p.weapon, health: p.health, seq: p.lastSeq });
   }
 
@@ -182,7 +213,9 @@ export class GameState {
       players: [...this.players.entries()].map(([id, p]) => ({
         id, name: p.member.name, team: p.member.team, state: p.state,
         weapon: p.weapon, health: p.health, alive: p.alive,
+        charges: p.charges, placed: !!p.placedCharge,
       })),
+      destruction: this.destruction.snapshot(),
     };
   }
 }

@@ -33,6 +33,10 @@ export class Network {
     this.socket.emit('inputs', batch);
   }
 
+  sendAction(type) {
+    this.socket.emit('action', type);
+  }
+
   leaveRoom() {
     this.socket.emit('leaveRoom');
   }

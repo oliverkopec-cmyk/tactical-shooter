@@ -54,6 +54,17 @@ export const RESPAWN_MS = 5000;           // temporary until the round system (s
 export const LAG_COMP_MAX_MS = 350;       // furthest back the server rewinds players for hits
 export const MAX_SHOT_RANGE = 150;
 
+// Destruction
+export const BREACH = {
+  basic: { radius: 1.15, damage: 70, damageRadius: 3.5, breaksReinforced: false },
+  heavy: { radius: 1.45, damage: 80, damageRadius: 4, breaksReinforced: true },  // Spark (stage 6)
+};
+export const CHARGE_REACH = 2.2;          // how far away a breach charge can be planted (m)
+export const REINFORCE_REACH = 2.2;
+export const REINFORCE_TIME_MS = 1200;
+export const TEAM_REINFORCEMENTS = 10;    // defense team pool (per round once rounds exist)
+export const BASIC_CHARGES = 1;           // per attacker
+
 export const TEAM_COLORS = {
   attack: 0xe8833a,
   defense: 0x3a8de8,

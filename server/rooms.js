@@ -121,6 +121,10 @@ class Room {
     if (this.game) this.game.queueInputs(socketId, batch);
   }
 
+  handleAction(socketId, type) {
+    if (this.game) this.game.handleAction(socketId, type);
+  }
+
   publicState() {
     return {
       code: this.code,

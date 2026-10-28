@@ -2,6 +2,7 @@
 
 import * as THREE from 'three';
 import { MAP } from '../../shared/map.js';
+import { getWallLayout } from '../../shared/world.js';
 
 const KIND_STYLE = {
   ground: { color: 0x56704a, roughness: 1 },
@@ -29,7 +30,8 @@ export function buildMap(scene) {
   const group = new THREE.Group();
   const meshesById = new Map();
 
-  for (const b of MAP.boxes) {
+  // Destructible interior walls are drawn as panels by DestructionView.
+  for (const b of getWallLayout().staticBoxes) {
     const sx = b.max[0] - b.min[0], sy = b.max[1] - b.min[1], sz = b.max[2] - b.min[2];
     const mesh = new THREE.Mesh(unitBox, material(b.kind));
     mesh.scale.set(sx, sy, sz);

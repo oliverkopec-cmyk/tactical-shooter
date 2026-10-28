@@ -89,6 +89,8 @@ export function resolveShot({ shooterId, shooter, input, world, players, history
       head: hit ? hit.head : false,
       damage: hit ? damageAtDistance(w, hit.t, hit.head) : 0,
       wall: !hit && !!wallHit,
+      panelId: !hit && wallHit?.box.kind === 'panel' ? wallHit.box.id : null,
+      panelDamage: w.damage,
     });
   }
   return { origin, pellets };
