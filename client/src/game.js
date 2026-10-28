@@ -18,6 +18,8 @@ import { Effects } from './effects.js';
 import { Audio } from './audio.js';
 import { DestructionView } from './destruction.js';
 import { DroneView } from './drones.js';
+import { GadgetView } from './gadgets.js';
+import { OPERATORS } from '../../shared/operators.js';
 import { DRONE } from '../../shared/drone.js';
 
 const FOV = 78;
@@ -46,6 +48,13 @@ export class Game {
     this.audio = new Audio();
     this.destruction = new DestructionView(this.scene, this.world, this.effects, this.audio);
     this.drones = new DroneView(this.scene, this.effects, this.audio);
+    this.gadgets = new GadgetView(this.scene, this.world);
+    this.picks = {};
+    this.abilityCdEnd = 0;
+    this.stunUntil = 0;
+    this.stunMs = 0;
+    this.camView = null;      // { rec, index } while a defender watches a camera
+    this.wasSelecting = false;
     this.loadout = { charges: 0, placed: false };
     this.reinforcementsLeft = TEAM_REINFORCEMENTS;
     this.reinforcing = null; // { start, ms }
@@ -112,7 +121,21 @@ export class Game {
       this.reinforcing = null;
       if (reason) this.ui.toast(reason);
     });
-    network.on('loadout', (l) => { this.loadout = l; });
+    network.on('loadout', (l) => { this.loadout = l; this.abilityCdEnd = performance.now() + (l.ability?.cdLeft || 0); });
+    network.on('opPicks', ({ picks }) => { this.picks = picks; });
+    network.on('gadgetAdd', (rec) => { if (this.running) this.gadgets.add(rec); });
+    network.on('gadgetRemove', ({ kind, id }) => this.gadgets.remove(kind, id));
+    network.on('stunned', ({ ms }) => {
+      this.stunUntil = performance.now() + ms;
+      this.stunMs = ms;
+      this.audio.beep(3200, 0.5, 0.12, 'sine');
+    });
+    network.on('grenadeExploded', ({ pos }) => {
+      if (!this.running) return;
+      this.effects.flash(pos);
+      this.audio.explosion(pos, this.listener());
+    });
+    network.on('camView', (msg) => this.onCamView(msg));
     network.on('actionError', ({ msg }) => this.ui.toast(msg));
   }
 
@@ -150,7 +173,7 @@ export class Game {
       onShot: (shot) => this.onLocalShot(shot),
       renderTime: () => this.network.renderTime(),
       canFireUnlocked: () => this.lockFailed,
-      mask: (keys) => maskKeys(keys, this.myTeam, this.round.phase),
+      mask: (keys) => maskKeys(keys, this.myTeam, this.round.phase, !!this.local?.viewLocked),
       collisionWorld: () => (this.myTeam === 'defense' && this.round.phase === PHASE.PREP ? this.world.barrierView : this.world),
       onDigit: (n) => this.pickSpawn(n),
     });
@@ -171,11 +194,16 @@ export class Game {
     this.capture = { p: 0, c: false };
     this.spawnChoice = me.spawnChoice || 1;
     this.health = me.health ?? MAX_HEALTH;
-    this.loadout = { charges: me.charges ?? 0, placed: !!me.placed };
+    this.loadout = { ...this.loadout, op: me.operator, charges: me.charges ?? 0, placed: !!me.placed };
     this.reinforcing = null;
+    this.picks = payload.picks || {};
+    this.stunUntil = 0;
+    this.exitCam();
 
     const d = payload.destruction || {};
     this.world.applySnapshot(d.world);
+    this.gadgets.clear();
+    for (const rec of payload.gadgets || []) this.gadgets.add(rec);
     this.destruction.syncAll();
     this.destruction.clearCharges();
     for (const c of d.charges || []) this.destruction.addCharge(c);
@@ -251,6 +279,8 @@ export class Game {
 
   stop() {
     this.drones.clear();
+    this.gadgets.clear();
+    this.ui.showOperatorSelect(false);
     this.ui.setDroneHud(false, '');
     this.ui.hideRoundEnd();
     this.ui.hideDeath();
@@ -289,7 +319,9 @@ export class Game {
     const myId = this.network.id;
     const drones = snap.drones || [];
     this.drones.sync(drones, myId);
+    this.gadgets.syncGrenades(snap.grenades || []);
     const myDrone = drones.find((d) => d.o === myId && d.a) || null;
+    this.droneJammed = !!myDrone?.j;
     if (this.local?.alive) this.local.setDrone(myDrone);
     for (const p of snap.players) {
       if (p.id === this.network.id) {
@@ -369,6 +401,7 @@ export class Game {
     if (victim === myId && this.local) {
       this.local.die();
       this.reinforcing = null;
+      this.exitCam();
       this.health = 0;
       const s = this.local.state;
       this.enterSpectate(`Eliminated by ${name(killer).name}`, { x: s.x, y: s.y, z: s.z, yaw: this.local.aimYaw });
@@ -452,9 +485,62 @@ export class Game {
     if (this.reinforcing) progress = Math.min(1, (now - this.reinforcing.start) / this.reinforcing.ms);
     this.ui.setProgress(progress, 'Reinforcing…');
 
-    this.ui.updateGadgets(attack
-      ? { label: 'Breach charge', key: 'G', value: this.loadout.placed ? 'Planted: press G to detonate' : `×${this.loadout.charges}` }
-      : { label: 'Team reinforcements', key: 'V', value: `${this.reinforcementsLeft} left` }, local.alive);
+    // Operator + ability panel
+    const op = OPERATORS[this.loadout.op];
+    const lines = [];
+    const cfg = op?.ability, ab = this.loadout.ability;
+    if (cfg && ab) {
+      let value;
+      if (cfg.cooldown) {
+        const cd = Math.ceil(Math.max(0, this.abilityCdEnd - performance.now()) / 1000);
+        value = cd > 0 ? `recharging ${cd}s` : 'ready';
+      } else {
+        value = `×${ab.charges}`;
+        if (ab.deployed) value += cfg.id === 'shield' ? ' · deployed, F picks up' : ' · planted, F detonates';
+      }
+      lines.push({ key: 'F', label: cfg.name, value });
+    }
+    if (attack) lines.push({ key: 'G', label: 'Breach charge', value: this.loadout.placed ? 'planted, G detonates' : `×${this.loadout.charges}` });
+    else {
+      lines.push({ key: 'V', label: 'Team reinforcements', value: `${this.reinforcementsLeft}` });
+      lines.push({ key: 'C', label: 'Cameras', value: `${this.gadgets.cameras().length}` });
+    }
+    this.ui.updateGadgets(op, lines, local.alive);
+
+    // Stun white-out
+    const stunLeft = Math.max(0, (this.stunUntil - performance.now()) / 1000), total = this.stunMs / 1000;
+    this.ui.setStun(stunLeft > total * 0.5 ? 1 : stunLeft / (total * 0.5 || 1));
+  }
+
+  // ---------------------------------------------------------------- hidden cameras (defenders)
+
+  onCamView({ index, cam, count }) {
+    if (!this.local) return;
+    if (cam) {
+      this.camView = { rec: cam, index, count };
+      this.local.lockView(true);
+    } else this.exitCam();
+  }
+
+  exitCam() {
+    this.camView = null;
+    this.local?.lockView(false);
+  }
+
+  /** Place the render camera at the watched feed; the mouse pans a little around its fixed heading. */
+  applyCamView() {
+    const { rec } = this.camView;
+    const lock = this.local.viewLocked;
+    if (!lock) return;
+    const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+    const clamp = (v, m) => Math.max(-m, Math.min(m, v));
+    const baseYaw = Math.atan2(-rec.dir[0], -rec.dir[2]);
+    const basePitch = Math.asin(Math.max(-1, Math.min(1, rec.dir[1])));
+    this.camera.position.set(rec.pos[0], rec.pos[1], rec.pos[2]);
+    this.camera.rotation.set(
+      clamp(basePitch + (this.local.pitch - lock.rawPitch), 1.2),
+      baseYaw + clamp(wrap(this.local.yaw - lock.rawYaw), 0.9), 0, 'YXZ',
+    );
   }
 
   droneInfo() {
@@ -468,7 +554,7 @@ export class Game {
     const { phase, endsAt, scores } = this.round;
     const serverNow = Date.now() + (this.network.serverOffset ?? 0);
     const left = Math.max(0, Math.ceil((endsAt - serverNow) / 1000));
-    const labels = { intro: 'GET READY', prep: 'PREP PHASE', action: 'ACTION', roundEnd: 'ROUND OVER' };
+    const labels = { intro: 'OPERATOR SELECT', prep: 'PREP PHASE', action: 'ACTION', roundEnd: 'ROUND OVER' };
     this.ui.updateRound({
       attack: scores.attack, defense: scores.defense,
       time: `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`,
@@ -509,10 +595,31 @@ export class Game {
       this.camera.position.set(sp.x, sp.y + 1.62, sp.z);
       this.camera.rotation.set(0, sp.yaw, 0, 'YXZ');
     }
-    this.viewModel.visible = local.alive && !inDrone && !noBody;
+    const watching = !!this.camView && local.alive;
+    this.viewModel.visible = local.alive && !inDrone && !noBody && !this.camView;
+    this.gadgets.watchCamera(watching ? this.camView.rec.id : null);
+    if (watching) this.applyCamView();
+
+    // Operator select: free the mouse so the cards can be clicked
+    const selecting = this.round.phase === PHASE.INTRO;
+    if (selecting && !this.wasSelecting && document.pointerLockElement) document.exitPointerLock();
+    this.wasSelecting = selecting;
+    const names = {};
+    for (const [id, m] of this.members) names[id] = m.name;
+    const left = Math.max(0, Math.ceil((this.round.endsAt - (Date.now() + (this.network.serverOffset ?? 0))) / 1000));
+    this.ui.showOperatorSelect(selecting && local.alive, {
+      team: this.myTeam, picks: this.picks, names, myId: this.network.id, myOp: this.loadout.op,
+      timeText: `${left}s`, onPick: (opId) => this.network.pickOperator(opId),
+    });
     this.ui.updateSpawnPicker(noBody && local.alive, this.spawnChoice);
     this.drones.update(dt);
-    this.ui.setDroneHud(inDrone, inDrone ? this.droneInfo() : '');
+    this.gadgets.update(dt);
+    this.ui.setDroneHud(
+      inDrone || watching,
+      watching ? `Camera ${this.camView.index + 1}/${this.gadgets.cameras().length} · C next camera · mouse pans · you can't move while watching` : (inDrone ? this.droneInfo() : ''),
+      watching ? '● CAMERA' : '● DRONE CAM',
+      inDrone && this.droneJammed,
+    );
     this.viewModel.setWeapon(local.weapon.id);
     const w = local.weaponDef;
     this.viewModel.update(dt, {

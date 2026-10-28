@@ -3,6 +3,7 @@
 import { MAX_PER_TEAM, MAX_HEALTH } from '../../shared/constants.js';
 import { WEAPONS } from '../../shared/weapons.js';
 import { MAP } from '../../shared/map.js';
+import { operatorsFor } from '../../shared/operators.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -156,14 +157,63 @@ export class UI {
     setTimeout(() => li.remove(), 6600);
   }
 
-  updateGadgets({ label, key, value }, alive) {
-    const sig = `${label}|${key}|${value}|${alive}`;
+  /** op: operator config; lines: [{ key, label, value }] */
+  updateGadgets(op, lines, alive) {
+    const sig = `${op?.id}|${alive}|${lines.map((l) => `${l.key}${l.label}${l.value}`).join('|')}`;
     if (sig === this.lastGadget) return;
     this.lastGadget = sig;
     $('gadget-box').classList.toggle('hidden', !alive);
-    $('gadget-label').textContent = label;
-    $('gadget-key').textContent = key;
-    $('gadget-value').textContent = value;
+    $('op-name').textContent = op ? op.name : '';
+    $('op-swatch').style.background = op ? `#${op.color.toString(16).padStart(6, '0')}` : 'transparent';
+    const box = $('gadget-lines');
+    box.innerHTML = '';
+    for (const l of lines) {
+      const row = document.createElement('div');
+      row.className = 'gadget-row';
+      row.innerHTML = `<span class="keycap">${l.key}</span> <span class="gadget-label">${l.label}</span> <b>${l.value}</b>`;
+      box.appendChild(row);
+    }
+  }
+
+  /** White-out after a stun grenade. frac 1 = fully blind, 0 = clear. */
+  setStun(frac) {
+    const v = Math.round(frac * 100) / 100;
+    if (v === this.lastStun) return;
+    this.lastStun = v;
+    $('stun-overlay').style.opacity = String(v);
+  }
+
+  // ---------------------------------------------------------------- operator select
+
+  showOperatorSelect(on, { team, picks, names, myId, myOp, timeText, onPick } = {}) {
+    const el = $('op-select');
+    el.classList.toggle('hidden', !on);
+    this.hud.classList.toggle('selecting', on);
+    if (!on) { this.lastSelect = null; return; }
+    $('op-timer').textContent = timeText;
+    const sig = JSON.stringify([team, picks, myOp]);
+    if (sig === this.lastSelect) return;
+    this.lastSelect = sig;
+    const cards = $('op-cards');
+    cards.innerHTML = '';
+    const pips = (n) => '●'.repeat(n) + '○'.repeat(3 - n);
+    for (const op of operatorsFor(team)) {
+      const holderId = Object.keys(picks || {}).find((id) => picks[id].op === op.id && picks[id].confirmed && id !== myId);
+      const taken = op.unique && !!holderId;
+      const card = document.createElement('button');
+      card.className = `op-card${op.id === myOp ? ' selected' : ''}${taken ? ' taken' : ''}`;
+      card.disabled = taken;
+      const w = WEAPONS[op.weapon];
+      card.innerHTML = `
+        <div class="op-color" style="background:#${op.color.toString(16).padStart(6, '0')}"></div>
+        <div class="op-name">${op.name}</div>
+        <div class="op-weapon">${w.kind} · ${w.name}</div>
+        <div class="op-stats"><span>SPEED ${pips(op.speed)}</span><span>ARMOR ${pips(op.armor)}</span></div>
+        <div class="op-ab">${op.ability ? `<b>${op.ability.name}</b><br>${op.ability.desc}` : '<i>No special ability</i>'}</div>
+        <div class="op-who">${taken ? `Taken by ${names[holderId] || 'a teammate'}` : (op.id === myOp ? 'Your pick' : (op.unique ? '' : 'Unlimited'))}</div>`;
+      card.addEventListener('click', () => onPick(op.id));
+      cards.appendChild(card);
+    }
   }
 
   setPrompt(text) {
@@ -221,7 +271,9 @@ export class UI {
     });
   }
 
-  setDroneHud(on, info) {
+  setDroneHud(on, info, title = '● DRONE CAM', jammed = false) {
+    $('drone-overlay').classList.toggle('jammed', on && jammed);
+    $('drone-hud').querySelector('.drone-title').textContent = jammed ? '● SIGNAL JAMMED' : title;
     if (on !== this.droneOn) {
       this.droneOn = on;
       $('drone-overlay').classList.toggle('hidden', !on);

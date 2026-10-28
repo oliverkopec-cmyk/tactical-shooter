@@ -306,7 +306,6 @@ button.ghost { background: transparent; }
 
 /* ---------------------------------------------------------------- gadgets */
 #gadget-box { left: 16px; bottom: 132px; min-width: 150px; }
-#gadget-value { font-weight: 700; }
 .keycap {
   display: inline-block;
   min-width: 20px;
@@ -463,3 +462,64 @@ button.ghost { background: transparent; }
 }
 .spawn-opt.selected { background: var(--attack); border-color: var(--attack); color: #1a0e04; }
 .spawn-opt.selected .keycap { border-color: rgba(26, 14, 4, 0.6); }
+
+/* ---------------------------------------------------------------- operators */
+#op-chip { display: flex; align-items: center; gap: 8px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 4px; }
+#op-swatch { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.gadget-row { font-size: 13px; margin-top: 3px; white-space: nowrap; }
+.gadget-label { color: var(--muted); }
+
+#stun-overlay { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; }
+#drone-overlay.jammed {
+  background:
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.28) 0 2px, rgba(0, 0, 0, 0.55) 2px 5px),
+    rgba(10, 10, 10, 0.55);
+  animation: jam-flicker 0.12s steps(2) infinite;
+}
+@keyframes jam-flicker { 50% { opacity: 0.8; } }
+
+#op-select {
+  position: absolute;
+  inset: 0;
+  background: rgba(8, 10, 14, 0.9);
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  padding: 20px;
+  z-index: 8;
+}
+.op-head { display: flex; align-items: baseline; gap: 18px; }
+.op-title { font-size: 26px; font-weight: 900; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); }
+#op-timer { font-size: 24px; font-weight: 800; font-variant-numeric: tabular-nums; }
+#op-cards { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; max-width: 1100px; }
+.op-card {
+  width: 190px;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 0 12px;
+  border-radius: 10px;
+  border: 2px solid var(--line);
+  background: rgba(255, 255, 255, 0.05);
+  font-weight: 400;
+  overflow: hidden;
+}
+.op-card:hover:not(:disabled) { border-color: rgba(255, 255, 255, 0.5); }
+.op-card.selected { border-color: var(--accent); background: rgba(240, 180, 60, 0.12); }
+.op-card.taken { opacity: 0.4; }
+.op-card > :not(.op-color) { padding: 0 12px; }
+.op-color { height: 8px; }
+.op-name { font-size: 20px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; margin-top: 4px; }
+.op-weapon { font-size: 12px; color: var(--muted); }
+.op-stats { display: flex; flex-direction: column; font-size: 11px; letter-spacing: 0.08em; color: var(--muted); }
+.op-stats span { display: flex; justify-content: space-between; }
+.op-ab { font-size: 12px; line-height: 1.35; min-height: 84px; }
+.op-ab b { color: var(--accent); }
+.op-who { font-size: 11px; color: var(--accent); min-height: 14px; }
+.op-foot { color: var(--muted); font-size: 13px; text-align: center; max-width: 560px; }
+
+#hud.selecting #click-to-play { display: none; }

@@ -22,10 +22,10 @@ const KEY_BINDINGS = {
   KeyE: KEY.LEAN_RIGHT,
   KeyR: KEY.RELOAD,
 };
-// Temporary weapon selection for testing until operators pick weapons (stage 6)
-const WEAPON_KEYS = { Digit1: 1, Digit2: 2, Digit3: 3 };
+// Keys 1-3 choose the attacker entry point during prep (weapons come from the operator now)
+const DIGIT_KEYS = { Digit1: 1, Digit2: 2, Digit3: 3 };
 // One-shot actions sent as events: breach charge (attack), reinforce (defense)
-const ACTION_KEYS = { KeyG: 'breach', KeyV: 'reinforce', KeyX: 'droneNext' };
+const ACTION_KEYS = { KeyG: 'breach', KeyV: 'reinforce', KeyX: 'droneNext', KeyF: 'ability', KeyC: 'camView' };
 
 const MOUSE_SENSITIVITY = 0.0022;
 const TWO_PI = Math.PI * 2;
@@ -63,7 +63,7 @@ export class LocalPlayer {
     this.recoil = { pitch: 0, yaw: 0 };
     this.keys = 0;
     this.tapped = 0;     // keys pressed since the last frame, so quick taps aren't lost
-    this.wsel = 0;
+    this.viewLocked = null;  // while watching a camera: the body keeps this facing
     this.seq = 0;
     this.pending = [];   // inputs sent but not yet acknowledged by the server
     this.outbox = [];    // inputs waiting for the next network send
@@ -103,8 +103,7 @@ export class LocalPlayer {
   // browsers or embedded views where pointer lock is unavailable.
   handleKey(e, down) {
     if (down && e.target instanceof HTMLInputElement) return;
-    if (down && WEAPON_KEYS[e.code] && this.onDigit?.(WEAPON_KEYS[e.code])) return;
-    if (down && WEAPON_KEYS[e.code]) { this.wsel = WEAPON_KEYS[e.code]; return; }
+    if (down && DIGIT_KEYS[e.code]) { this.onDigit?.(DIGIT_KEYS[e.code]); return; }
     if (ACTION_KEYS[e.code]) {
       if (down && !e.repeat && this.alive) this.sendAction(ACTION_KEYS[e.code]);
       return;
@@ -160,12 +159,13 @@ export class LocalPlayer {
       while (remaining > 1e-4) {
         const dt = Math.min(remaining, MAX_INPUT_DT);
         remaining -= dt;
+        const lock = this.viewLocked;
         const input = {
           seq: this.seq++, dt, keys,
-          yaw: droneMode ? this.yaw : this.aimYaw, pitch: droneMode ? this.pitch : this.aimPitch,
+          yaw: lock ? lock.yaw : droneMode ? this.yaw : this.aimYaw,
+          pitch: lock ? lock.pitch : droneMode ? this.pitch : this.aimPitch,
           drone: droneMode,
         };
-        if (this.wsel) { input.wsel = this.wsel; this.wsel = 0; }
         if (keys & KEY.FIRE) input.rt = Math.round(this.renderTime());
         this.simulate(input, true);
         this.pending.push(input);
@@ -192,6 +192,15 @@ export class LocalPlayer {
     if (this.alive) this.updateCamera();
   }
 
+  /** Start/stop watching a camera feed: the body keeps its facing, the mouse only moves the feed. */
+  lockView(on) {
+    if (on && !this.viewLocked) this.viewLocked = { yaw: this.aimYaw, pitch: this.aimPitch, rawYaw: this.yaw, rawPitch: this.pitch };
+    else if (!on && this.viewLocked) {
+      this.yaw = this.viewLocked.rawYaw; this.pitch = this.viewLocked.rawPitch;
+      this.viewLocked = null;
+    }
+  }
+
   /** Flush pending inputs first so the server judges the action with our latest aim. */
   sendAction(type) {
     if (this.outbox.length) this.network.sendInputs(this.outbox.splice(0, 30));
@@ -202,7 +211,7 @@ export class LocalPlayer {
   /** Run one input through movement + weapon. Effects only on the first (live) run. */
   simulate(input, live) {
     if (input.drone) {
-      if (this.droneState) stepDrone(this.droneState, input, input.dt, this.world);
+      if (this.droneState && !this.droneJammed) stepDrone(this.droneState, input, input.dt, this.world);
       return;
     }
     stepPlayer(this.state, input, input.dt, this.collisionWorld());
@@ -254,12 +263,14 @@ export class LocalPlayer {
     while (this.pending.length && this.pending[0].seq <= serverState.seq) this.pending.shift();
 
     const s = this.state;
-    for (const key of ['x', 'y', 'z', 'vx', 'vy', 'vz', 'crouch', 'lean', 'onGround']) s[key] = serverState[key];
+    for (const key of ['x', 'y', 'z', 'vx', 'vy', 'vz', 'crouch', 'lean', 'onGround', 'slow']) s[key] = serverState[key];
     if (serverState.w) Object.assign(this.weapon, serverState.w);
+    if (serverState.sm) s.speedMul = serverState.sm;   // operator speed rating can change during select
     const ds = this.droneState;
     if (ds && droneEntry && droneEntry.id === this.droneId) {
       for (const k of ['x', 'y', 'z', 'vx', 'vy', 'vz']) ds[k] = droneEntry[k];
       ds.onGround = !!droneEntry.g;
+      this.droneJammed = !!droneEntry.j;
     }
     for (const input of this.pending) this.simulate(input, false);
 

@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { TEAM_COLORS, LEAN_OFFSET, STAND_EYE } from '../../shared/constants.js';
 import { bodyHeight } from '../../shared/movement.js';
 import { makeGunModel } from './weapons.js';
+import { OPERATORS } from '../../shared/operators.js';
 
 const LEAN_ANGLE = Math.atan2(LEAN_OFFSET, STAND_EYE);
 const BUFFER_MS = 1000;
@@ -70,6 +71,7 @@ export class RemotePlayer {
     const color = TEAM_COLORS[team] ?? 0xffffff;
     const bodyMat = new THREE.MeshStandardMaterial({ color, roughness: 0.7 });
     const darkMat = new THREE.MeshStandardMaterial({ color: 0x1d2228, roughness: 0.5 });
+    this.visorMat = new THREE.MeshStandardMaterial({ color: 0x1d2228, roughness: 0.4, emissive: 0x000000 });
 
     this.root = new THREE.Group();        // at the feet, rotated by yaw
     this.lean = new THREE.Group();        // tilts around the feet
@@ -82,7 +84,7 @@ export class RemotePlayer {
     this.head = new THREE.Group();
     const skull = new THREE.Mesh(new THREE.SphereGeometry(0.17, 16, 12), bodyMat);
     skull.castShadow = true;
-    const visor = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.08, 0.06), darkMat);
+    const visor = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.08, 0.06), this.visorMat);
     visor.position.set(0, 0.02, -0.16);
     this.head.add(skull, visor);
     this.lean.add(this.head);
@@ -115,6 +117,14 @@ export class RemotePlayer {
     scene.add(this.root);
   }
 
+  /** Tint the visor with the operator's colour. */
+  setOperator(opId) {
+    if (!opId || opId === this.operatorId) return;
+    this.operatorId = opId;
+    const op = OPERATORS[opId];
+    if (op) this.visorMat.color.setHex(op.color);
+  }
+
   setWeapon(id) {
     if (!id || id === this.weaponId) return;
     this.weaponId = id;
@@ -141,6 +151,7 @@ export class RemotePlayer {
 
   push(t, s) {
     if (s.w) this.setWeapon(s.w.id);
+    if (s.o) this.setOperator(s.o);
     // Coming back to life: don't interpolate from the death spot to the spawn.
     // (attackers have no body during prep: u = not spawned yet)
     const present = s.alive !== false && !s.u;

@@ -71,7 +71,7 @@ export const TEAM_COLORS = {
 
 // Rounds
 export const PHASE = { INTRO: 'intro', PREP: 'prep', ACTION: 'action', ROUND_END: 'roundEnd' };
-export const INTRO_MS = 6000;             // operator select goes here in stage 6
+export const INTRO_MS = 20000;            // operator select
 export const PREP_MS = 30000;
 export const ACTION_MS = 180000;
 export const ROUND_END_MS = 6000;
@@ -84,3 +84,12 @@ export const CAPTURE_TIME = 10;           // seconds attackers must hold the obj
 export const DRONES_PER_ATTACKER = 1;     // operators change this in stage 6 (Hawk gets 3)
 export const SPOT_DURATION_MS = 3000;     // how long a pinged enemy stays marked for the attackers
 export const PING_COOLDOWN_MS = 400;
+
+// Operator gadgets
+export const SHIELD = { width: 1.9, height: 1.5, thickness: 0.14, distance: 1.1 };
+export const WIRE = { size: 1.8, height: 0.5, slow: 0.4, reach: 3.5 };
+export const JAMMER_RANGE = 5;
+export const CAMERA_REACH = 4.5;
+export const STUN = { speed: 13, fuse: 1.5, radius: 7, duration: 4, slow: 0.45, cooldown: 0.8 };
+export const GADGET_REACH = 3.5;
+export const HAWK_MISS_COOLDOWN_MS = 1500;
