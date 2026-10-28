@@ -2,7 +2,7 @@
 
 A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite on the client, Node.js + Socket.IO on an authoritative server. One Node process serves both the game client and the realtime server, so the whole thing deploys as a single Render web service.
 
-## Status: Stage 2 (shooting)
+## Status: Stage 3 (destruction)
 
 - Enter a name, create a room (4-letter code) or join one
 - Pick Attack or Defense in the lobby (max 5 per team); the host starts the match
@@ -14,6 +14,9 @@ A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite o
 - Health, death, spectating teammates, and a temporary 5 s respawn until the round system lands
 - HUD: health, ammo, dynamic crosshair, hit markers, damage direction, kill feed
 - Keys 1/2/3 switch weapon for testing until operators choose weapons
+- Interior walls are grids of ~0.5 m panels; bullets knock panels out, synced to everyone
+- Attackers carry 1 breach charge (G to plant on a wall, G again to detonate)
+- Defenders reinforce wall sections (V, 10 per team): darker, immune to bullets and basic charges; only a heavy charge (Spark, stage 6) breaks them
 
 ## Run locally
 
@@ -43,11 +46,13 @@ shared/            Code used by BOTH client and server
   movement.js      deterministic movement + collision (prediction and authority)
   weapons.js       weapon stats + deterministic ammo/fire-rate/reload/spread
   raycast.js       ray tests against the map and player hitboxes
+  world.js         destructible wall panels/sections + the collidable world
 server/
   index.js         Express static hosting + Socket.IO events
   rooms.js         room codes, join/leave, teams, host
   gameState.js     authoritative simulation and snapshots per room
   combat.js        pose history (lag compensation) and shot resolution
+  destruction.js   panel damage, breach charges, reinforcement
 client/
   index.html       lobby screens + HUD markup
   src/main.js      wires UI, network, game
@@ -57,7 +62,8 @@ client/
   src/avatars.js   other players: bodies, guns, name tags, interpolation
   src/weapons.js   first-person gun models, recoil/reload animation
   src/effects.js   tracers, bullet holes, impact puffs
-  src/audio.js     synthesised gunshots and UI sounds
+  src/audio.js     synthesised gunshots, explosions and UI sounds
+  src/destruction.js  instanced wall panels, charges, explosions
   src/map.js       renders the shared map, lighting
   src/ui.js        lobby and HUD DOM
 ```
@@ -70,6 +76,10 @@ client/
 - The local player rewinds to the server state and replays unacknowledged inputs; any small difference is smoothed out over a few frames.
 - Other players are drawn 100 ms in the past, interpolated between snapshots.
 - Firing is part of the input stream, so ammo, fire rate and spread are simulated identically on both sides (spread uses a PRNG seeded by the input number). Each firing input carries the time the shooter was viewing other players at; the server rewinds targets to that moment (at most 350 ms) and tests the ray against their hitboxes and the map.
+
+## Destruction
+
+Every interior wall piece in `shared/map.js` is split into a grid of panels by `shared/world.js`. Panel ids and sections are derived deterministically from the map, so the server only broadcasts which panels were destroyed and which sections were reinforced; the client applies the same changes to its copy of the world so movement prediction and raycasts see the holes. Players joining mid-match receive the current wall state.
 
 ## Deploying to Render
 

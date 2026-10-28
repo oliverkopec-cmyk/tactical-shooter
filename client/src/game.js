@@ -1,10 +1,12 @@
 // Owns the Three.js scene and the per-frame loop for a running match.
 
 import * as THREE from 'three';
-import { MAP } from '../../shared/map.js';
-import { MAX_HEALTH, MAX_SHOT_RANGE, RESPAWN_MS } from '../../shared/constants.js';
+import {
+  MAX_HEALTH, MAX_SHOT_RANGE, RESPAWN_MS, CHARGE_REACH, REINFORCE_REACH, TEAM_REINFORCEMENTS,
+} from '../../shared/constants.js';
 import { getEyePosition } from '../../shared/movement.js';
-import { currentSpread } from '../../shared/weapons.js';
+import { currentSpread, aimDirection } from '../../shared/weapons.js';
+import { World } from '../../shared/world.js';
 import { raycastWorld, rayPlayer } from '../../shared/raycast.js';
 import { buildMap, setupLighting } from './map.js';
 import { LocalPlayer } from './player.js';
@@ -12,6 +14,7 @@ import { RemotePlayer } from './avatars.js';
 import { ViewModel } from './weapons.js';
 import { Effects } from './effects.js';
 import { Audio } from './audio.js';
+import { DestructionView } from './destruction.js';
 
 const FOV = 78;
 const TRACER_OFFSET = new THREE.Vector3(0.2, -0.17, -0.9); // muzzle, roughly, in camera space
@@ -32,11 +35,15 @@ export class Game {
     this.scene.add(this.camera);
     setupLighting(this.scene);
     this.map = buildMap(this.scene);
-    this.world = { boxes: MAP.boxes };
+    this.world = new World();
 
     this.viewModel = new ViewModel();
     this.effects = new Effects(this.scene);
     this.audio = new Audio();
+    this.destruction = new DestructionView(this.scene, this.world, this.effects, this.audio);
+    this.loadout = { charges: 0, placed: false };
+    this.reinforcementsLeft = TEAM_REINFORCEMENTS;
+    this.reinforcing = null; // { start, ms }
 
     this.local = null;
     this.remotes = new Map();
@@ -65,6 +72,30 @@ export class Game {
     network.on('damaged', (msg) => this.onDamaged(msg));
     network.on('kill', (msg) => this.onKill(msg));
     network.on('respawn', (msg) => this.onRespawn(msg));
+
+    // Destruction
+    network.on('panelsDestroyed', ({ ids }) => { if (this.running) this.destruction.destroyPanels(ids); });
+    network.on('chargePlaced', (c) => { if (this.running) this.destruction.addCharge(c); });
+    network.on('chargeRemoved', ({ id }) => this.destruction.removeCharge(id));
+    network.on('chargeExploded', (msg) => {
+      if (!this.running) return;
+      this.destruction.explode(msg, this.listener());
+      const d = Math.hypot(msg.pos[0] - this.camera.position.x, msg.pos[2] - this.camera.position.z);
+      this.shake = Math.max(this.shake || 0, Math.max(0, 1 - d / 15) * 0.6);
+    });
+    network.on('reinforced', ({ section, left }) => {
+      if (!this.running) return;
+      this.destruction.reinforce(section);
+      this.reinforcementsLeft = left;
+      if (this.reinforcing?.section === section) this.reinforcing = null;
+    });
+    network.on('reinforceStart', ({ section, ms }) => { this.reinforcing = { section, start: performance.now(), ms }; });
+    network.on('reinforceCancel', ({ reason }) => {
+      this.reinforcing = null;
+      if (reason) this.ui.toast(reason);
+    });
+    network.on('loadout', (l) => { this.loadout = l; });
+    network.on('actionError', ({ msg }) => this.ui.toast(msg));
   }
 
   lockPointer() {
@@ -103,6 +134,15 @@ export class Game {
       canFireUnlocked: () => this.lockFailed,
     });
     this.health = me.health ?? MAX_HEALTH;
+    this.loadout = { charges: me.charges ?? 0, placed: !!me.placed };
+    this.reinforcing = null;
+
+    const d = payload.destruction || {};
+    this.world.applySnapshot(d.world);
+    this.destruction.syncAll();
+    this.destruction.clearCharges();
+    for (const c of d.charges || []) this.destruction.addCharge(c);
+    this.reinforcementsLeft = d.reinforcementsLeft ?? TEAM_REINFORCEMENTS;
     for (const p of payload.players) if (p.id !== myId) this.addRemote(p);
 
     this.running = true;
@@ -173,7 +213,7 @@ export class Game {
       const end = [origin[0] + d[0] * maxT, origin[1] + d[1] * maxT, origin[2] + d[2] * maxT];
       this.effects.tracer([muzzle.x, muzzle.y, muzzle.z], end);
       if (hitPlayer) this.effects.blood(end);
-      else if (wall) this.effects.bulletHole(wall.point, wall.normal);
+      else if (wall) this.effects.bulletHole(wall.point, wall.normal, wall.box.kind === 'panel' ? wall.box.id : null);
     }
     this.viewModel.fire(weaponId);
     this.audio.shot(weaponId, null, null);
@@ -191,7 +231,7 @@ export class Game {
       if (len < 0.01) continue;
       const dir = [d[0] / len, d[1] / len, d[2] / len];
       const wall = raycastWorld(this.world, from, dir, len + 0.1);
-      if (wall && wall.t > len - 0.2) this.effects.bulletHole(wall.point, wall.normal);
+      if (wall && wall.t > len - 0.2) this.effects.bulletHole(wall.point, wall.normal, wall.box.kind === 'panel' ? wall.box.id : null);
     }
     this.audio.shot(w, from, this.listener());
   }
@@ -222,6 +262,7 @@ export class Game {
     if (victimAvatar) victimAvatar.alive = false; // hide now rather than at the next snapshot
     if (victim === myId && this.local) {
       this.local.die();
+      this.reinforcing = null;
       this.health = 0;
       const s = this.local.state;
       this.spectate = { index: 0, target: null, respawnAt: performance.now() + RESPAWN_MS, deathPos: { x: s.x, y: s.y, z: s.z, yaw: this.local.aimYaw } };
@@ -276,6 +317,36 @@ export class Game {
     }
   }
 
+  /** Gadget counters, the "press G / V" prompt for the wall you're aiming at, and progress. */
+  updateGadgetHud(now) {
+    const local = this.local;
+    const attack = this.myTeam === 'attack';
+    let prompt = '';
+    if (local.alive) {
+      const eye = getEyePosition(local.state, this.world);
+      const reach = attack ? CHARGE_REACH : REINFORCE_REACH;
+      const hit = raycastWorld(this.world, [eye.x, eye.y, eye.z], aimDirection(local.aimYaw, local.aimPitch), reach);
+      const panel = hit?.box.kind === 'panel' ? hit.box : null;
+      if (attack && !this.loadout.placed && panel) {
+        if (this.world.isReinforcedPanel(panel.id)) prompt = 'Reinforced wall: breach charges won\'t break it';
+        else if (this.loadout.charges > 0) prompt = 'Press G to plant a breach charge';
+      } else if (!attack && panel && !this.reinforcing) {
+        const section = this.world.sections[panel.sectionId];
+        if (this.world.reinforced[section.id]) prompt = 'Reinforced';
+        else if (section.reinforceable && this.reinforcementsLeft > 0) prompt = 'Press V to reinforce this wall';
+      }
+    }
+    this.ui.setPrompt(prompt);
+
+    let progress = null;
+    if (this.reinforcing) progress = Math.min(1, (now - this.reinforcing.start) / this.reinforcing.ms);
+    this.ui.setProgress(progress, 'Reinforcing…');
+
+    this.ui.updateGadgets(attack
+      ? { label: 'Breach charge', key: 'G', value: this.loadout.placed ? 'Planted: press G to detonate' : `×${this.loadout.charges}` }
+      : { label: 'Team reinforcements', key: 'V', value: `${this.reinforcementsLeft} left` }, local.alive);
+  }
+
   listener() {
     return { x: this.camera.position.x, z: this.camera.position.z, yaw: this.local?.aimYaw ?? 0 };
   }
@@ -313,7 +384,16 @@ export class Game {
     this.ui.setCrosshairGap(3 + (Math.tan(spread) / Math.tan(halfFov)) * (window.innerHeight / 2));
     this.ui.updateCombat({ health: this.health, weapon: local.weapon, alive: local.alive });
 
+    this.updateGadgetHud(now);
+    this.destruction.update(dt);
     this.effects.update(dt);
+
+    // Explosion camera shake
+    if (this.shake > 0.001 && local.alive) {
+      this.camera.rotation.x += (Math.random() - 0.5) * this.shake * 0.08;
+      this.camera.rotation.y += (Math.random() - 0.5) * this.shake * 0.08;
+      this.shake *= Math.exp(-6 * dt);
+    }
     this.renderer.render(this.scene, this.camera);
     this.viewModel.render(this.renderer);
     this.ui.updateStats(dt, this.network.ping, local);

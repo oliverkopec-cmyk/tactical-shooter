@@ -79,6 +79,38 @@ export class Audio {
     osc.stop(t + duration + 0.02);
   }
 
+  /** Low rumbling boom: long filtered noise plus a falling sine thump. */
+  explosion(pos, listener) {
+    const ctx = this.ctx;
+    if (!ctx || ctx.state !== 'running') return;
+    let gain = 1.0;
+    if (pos && listener) gain /= 1 + Math.hypot(pos[0] - listener.x, pos[2] - listener.z) * 0.06;
+    const t = ctx.currentTime;
+    const src = ctx.createBufferSource();
+    src.buffer = this.noise;
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(1200, t);
+    filter.frequency.exponentialRampToValueAtTime(60, t + 0.45);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(gain, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.48);
+    src.connect(filter).connect(g).connect(this.master);
+    src.start(t);
+    src.stop(t + 0.5);
+    const osc = ctx.createOscillator();
+    osc.frequency.setValueAtTime(110, t);
+    osc.frequency.exponentialRampToValueAtTime(30, t + 0.4);
+    const og = ctx.createGain();
+    og.gain.setValueAtTime(gain * 0.8, t);
+    og.gain.exponentialRampToValueAtTime(0.001, t + 0.45);
+    osc.connect(og).connect(this.master);
+    osc.start(t);
+    osc.stop(t + 0.5);
+  }
+
+  clank() { this.beep(180, 0.12, 0.2, 'square'); setTimeout(() => this.beep(140, 0.15, 0.2, 'square'), 90); }
+
   hit(head) { this.beep(head ? 1800 : 1100, 0.06, 0.12, 'triangle'); }
   kill() { this.beep(660, 0.09, 0.15, 'triangle'); setTimeout(() => this.beep(990, 0.12, 0.15, 'triangle'), 70); }
   hurt() { this.beep(120, 0.15, 0.3, 'sawtooth'); }

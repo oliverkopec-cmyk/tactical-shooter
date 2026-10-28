@@ -23,6 +23,8 @@ const KEY_BINDINGS = {
 };
 // Temporary weapon selection for testing until operators pick weapons (stage 6)
 const WEAPON_KEYS = { Digit1: 1, Digit2: 2, Digit3: 3 };
+// One-shot actions sent as events: breach charge (attack), reinforce (defense)
+const ACTION_KEYS = { KeyG: 'breach', KeyV: 'reinforce' };
 
 const MOUSE_SENSITIVITY = 0.0022;
 const TWO_PI = Math.PI * 2;
@@ -37,7 +39,7 @@ export class LocalPlayer {
    * opts.renderTime() gives the time remote players are currently drawn at.
    * opts.canFireUnlocked() says whether clicks should fire without pointer lock.
    */
-  constructor({ id, team, state, weapon, world, network, camera, canvas, onShot, renderTime, canFireUnlocked }) {
+  constructor({ id, team, state, weapon, world, network, camera, canvas, onShot, renderTime, canFireUnlocked, onAction }) {
     this.id = id;
     this.team = team;
     this.world = world;
@@ -47,6 +49,7 @@ export class LocalPlayer {
     this.onShot = onShot;
     this.renderTime = renderTime;
     this.canFireUnlocked = canFireUnlocked;
+    this.onAction = onAction;
 
     this.state = copyPlayerState(state || createPlayerState({ x: 0, y: 0, z: 0 }));
     this.weapon = copyWeaponState(weapon || createWeaponState());
@@ -94,6 +97,10 @@ export class LocalPlayer {
   handleKey(e, down) {
     if (down && e.target instanceof HTMLInputElement) return;
     if (down && WEAPON_KEYS[e.code]) { this.wsel = WEAPON_KEYS[e.code]; return; }
+    if (ACTION_KEYS[e.code]) {
+      if (down && !e.repeat && this.alive) this.sendAction(ACTION_KEYS[e.code]);
+      return;
+    }
     const bit = KEY_BINDINGS[e.code];
     if (!bit) return;
     e.preventDefault();
@@ -162,6 +169,13 @@ export class LocalPlayer {
     this.smoothing.x *= k; this.smoothing.y *= k; this.smoothing.z *= k;
 
     if (this.alive) this.updateCamera();
+  }
+
+  /** Flush pending inputs first so the server judges the action with our latest aim. */
+  sendAction(type) {
+    if (this.outbox.length) this.network.sendInputs(this.outbox.splice(0, 30));
+    this.network.sendAction(type);
+    this.onAction?.(type);
   }
 
   /** Run one input through movement + weapon. Effects only on the first (live) run. */

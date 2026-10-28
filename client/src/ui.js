@@ -155,6 +155,39 @@ export class UI {
     setTimeout(() => li.remove(), 6600);
   }
 
+  updateGadgets({ label, key, value }, alive) {
+    const sig = `${label}|${key}|${value}|${alive}`;
+    if (sig === this.lastGadget) return;
+    this.lastGadget = sig;
+    $('gadget-box').classList.toggle('hidden', !alive);
+    $('gadget-label').textContent = label;
+    $('gadget-key').textContent = key;
+    $('gadget-value').textContent = value;
+  }
+
+  setPrompt(text) {
+    if (text === this.lastPrompt) return;
+    this.lastPrompt = text;
+    $('prompt').textContent = text;
+    $('prompt').classList.toggle('hidden', !text);
+  }
+
+  /** frac in 0..1, or null to hide */
+  setProgress(frac, label) {
+    $('progress').classList.toggle('hidden', frac === null);
+    if (frac === null) return;
+    $('progress-label').textContent = label;
+    $('progress-bar').style.width = `${Math.round(frac * 100)}%`;
+  }
+
+  toast(msg) {
+    const el = $('toast');
+    el.textContent = msg;
+    el.classList.remove('hidden');
+    clearTimeout(this.toastTimer);
+    this.toastTimer = setTimeout(() => el.classList.add('hidden'), 2200);
+  }
+
   showDeath(title, sub) {
     $('death-overlay').classList.remove('hidden');
     $('death-title').textContent = title;

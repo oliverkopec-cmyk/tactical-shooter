@@ -57,6 +57,10 @@ io.on('connection', (socket) => {
     socket.data.room?.handleInputs(socket.id, batch);
   });
 
+  socket.on('action', (type) => {
+    if (type === 'breach' || type === 'reinforce') socket.data.room?.handleAction(socket.id, type);
+  });
+
   socket.on('netPing', (ack) => reply(ack));
   socket.on('leaveRoom', () => socket.data.room?.remove(socket));
   socket.on('disconnect', () => socket.data.room?.remove(socket));
