@@ -27,6 +27,8 @@ const DIGIT_KEYS = { Digit1: 1, Digit2: 2, Digit3: 3 };
 // One-shot actions sent as events: breach charge (attack), reinforce (defense)
 const ACTION_KEYS = { KeyG: 'breach', KeyV: 'reinforce', KeyX: 'droneNext', KeyF: 'ability', KeyC: 'camView' };
 
+import { settings } from './settings.js';
+
 const MOUSE_SENSITIVITY = 0.0022;
 const TWO_PI = Math.PI * 2;
 const MAX_VIEW_PITCH = 1.55;
@@ -135,8 +137,9 @@ export class LocalPlayer {
   // Mouse look: free movement when the pointer is locked, click-and-drag otherwise.
   handleMouse(e) {
     if (!this.pointerLocked && !this.dragging) return;
-    this.yaw = wrapAngle(this.yaw - e.movementX * MOUSE_SENSITIVITY);
-    this.pitch = clampPitch(this.pitch - e.movementY * MOUSE_SENSITIVITY);
+    const k = MOUSE_SENSITIVITY * settings.sensitivity;
+    this.yaw = wrapAngle(this.yaw - e.movementX * k);
+    this.pitch = clampPitch(this.pitch - e.movementY * k);
   }
 
   get aimYaw() {

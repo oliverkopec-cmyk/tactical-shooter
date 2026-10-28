@@ -9,6 +9,7 @@ const ui = new UI();
 const game = new Game(document.getElementById('game'), network, ui);
 
 let room = null;
+ui.bindCopyCode();
 ui.show('home');
 
 ui.bindHome({

@@ -3,7 +3,8 @@
 import { MAX_PER_TEAM, MAX_HEALTH } from '../../shared/constants.js';
 import { WEAPONS } from '../../shared/weapons.js';
 import { MAP } from '../../shared/map.js';
-import { operatorsFor } from '../../shared/operators.js';
+import { operatorsFor, OPERATORS } from '../../shared/operators.js';
+import { settings, setSetting } from './settings.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -16,6 +17,93 @@ export class UI {
 
     const saved = localStorageGet('breachline:name');
     if (saved) $('name-input').value = saved;
+    this.bindSettings();
+  }
+
+  // ---------------------------------------------------------------- settings
+
+  bindSettings() {
+    const fmt = { sensitivity: (v) => `${Number(v).toFixed(2)}×`, volume: (v) => `${Math.round(v * 100)}%`, fov: (v) => `${Math.round(v)}°` };
+    for (const name of Object.keys(fmt)) {
+      const input = $(`set-${name}`);
+      input.value = settings[name];
+      $(`val-${name}`).textContent = fmt[name](settings[name]);
+      input.addEventListener('input', () => {
+        setSetting(name, input.value);
+        $(`val-${name}`).textContent = fmt[name](settings[name]);
+      });
+    }
+    for (const btn of document.querySelectorAll('.settings-open')) btn.addEventListener('click', () => this.openSettings(false));
+    $('settings-close').addEventListener('click', () => { this.closeSettings(); this.onSettingsClosed?.(); });
+  }
+
+  /** inGame: opened by Esc during a match (shows the resume hint). */
+  openSettings(inGame) {
+    $('settings').classList.remove('hidden');
+    $('settings-title').textContent = inGame ? 'Paused' : 'Settings';
+    $('settings-hint').classList.toggle('hidden', !inGame);
+    this.settingsInGame = inGame;
+  }
+
+  closeSettings() {
+    $('settings').classList.add('hidden');
+    this.settingsInGame = false;
+  }
+
+  get settingsOpen() {
+    return !$('settings').classList.contains('hidden');
+  }
+
+  // ---------------------------------------------------------------- in-game extras
+
+  setHint(text) {
+    if (text === this.lastHint) return;
+    this.lastHint = text;
+    $('controls-hint').textContent = text;
+  }
+
+  toggleHint() {
+    $('controls-hint').classList.toggle('off');
+  }
+
+  banner(title, sub = '', ms = 2600) {
+    const el = $('banner');
+    $('banner-title').textContent = title;
+    $('banner-sub').textContent = sub;
+    el.classList.remove('hidden');
+    el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
+    clearTimeout(this.bannerTimer);
+    this.bannerTimer = setTimeout(() => el.classList.add('hidden'), ms);
+  }
+
+  setLowHealth(on) {
+    this.hud.classList.toggle('lowhp', on);
+  }
+
+  /** Tab scoreboard. rows: [{ id, name, team, k, d, alive, op, me }] */
+  renderBoard(visible, rows, scores) {
+    const el = $('board');
+    el.classList.toggle('hidden', !visible);
+    if (!visible) return;
+    const table = (team, title, score) => {
+      const list = rows.filter((r) => r.team === team).sort((a, b) => b.k - a.k || a.d - b.d);
+      const body = list.map((r) => `
+        <tr class="${r.me ? 'me' : ''}${r.alive ? '' : ' dead'}">
+          <td class="nm">${escapeHtml(r.name)}</td><td class="opn">${r.op ? escapeHtml(OPERATORS[r.op]?.name || '') : '—'}</td>
+          <td>${r.k}</td><td>${r.d}</td></tr>`).join('');
+      return `<div class="board-team ${team}"><h3>${title} <span>${score}</span></h3>
+        <table><thead><tr><th>Player</th><th>Operator</th><th>K</th><th>D</th></tr></thead><tbody>${body}</tbody></table></div>`;
+    };
+    el.innerHTML = `<div class="board-inner">${table('attack', 'Attack', scores.attack)}${table('defense', 'Defense', scores.defense)}</div>`;
+  }
+
+  /** Lobby: copy the room code to the clipboard. */
+  bindCopyCode() {
+    $('copy-code').addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText($('room-code').textContent); $('copy-code').textContent = 'Copied!'; }
+      catch { $('copy-code').textContent = 'Select the code to copy'; }
+      setTimeout(() => { $('copy-code').textContent = 'Copy code'; }, 1500);
+    });
   }
 
   show(screen) {
@@ -53,6 +141,9 @@ export class UI {
 
   renderLobby(room, myId) {
     $('room-code').textContent = room.code;
+    for (const t of ['attack', 'defense']) {
+      $(`count-${t}`).textContent = `${room.players.filter((p) => p.team === t).length}/${MAX_PER_TEAM}`;
+    }
     $('hud-room').textContent = `ROOM ${room.code}`;
     const me = room.players.find((p) => p.id === myId);
     const isHost = room.hostId === myId;
@@ -342,4 +433,8 @@ function localStorageGet(key) {
 }
 function localStorageSet(key, value) {
   try { localStorage.setItem(key, value); } catch { /* storage unavailable */ }
+}
+
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
