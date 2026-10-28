@@ -67,6 +67,8 @@ export class GameState {
       alive: joinsAlive,
       charges: member.team === 'attack' ? BASIC_CHARGES : 0,
       placedCharge: null,
+      kills: 0,
+      deaths: 0,
       operator: defaultOperator(member.team),
       opConfirmed: false,     // picked on the select screen this round
       ability: null,          // { charges, cdUntil, shieldId } for the current operator
@@ -504,6 +506,17 @@ export class GameState {
     this.gadgets.exitCamera(victimId, victim);
     this.destruction.cancelReinforce(victimId, 'You were eliminated.');
     this.emitAll('kill', { killer: killerId, victim: victimId, weapon: weaponId, head });
+    victim.deaths++;
+    const killer = this.players.get(killerId);
+    if (killer && killerId !== victimId) killer.kills++;
+    this.emitAll('stats', this.statsPayload());
+  }
+
+  /** Kills and deaths for the whole match, shown on the Tab scoreboard. */
+  statsPayload() {
+    const out = {};
+    for (const [id, p] of this.players) out[id] = { k: p.kills, d: p.deaths };
+    return out;
   }
 
   broadcastSnapshot() {
@@ -532,6 +545,7 @@ export class GameState {
   /** Everything a client needs to (re)build the round. Hidden gadgets are filtered by team. */
   startPayload(team = 'attack') {
     return {
+      stats: this.statsPayload(),
       gadgets: this.gadgets.list(team),
       picks: this.picksFor(team),
       mapName: MAP.name,

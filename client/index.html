@@ -23,6 +23,7 @@
         <button id="join-btn">Join room</button>
       </div>
       <p id="home-error" class="error"></p>
+      <button class="ghost settings-open">Settings</button>
     </div>
   </div>
 
@@ -33,17 +34,21 @@
         <div>
           <div class="muted">Room code</div>
           <div id="room-code" class="room-code">----</div>
+          <button id="copy-code" class="ghost small">Copy code</button>
         </div>
-        <button id="leave-btn" class="ghost">Leave</button>
+        <div class="lobby-actions">
+          <button class="ghost settings-open">Settings</button>
+          <button id="leave-btn" class="ghost">Leave</button>
+        </div>
       </div>
       <div class="teams">
         <div class="team attack">
-          <h2>Attack</h2>
+          <h2>Attack <span id="count-attack" class="count"></span></h2>
           <ul id="team-attack"></ul>
           <button data-team="attack" class="team-btn">Join Attack</button>
         </div>
         <div class="team defense">
-          <h2>Defense</h2>
+          <h2>Defense <span id="count-defense" class="count"></span></h2>
           <ul id="team-defense"></ul>
           <button data-team="defense" class="team-btn">Join Defense</button>
         </div>
@@ -114,10 +119,29 @@
       <div id="death-sub"></div>
     </div>
 
-    <div id="controls-hint" class="hud-chip">
-      WASD move · Shift sprint · Ctrl/Z crouch · Q/E lean · Click fire · R reload · F ability · G breach charge (attack) · V reinforce (defense) · C camera (defense) · Drone: click ping, X switch · 1/2/3 spawn point (attack prep) · Esc release mouse
-    </div>
+    <div id="lowhp"></div>
+    <div id="banner" class="hidden"><div id="banner-title"></div><div id="banner-sub"></div></div>
+    <div id="board" class="hidden"></div>
+    <div id="controls-hint" class="hud-chip"></div>
     <div id="click-to-play" class="hidden">Click to capture the mouse (or drag to look around)</div>
+  </div>
+
+  <!-- Settings (home, lobby, and the in-game pause menu) -->
+  <div id="settings" class="hidden">
+    <div class="panel">
+      <h2 id="settings-title">Settings</h2>
+      <label>Mouse sensitivity <span id="val-sensitivity" class="muted"></span>
+        <input id="set-sensitivity" type="range" min="0.2" max="3" step="0.05" />
+      </label>
+      <label>Volume <span id="val-volume" class="muted"></span>
+        <input id="set-volume" type="range" min="0" max="1" step="0.05" />
+      </label>
+      <label>Field of view <span id="val-fov" class="muted"></span>
+        <input id="set-fov" type="range" min="60" max="100" step="1" />
+      </label>
+      <button id="settings-close" class="primary">Close</button>
+      <p id="settings-hint" class="muted center hidden">Press Esc or click Close to go back to the game.</p>
+    </div>
   </div>
 
   <script type="module" src="./src/main.js"></script>

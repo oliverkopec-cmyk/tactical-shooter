@@ -8,12 +8,18 @@ const SHOT_TONE = {
 };
 
 export class Audio {
-  constructor() {
+  constructor(volume = 0.5) {
+    this.volume = volume;
     this.ctx = null;
     this.noise = null;
     const unlock = () => this.ensure();
     window.addEventListener('pointerdown', unlock);
     window.addEventListener('keydown', unlock);
+  }
+
+  setVolume(v) {
+    this.volume = v;
+    if (this.master) this.master.gain.value = v;
   }
 
   ensure() {
@@ -22,7 +28,7 @@ export class Audio {
       if (!Ctx) return null;
       this.ctx = new Ctx();
       this.master = this.ctx.createGain();
-      this.master.gain.value = 0.5;
+      this.master.gain.value = this.volume;
       this.master.connect(this.ctx.destination);
       const len = this.ctx.sampleRate * 0.5;
       this.noise = this.ctx.createBuffer(1, len, this.ctx.sampleRate);

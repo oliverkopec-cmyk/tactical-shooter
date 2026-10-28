@@ -20,9 +20,9 @@ import { DestructionView } from './destruction.js';
 import { DroneView } from './drones.js';
 import { GadgetView } from './gadgets.js';
 import { OPERATORS } from '../../shared/operators.js';
+import { settings, onSettingsChange } from './settings.js';
 import { DRONE } from '../../shared/drone.js';
 
-const FOV = 78;
 const TRACER_OFFSET = new THREE.Vector3(0.2, -0.17, -0.9); // muzzle, roughly, in camera space
 
 export class Game {
@@ -37,7 +37,7 @@ export class Game {
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
     this.scene = new THREE.Scene();
-    this.camera = new THREE.PerspectiveCamera(FOV, 1, 0.05, 300);
+    this.camera = new THREE.PerspectiveCamera(settings.fov, 1, 0.05, 300);
     this.scene.add(this.camera);
     setupLighting(this.scene);
     this.map = buildMap(this.scene);
@@ -45,7 +45,7 @@ export class Game {
 
     this.viewModel = new ViewModel();
     this.effects = new Effects(this.scene);
-    this.audio = new Audio();
+    this.audio = new Audio(settings.volume);
     this.destruction = new DestructionView(this.scene, this.world, this.effects, this.audio);
     this.drones = new DroneView(this.scene, this.effects, this.audio);
     this.gadgets = new GadgetView(this.scene, this.world);
@@ -80,7 +80,23 @@ export class Game {
     });
     // Ctrl+click is a right-click on macOS; don't let crouch-firing open a menu.
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
-    document.addEventListener('pointerlockchange', () => this.ui.setPointerLocked(!!document.pointerLockElement));
+    document.addEventListener('pointerlockchange', () => {
+      const locked = !!document.pointerLockElement;
+      this.ui.setPointerLocked(locked);
+      // Esc released the mouse during play: show the pause menu (settings)
+      if (!locked && this.hadLock && this.running && this.round.phase !== PHASE.INTRO && !this.ui.settingsOpen) this.ui.openSettings(true);
+      this.hadLock = locked;
+    });
+    this.ui.onSettingsClosed = () => { if (this.running && this.round.phase !== PHASE.INTRO) this.lockPointer(); };
+    onSettingsChange((name, v) => {
+      if (name === 'fov') { this.camera.fov = v; this.camera.updateProjectionMatrix(); }
+      if (name === 'volume') this.audio.setVolume(v);
+    });
+    this.stats = {};
+    this.boardOn = false;
+    window.addEventListener('keydown', (e) => this.onKeyDown(e));
+    window.addEventListener('keyup', (e) => { if (e.code === 'Tab') this.boardOn = false; });
+    window.addEventListener('blur', () => { this.boardOn = false; });
     document.addEventListener('pointerlockerror', () => { this.lockFailed = true; });
 
     network.on('snapshot', (snap) => this.onSnapshot(snap));
@@ -122,6 +138,7 @@ export class Game {
       if (reason) this.ui.toast(reason);
     });
     network.on('loadout', (l) => { this.loadout = l; this.abilityCdEnd = performance.now() + (l.ability?.cdLeft || 0); });
+    network.on('stats', (s) => { this.stats = s; });
     network.on('opPicks', ({ picks }) => { this.picks = picks; });
     network.on('gadgetAdd', (rec) => { if (this.running) this.gadgets.add(rec); });
     network.on('gadgetRemove', ({ kind, id }) => this.gadgets.remove(kind, id));
@@ -197,6 +214,7 @@ export class Game {
     this.loadout = { ...this.loadout, op: me.operator, charges: me.charges ?? 0, placed: !!me.placed };
     this.reinforcing = null;
     this.picks = payload.picks || {};
+    if (payload.stats) this.stats = payload.stats;
     this.stunUntil = 0;
     this.exitCam();
 
@@ -249,8 +267,49 @@ export class Game {
     return true;
   }
 
+  onKeyDown(e) {
+    if (!this.running) return;
+    if (e.code === 'Tab') { e.preventDefault(); this.boardOn = true; }
+    else if (e.code === 'KeyH' && !e.repeat && !(e.target instanceof HTMLInputElement)) this.ui.toggleHint();
+    else if (e.code === 'Escape' && this.ui.settingsOpen && this.ui.settingsInGame) { this.ui.closeSettings(); this.ui.onSettingsClosed(); }
+  }
+
+  /** Short, context-sensitive reminder of what the keys do right now. */
+  hintText(watching, inDrone) {
+    const phase = this.round.phase, attack = this.myTeam === 'attack';
+    if (phase === PHASE.INTRO) return 'Choose your operator. Anyone who hasn\'t picked is assigned one.';
+    if (!this.local.alive) return 'Click to switch teammate · Tab scoreboard · H hide this';
+    if (watching) return 'C next camera · mouse pans the feed · you can\'t move while watching';
+    if (inDrone) return 'Drone: WASD drive · Shift fast · click ping enemy · X switch · 1/2/3 spawn point · Tab scoreboard';
+    const base = 'WASD move · Shift sprint · Ctrl/Z crouch · Q/E lean · R reload';
+    const f = OPERATORS[this.loadout.op]?.ability ? ' · F ability' : '';
+    if (attack) return phase === PHASE.PREP ? 'Fly your drone: 1/2/3 choose where you appear' : `${base}${f} · G breach charge · Tab scoreboard · H hide`;
+    return `${base}${f} · ${phase === PHASE.PREP ? 'V reinforce · ' : ''}C cameras · Tab scoreboard · H hide`;
+  }
+
+  /** Rows for the Tab scoreboard. */
+  boardRows() {
+    const rows = [];
+    for (const [id, m] of this.members) {
+      const me = id === this.network.id;
+      const r = this.remotes.get(id);
+      rows.push({
+        id, me, name: m.name, team: m.team,
+        k: this.stats[id]?.k ?? 0, d: this.stats[id]?.d ?? 0,
+        alive: me ? this.local.alive : (r ? r.alive : true),
+        op: m.team === this.myTeam ? this.picks[id]?.op : null,
+      });
+    }
+    return rows;
+  }
+
   onPhase(info) {
     this.round = info;
+    if (info.phase === PHASE.PREP) {
+      this.ui.banner('Prep phase', this.myTeam === 'attack' ? 'Fly your drone and choose where you appear (1/2/3)' : 'Reinforce walls and set up your gadgets');
+    } else if (info.phase === PHASE.ACTION) {
+      this.ui.banner('Action!', this.myTeam === 'attack' ? 'Hold the objective room for 10 s, or eliminate every defender' : 'Stop them until the clock runs out');
+    }
     if (info.phase === PHASE.PREP && this.myTeam === 'defense') this.ui.toast('Prep: the building exits are sealed until the action phase');
     if (info.phase === PHASE.ACTION) this.audio.beep(990, 0.25, 0.2, 'square');
     else if (info.phase === PHASE.PREP) this.audio.beep(740, 0.12, 0.15, 'triangle');
@@ -620,6 +679,10 @@ export class Game {
       watching ? '● CAMERA' : '● DRONE CAM',
       inDrone && this.droneJammed,
     );
+    this.ui.setLowHealth(local.alive && this.health > 0 && this.health <= 30);
+    this.ui.setHint(this.hintText(watching, inDrone));
+    this.ui.renderBoard(this.boardOn, this.boardRows(), this.round.scores);
+
     this.viewModel.setWeapon(local.weapon.id);
     const w = local.weaponDef;
     this.viewModel.update(dt, {
@@ -633,7 +696,7 @@ export class Game {
     this.wasReloading = local.weapon.reload > 0;
 
     const spread = currentSpread(local.weapon, s);
-    const halfFov = THREE.MathUtils.degToRad(FOV / 2);
+    const halfFov = THREE.MathUtils.degToRad(this.camera.fov / 2);
     this.ui.setCrosshairGap(inDrone ? 5 : 3 + (Math.tan(spread) / Math.tan(halfFov)) * (window.innerHeight / 2));
     this.ui.updateCombat({ health: this.health, weapon: local.weapon, alive: local.alive });
 

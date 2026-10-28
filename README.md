@@ -2,7 +2,7 @@
 
 A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite on the client, Node.js + Socket.IO on an authoritative server. One Node process serves both the game client and the realtime server, so the whole thing deploys as a single Render web service.
 
-## Status: Stage 6 (operators)
+## Status: Stage 7 (UI and polish)
 
 - Enter a name, create a room (4-letter code) or join one
 - Pick Attack or Defense in the lobby (max 5 per team); the host starts the match
@@ -11,9 +11,8 @@ A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite o
 - Two-storey map with interior and exterior stairs, a balcony, and the objective box
 - Hitscan weapons (rifle, SMG, shotgun) with recoil, spread, magazines and reload (R)
 - Server-side, lag-compensated hit detection; headshots deal extra damage
-- Health, death, spectating teammates, and a temporary 5 s respawn until the round system lands
+- Health, death and spectating teammates until the round ends
 - HUD: health, ammo, dynamic crosshair, hit markers, damage direction, kill feed
-- Keys 1/2/3 switch weapon for testing until operators choose weapons
 - Interior walls are grids of ~0.5 m panels; bullets knock panels out, synced to everyone
 - Attackers carry 1 breach charge (G to plant on a wall, G again to detonate)
 - Round flow: get ready (6 s) → prep (30 s) → action (3 min) → score screen; first team to 4 rounds wins the match, then everyone returns to the lobby
@@ -39,7 +38,15 @@ A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite o
 - During the 30 s prep phase every attacker pilots a rolling drone (WASD, mouse, Shift to go faster; X switches drone when an operator has several) while their body waits in spawn; drones are recalled when the action phase starts
 - Drones fit through doors and windows and climb stairs. Defenders can shoot them (40 HP: two rifle shots)
 - The pilot left-clicks to ping an enemy under the crosshair (30 m, clear line of sight, about 4° aim tolerance): a small red marker shows above that enemy's head for 3 s for the whole attacking team. Only the marker shows through walls, never the body
+- Polish: **Tab** shows a scoreboard (kills, deaths, your team's operators), **Esc** opens a pause menu with sensitivity, volume and field-of-view sliders (also on the home and lobby screens, saved in your browser), **H** hides the key hints (which change with your role and phase), round and phase banners, a low-health glow, a "Copy code" button and player counts in the lobby
 - Defenders reinforce wall sections (V, 10 per team): darker, immune to bullets and basic charges; only a heavy charge (Spark, stage 6) breaks them
+
+## Roadmap: Stage 8 (planned, not started)
+
+- **No shooting or aiming while sprinting.** Pressing fire while sprinting stops the sprint first, with a short delay before the shot can happen.
+- **Map decorations:** furniture, crates and props inside and outside the building, some of them usable as cover.
+- **Door and window barricades:** during prep, defenders place a wooden barricade on a doorway or window (**B**, takes 1 second). Bullets and melee break it panel by panel, and a breach charge destroys it instantly. This stage also adds a **melee attack**.
+- **Better player models:** a simple but proper humanoid with head, torso, arms and legs, holding the gun, replacing the current basic shapes.
 
 ## Run locally
 
