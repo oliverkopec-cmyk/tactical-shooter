@@ -63,6 +63,8 @@ io.on('connection', (socket) => {
 
   socket.on('pickOperator', (opId) => socket.data.room?.game?.pickOperator(socket.id, String(opId)));
 
+  socket.on('voteSite', (i) => socket.data.room?.game?.voteSite(socket.id, i));
+
   socket.on('spawnChoice', (n) => socket.data.room?.game?.setSpawnChoice(socket.id, n));
 
   socket.on('netPing', (ack) => reply(ack));

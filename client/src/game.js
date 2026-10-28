@@ -19,6 +19,7 @@ import { Audio } from './audio.js';
 import { DestructionView } from './destruction.js';
 import { DroneView } from './drones.js';
 import { GadgetView } from './gadgets.js';
+import { Soundscape } from './soundscape.js';
 import { findOpening } from '../../shared/map.js';
 import { OPERATORS } from '../../shared/operators.js';
 import { settings, onSettingsChange } from './settings.js';
@@ -47,10 +48,13 @@ export class Game {
     this.viewModel = new ViewModel();
     this.effects = new Effects(this.scene);
     this.audio = new Audio(settings.volume);
+    this.sound = new Soundscape(this);
     this.destruction = new DestructionView(this.scene, this.world, this.effects, this.audio);
     this.drones = new DroneView(this.scene, this.effects, this.audio);
     this.gadgets = new GadgetView(this.scene, this.world);
     this.picks = {};
+    this.siteIndex = null;                 // the objective site this player knows about
+    this.siteVotes = { counts: [0, 0, 0], mine: null };
     this.barricadesLeft = BARRICADE.pool;
     this.abilityCdEnd = 0;
     this.stunUntil = 0;
@@ -119,8 +123,17 @@ export class Game {
     network.on('roundEnd', (msg) => this.onRoundEnd(msg));
 
     // Destruction
-    network.on('panelsDestroyed', ({ ids }) => { if (this.running) this.destruction.destroyPanels(ids); });
-    network.on('chargePlaced', (c) => { if (this.running) this.destruction.addCharge(c); });
+    network.on('panelsDestroyed', ({ ids }) => {
+      if (!this.running) return;
+      this.destruction.destroyPanels(ids);
+      const first = this.world.panels[ids[0]];
+      if (first) this.sound.plasterBreak(first.center);
+    });
+    network.on('chargePlaced', (c) => {
+      if (!this.running) return;
+      this.destruction.addCharge(c);
+      this.sound.placed('charge', c.pos);
+    });
     network.on('chargeRemoved', ({ id }) => this.destruction.removeCharge(id));
     network.on('chargeExploded', (msg) => {
       if (!this.running) return;
@@ -147,11 +160,31 @@ export class Game {
       if (!this.running) return;
       const centers = this.gadgets.breakPanels(id, ids);
       for (const c of centers) this.effects.debris(c, 0x8a5a2b, 3);
-      if (centers.length) this.audio.clank(centers[0]);
+      if (centers.length) this.sound.woodBreak(centers[0]);
     });
-    network.on('melee', ({ id }) => { this.remotes.get(id)?.swing(); });
+    network.on('melee', ({ id }) => {
+      const r = this.remotes.get(id);
+      if (!r) return;
+      r.swing();
+      this.sound.melee([r.pose.x, r.pose.y + 1.2, r.pose.z]);
+    });
+    network.on('siteVotes', (v) => { this.siteVotes = v; });
+    network.on('siteChosen', ({ site }) => { this.siteIndex = site; });
+    network.on('siteFound', ({ site }) => {
+      if (!this.running) return;
+      const found = this.siteIndex === null;
+      this.siteIndex = site;
+      if (found) {
+        this.ui.banner('Objective found', MAP.sites[site].name, 3200);
+        this.audio.beep(1240, 0.18, 0.2, 'triangle');
+      } else if (this.myTeam === 'defense') this.ui.toast('The attackers have found the objective');
+    });
     network.on('opPicks', ({ picks }) => { this.picks = picks; });
-    network.on('gadgetAdd', (rec) => { if (this.running) this.gadgets.add(rec); });
+    network.on('gadgetAdd', (rec) => {
+      if (!this.running) return;
+      this.gadgets.add(rec);
+      this.sound.placed(rec.kind, gadgetPosition(rec));
+    });
     network.on('gadgetRemove', ({ kind, id }) => this.gadgets.remove(kind, id));
     network.on('cameraDestroyed', ({ pos }) => {
       if (!this.running) return;
@@ -236,6 +269,8 @@ export class Game {
     this.loadout = { ...this.loadout, op: me.operator, charges: me.charges ?? 0, placed: !!me.placed };
     this.reinforcing = null;
     this.picks = payload.picks || {};
+    this.siteIndex = payload.site ?? null;
+    this.siteVotes = payload.siteVotes || { counts: [0, 0, 0], mine: null };
     this.barricadesLeft = payload.barricadesLeft ?? BARRICADE.pool;
     if (payload.stats) this.stats = payload.stats;
     this.stunUntil = 0;
@@ -306,7 +341,7 @@ export class Game {
     if (inDrone) return 'Drone: WASD drive · Shift fast · click ping enemy · X switch · 1/2/3 spawn point · Tab scoreboard';
     const base = 'WASD move · Shift sprint · Ctrl/Z crouch · Q/E lean · R reload · right-click melee';
     const f = OPERATORS[this.loadout.op]?.ability ? ' · F ability' : '';
-    if (attack) return phase === PHASE.PREP ? 'Fly your drone: 1/2/3 choose where you appear' : `${base}${f} · G breach charge · Tab scoreboard · H hide`;
+    if (attack) return phase === PHASE.PREP ? 'Fly your drone to find the objective · 1/2/3 choose where you appear' : `${base}${f} · G breach charge · Tab scoreboard · H hide`;
     return `${base}${f} · ${phase === PHASE.PREP ? 'V reinforce · B barricade · ' : ''}C cameras · Tab scoreboard · H hide`;
   }
 
@@ -329,9 +364,9 @@ export class Game {
   onPhase(info) {
     this.round = info;
     if (info.phase === PHASE.PREP) {
-      this.ui.banner('Prep phase', this.myTeam === 'attack' ? 'Fly your drone and choose where you appear (1/2/3)' : 'Reinforce walls and set up your gadgets');
+      this.ui.banner('Prep phase', this.myTeam === 'attack' ? 'Find the objective with your drones, and choose where you appear (1/2/3)' : 'Reinforce, barricade and set up your gadgets');
     } else if (info.phase === PHASE.ACTION) {
-      this.ui.banner('Action!', this.myTeam === 'attack' ? 'Hold the objective room for 10 s, or eliminate every defender' : 'Stop them until the clock runs out');
+      this.ui.banner('Action!', this.myTeam === 'attack' ? 'Hold the objective for 10 s, or eliminate every defender' : 'Stop them until the clock runs out');
     }
     if (info.phase === PHASE.PREP && this.myTeam === 'defense') this.ui.toast('Prep: the building exits are sealed until the action phase');
     if (info.phase === PHASE.ACTION) this.audio.beep(990, 0.25, 0.2, 'square');
@@ -653,12 +688,31 @@ export class Game {
     });
     const capturing = phase === PHASE.ACTION && this.capture.p > 0;
     this.ui.setCapture(capturing ? this.capture.p : null, this.capture.c);
-    this.map.zoneMat.color.set(this.capture.c ? 0xff7a45 : capturing ? 0xffee88 : 0xffc43a);
-    this.map.zoneMat.opacity = capturing ? 0.9 : 0.55;
+    // Only the site you know about is marked on the floor
+    this.map.sites.forEach((s, i) => { s.holder.visible = i === this.siteIndex; });
+    const zone = this.map.sites[this.siteIndex]?.mat;
+    if (zone) {
+      zone.color.set(this.capture.c ? 0xff7a45 : capturing ? 0xffee88 : 0xffc43a);
+      zone.opacity = capturing ? 0.9 : 0.55;
+    }
+    const known = this.siteIndex !== null ? MAP.sites[this.siteIndex] : null;
+    this.ui.setSiteChip(known ? `Objective: ${known.name}` : (this.myTeam === 'attack' ? 'Objective: unknown. Find it with your drones' : ''));
   }
 
+  /** Where you are listening from: your eyes, a drone, a camera feed or the player you spectate. */
   listener() {
-    return { x: this.camera.position.x, z: this.camera.position.z, yaw: this.local?.aimYaw ?? 0 };
+    const c = this.camera;
+    return { x: c.position.x, y: c.position.y, z: c.position.z, yaw: c.rotation.y };
+  }
+
+  /** false if a wall stands between you and a sound at pos (it will be quieter and duller). */
+  soundClear(pos) {
+    const c = this.camera.position;
+    const v = [pos[0] - c.x, pos[1] - c.y, pos[2] - c.z];
+    const dist = Math.hypot(...v);
+    if (dist < 1.5) return true;
+    const hit = raycastWorld(this.world, [c.x, c.y, c.z], v.map((k) => k / dist), dist);
+    return !hit || hit.t > dist - 0.4;
   }
 
   // ---------------------------------------------------------------- frame loop
@@ -696,6 +750,9 @@ export class Game {
     const names = {};
     for (const [id, m] of this.members) names[id] = m.name;
     const left = Math.max(0, Math.ceil((this.round.endsAt - (Date.now() + (this.network.serverOffset ?? 0))) / 1000));
+    this.ui.renderSiteVote(selecting && local.alive, {
+      team: this.myTeam, counts: this.siteVotes.counts, mine: this.siteVotes.mine, onVote: (i) => { this.siteVotes = { ...this.siteVotes, mine: i }; this.network.voteSite(i); },
+    });
     this.ui.showOperatorSelect(selecting && local.alive, {
       team: this.myTeam, picks: this.picks, names, myId: this.network.id, myOp: this.loadout.op,
       timeText: `${left}s`, onPick: (opId) => this.network.pickOperator(opId),
@@ -722,8 +779,7 @@ export class Game {
       lean: s.lean,
       reloadFrac: local.weapon.reload > 0 ? 1 - local.weapon.reload / w.reloadTime : -1,
     });
-    if (local.weapon.reload > 0 && !this.wasReloading) this.audio.reload();
-    this.wasReloading = local.weapon.reload > 0;
+    this.sound.update(dt);
 
     const spread = currentSpread(local.weapon, s);
     const halfFov = THREE.MathUtils.degToRad(this.camera.fov / 2);
@@ -746,4 +802,14 @@ export class Game {
     this.ui.updateStats(dt, this.network.ping, local);
     requestAnimationFrame((t) => this.frame(t));
   }
+}
+
+/** A rough centre for any gadget record, for positioning its placement sound. */
+function gadgetPosition(rec) {
+  if (rec.pos) return rec.pos;
+  if (rec.kind === 'wire') return [rec.x, rec.y + 0.2, rec.z];
+  const boxes = rec.kind === 'barricade' ? rec.panels : [rec];
+  const c = [0, 0, 0];
+  for (const b of boxes) for (let i = 0; i < 3; i++) c[i] += (b.min[i] + b.max[i]) / 2 / boxes.length;
+  return c;
 }

@@ -33,6 +33,10 @@ export class Network {
     this.socket.emit('inputs', batch);
   }
 
+  voteSite(index) {
+    this.socket.emit('voteSite', index);
+  }
+
   pickOperator(opId) {
     this.socket.emit('pickOperator', opId);
   }

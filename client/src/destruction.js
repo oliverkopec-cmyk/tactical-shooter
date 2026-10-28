@@ -105,7 +105,6 @@ export class DestructionView {
     group.lookAt(pos[0] + normal[0], pos[1] + normal[1], pos[2] + normal[2]);
     this.scene.add(group);
     this.charges.set(id, { group, led, owner });
-    this.audio.beep(1500, 0.05, 0.12);
   }
 
   removeCharge(id) {

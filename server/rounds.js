@@ -96,6 +96,7 @@ export class RoundManager {
         }
         if (now >= this.endsAt) {
           this.game.finalizeOperators();
+          this.game.finalizeSite();
           this.setPhase(PHASE.PREP, PREP_MS, now);
         }
         break;
@@ -141,7 +142,7 @@ export class RoundManager {
     const out = { attackersAlive: 0, defendersAlive: 0, attackersIn: 0, defendersIn: 0 };
     for (const p of this.game.players.values()) {
       if (!p.alive) continue;
-      const inZone = inObjectiveZone(MAP.objective, p.state);
+      const inZone = inObjectiveZone(this.game.activeSite(), p.state);
       if (p.member.team === 'attack') { out.attackersAlive++; if (inZone) out.attackersIn++; }
       else { out.defendersAlive++; if (inZone) out.defendersIn++; }
     }
