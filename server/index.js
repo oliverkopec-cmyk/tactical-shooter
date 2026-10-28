@@ -58,8 +58,10 @@ io.on('connection', (socket) => {
   });
 
   socket.on('action', (type) => {
-    if (type === 'breach' || type === 'reinforce' || type === 'droneNext' || type === 'ping') socket.data.room?.handleAction(socket.id, type);
+    if (type === 'breach' || type === 'reinforce' || type === 'droneNext' || type === 'ping' || type === 'ability' || type === 'camView') socket.data.room?.handleAction(socket.id, type);
   });
+
+  socket.on('pickOperator', (opId) => socket.data.room?.game?.pickOperator(socket.id, String(opId)));
 
   socket.on('spawnChoice', (n) => socket.data.room?.game?.setSpawnChoice(socket.id, n));
 

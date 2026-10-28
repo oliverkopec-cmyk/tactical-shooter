@@ -73,7 +73,7 @@ class Room {
     if (this.phase === 'match') {
       // Late joiners drop straight into the running match.
       this.game.addPlayer(member);
-      socket.emit('matchStart', this.game.startPayload());
+      socket.emit('matchStart', this.game.startPayload(member.team));
     }
     this.broadcastState();
     return member;
@@ -119,7 +119,7 @@ class Room {
     this.game = new GameState(this);
     for (const m of this.members.values()) this.game.addPlayer(m);
     this.game.start();
-    this.io.to(this.channel).emit('matchStart', this.game.startPayload());
+    for (const m of this.members.values()) this.io.to(m.id).emit('matchStart', this.game.startPayload(m.team));
     this.broadcastState();
     return {};
   }

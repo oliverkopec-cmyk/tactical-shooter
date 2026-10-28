@@ -96,6 +96,19 @@ export class Effects {
     this.live.push({ mesh: light, life: 0.25, maxLife: 0.25, kind: 'light' });
   }
 
+  /** White burst for a stun grenade. */
+  flash(pos) {
+    const burst = new THREE.Mesh(puffGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95, depthWrite: false }));
+    burst.position.set(...pos);
+    burst.userData.size = 1.6;
+    burst.scale.setScalar(0.8);
+    this.add(burst, 0.35, 'puff');
+    const light = new THREE.PointLight(0xffffff, 60, 16, 1.4);
+    light.position.set(...pos);
+    this.scene.add(light);
+    this.live.push({ mesh: light, life: 0.3, maxLife: 0.3, kind: 'light' });
+  }
+
   blood(point) {
     this.puff(point, 0xc0262b, 0.12);
   }

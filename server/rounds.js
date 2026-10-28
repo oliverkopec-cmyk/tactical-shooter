@@ -70,7 +70,11 @@ export class RoundManager {
     this.game.resetRound();
     this.phase = PHASE.INTRO;
     this.endsAt = now + ms(INTRO_MS);
-    this.game.emitAll('roundStart', { ...this.game.startPayload(), round: this.info() });
+    this.shortened = false;
+    for (const id of this.game.players.keys()) {
+      const team = this.game.players.get(id).member.team;
+      this.game.io.to(id).emit('roundStart', { ...this.game.startPayload(team), round: this.info() });
+    }
   }
 
   setPhase(phase, duration, now) {
@@ -84,7 +88,16 @@ export class RoundManager {
   update(now, dt) {
     switch (this.phase) {
       case PHASE.INTRO:
-        if (now >= this.endsAt) this.setPhase(PHASE.PREP, PREP_MS, now);
+        // Operator select ends when time is up, or shortly after everyone has chosen
+        if (!this.shortened && this.game.allPicked()) {
+          this.shortened = true;
+          this.endsAt = Math.min(this.endsAt, now + ms(2500));
+          this.game.emitAll('phase', this.info());
+        }
+        if (now >= this.endsAt) {
+          this.game.finalizeOperators();
+          this.setPhase(PHASE.PREP, PREP_MS, now);
+        }
         break;
       case PHASE.PREP:
         if (now >= this.endsAt) this.setPhase(PHASE.ACTION, ACTION_MS, now);

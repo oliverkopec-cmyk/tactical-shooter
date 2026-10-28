@@ -18,6 +18,8 @@ export function createPlayerState(spawn) {
     yaw: spawn.yaw || 0, pitch: 0,
     crouch: 0, lean: 0,
     onGround: true,
+    speedMul: 1,   // operator speed rating
+    slow: 1,       // temporary slow (barbed wire, stun), set by the server
   };
 }
 
@@ -156,7 +158,7 @@ export function stepPlayer(s, input, dt, world) {
   const leaning = (keys & (KEY.LEAN_LEFT | KEY.LEAN_RIGHT)) !== 0;
   const sprinting = (keys & KEY.SPRINT) && fwd > 0 && s.crouch < 0.5 && !leaning;
   const baseSpeed = sprinting ? SPRINT_SPEED : WALK_SPEED;
-  const speed = baseSpeed + (CROUCH_SPEED - baseSpeed) * s.crouch;
+  const speed = (baseSpeed + (CROUCH_SPEED - baseSpeed) * s.crouch) * (s.speedMul ?? 1) * (s.slow ?? 1);
 
   // Lean (not while sprinting)
   let leanTarget = 0;

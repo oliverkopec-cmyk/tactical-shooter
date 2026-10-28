@@ -2,7 +2,7 @@
 
 A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite on the client, Node.js + Socket.IO on an authoritative server. One Node process serves both the game client and the realtime server, so the whole thing deploys as a single Render web service.
 
-## Status: Stage 5 (drones)
+## Status: Stage 6 (operators)
 
 - Enter a name, create a room (4-letter code) or join one
 - Pick Attack or Defense in the lobby (max 5 per team); the host starts the match
@@ -20,6 +20,20 @@ A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite o
 - Attackers win by eliminating all defenders or holding the objective zone for 10 s (frozen while a defender contests it, reset if nobody holds it); defenders win by eliminating all attackers or running out the clock
 - Dead players spectate teammates until the round ends (no respawns); sides swap after round 3; late joiners wait for the next round
 - Breach charges only work in the action phase, wall reinforcement only in prep, and attackers wait in spawn during prep (drones arrive in stage 5)
+- Operator select (20 s, ends early once everyone has picked) before every round. One player per team per operator; a Recruit with no ability is always available for the 5th player. Each operator sets weapon, speed and armor ratings, and one ability on **F**:
+
+  | Operator | Weapon | Ability |
+  | --- | --- | --- |
+  | Spark (A) | Rifle | Heavy breach charge, 1 use. F plants, F detonates. Breaks reinforced walls |
+  | Hawk (A) | SMG | Sonar ping on a 8 s cooldown: pings the enemy under his crosshair exactly like a drone pilot does (marker over their head for 3 s, no outlines through walls). Also pilots 2 extra drones (3 total) |
+  | Bulwark (A) | Shotgun | Portable bulletproof shield, F deploys and F next to it picks it up |
+  | Flash (A) | Rifle | 3 stun grenades: blind and slow enemies in sight for 4 s |
+  | Warden (D) | Shotgun | 2 barbed wire traps that slow anyone walking through |
+  | Jammer (D) | SMG | Device that disables drones and breach charges within 5 m |
+  | Lookout (D) | Rifle | 2 hidden cameras, shown only to defenders; **C** cycles through the feeds |
+  | Mason (D) | Rifle | 2 extra wall reinforcements in prep, on top of the team's 10 |
+
+  Speed rating changes walking speed (-8% / 0 / +8%), armor rating changes damage taken (+15% / 0 / -15%).
 - Attackers have no body during prep, so nobody can camp them: they appear at one of three entry points around the outside of the map (West, South, East) when the action phase starts. They pick one from the drone cam with keys 1-3
 - Defenders are sealed inside the building during prep (invisible barriers fill every exterior door and window, for defenders in prep only)
 - During the 30 s prep phase every attacker pilots a rolling drone (WASD, mouse, Shift to go faster; X switches drone when an operator has several) while their body waits in spawn; drones are recalled when the action phase starts
@@ -57,6 +71,7 @@ shared/            Code used by BOTH client and server
   raycast.js       ray tests against the map and player hitboxes
   world.js         destructible wall panels/sections + the collidable world
   drone.js         drone physics (shared prediction + authority) and tuning
+  operators.js     OPERATOR CONFIG: one entry per operator (shared by client and server)
   rules.js         which inputs are allowed in each round phase, objective zone test
 server/
   index.js         Express static hosting + Socket.IO events
@@ -64,6 +79,7 @@ server/
   gameState.js     authoritative simulation and snapshots per room
   combat.js        pose history (lag compensation) and shot resolution
   destruction.js   panel damage, breach charges, reinforcement
+  abilities.js     ability handlers (F) and gadget state: shields, wire, jammers, cameras, grenades
   rounds.js        round/match state machine, scores, halftime, win conditions
 client/
   index.html       lobby screens + HUD markup
@@ -75,6 +91,7 @@ client/
   src/weapons.js   first-person gun models, recoil/reload animation
   src/effects.js   tracers, bullet holes, impact puffs
   src/audio.js     synthesised gunshots, explosions and UI sounds
+  src/gadgets.js   visuals for operator gadgets and grenades
   src/drones.js    drone models for everyone, smoothing, destroyed effect
   src/destruction.js  instanced wall panels, charges, explosions
   src/map.js       renders the shared map, lighting
@@ -93,6 +110,14 @@ client/
 ## Rounds
 
 `server/rounds.js` runs `intro → prep → action → roundEnd`. Scores belong to a *squad* (A starts attacking, B starts defending), so they follow the players when sides swap after round 3; the HUD shows them by current side. The server broadcasts `roundStart` (full reset: map, spawns, health, charges), `phase` and `roundEnd` events plus the capture progress inside each snapshot. Phase rules in `shared/rules.js` are applied by both the server and the client's prediction, so frozen players don't rubber-band. Set `TIME_SCALE=0.1` when starting the server to run every phase 10× faster for testing.
+
+## Adding an operator
+
+1. Add one entry to `shared/operators.js` (name, team, colour, weapon, speed/armor, and an `ability` with `id`, `name`, `desc` and either `charges` or `cooldown`).
+2. If it has a new ability, add a handler with the same `id` to `ABILITIES` in `server/abilities.js`. It receives the gadget manager, the player's socket id, the player, and the ability config, and can use `p.ability.charges` / `p.ability.cdUntil`.
+3. If the gadget is visible in the world, add a visual to `client/src/gadgets.js` and send it with `gadgetAdd`.
+
+The select screen, HUD panel, loadout and ratings come from the config automatically.
 
 ## Spawn points and the prep barrier
 

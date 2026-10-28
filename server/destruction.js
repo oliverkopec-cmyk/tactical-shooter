@@ -73,12 +73,15 @@ export class Destruction {
   useBreach(id, p, type = 'basic') {
     if (!p.alive) return;
     if (this.game.rounds.phase !== PHASE.ACTION) return this.error(id, 'Breach charges work once the action phase starts.');
-    if (p.placedCharge && this.charges.has(p.placedCharge)) {
-      this.detonate(p.placedCharge);
+    const slot = type === 'heavy' ? 'placedHeavy' : 'placedCharge';
+    if (p[slot] && this.charges.has(p[slot])) {
+      const planted = this.charges.get(p[slot]);
+      if (this.game.gadgets.isJammed(planted.pos)) return this.error(id, 'A signal jammer has disabled your charge.');
+      this.detonate(p[slot]);
       return;
     }
     if (p.member.team !== 'attack') return this.error(id, 'Only attackers carry breach charges.');
-    if (p.charges <= 0) return this.error(id, 'No breach charges left.');
+    if ((type === 'heavy' ? p.ability?.charges : p.charges) <= 0) return this.error(id, 'No breach charges left.');
     const aim = this.aimedPanel(p, CHARGE_REACH);
     if (!aim) return this.error(id, 'Aim at a destructible wall within 2 m.');
     const cfg = BREACH[type];
@@ -87,14 +90,15 @@ export class Destruction {
     }
 
     const { point, normal } = aim.hit;
+    if (this.game.gadgets.isJammed(point)) return this.error(id, 'A signal jammer blocks breach charges here.');
     const charge = {
       id: this.nextChargeId++, owner: id, type,
       pos: [point[0] + normal[0] * 0.04, point[1] + normal[1] * 0.04, point[2] + normal[2] * 0.04],
       normal,
     };
     this.charges.set(charge.id, charge);
-    p.charges--;
-    p.placedCharge = charge.id;
+    if (type === 'heavy') p.ability.charges--; else p.charges--;
+    p[slot] = charge.id;
     this.emitAll('chargePlaced', charge);
     this.game.sendLoadout(id, p);
   }
@@ -106,6 +110,7 @@ export class Destruction {
     const cfg = BREACH[charge.type];
     const owner = this.game.players.get(charge.owner);
     if (owner && owner.placedCharge === chargeId) owner.placedCharge = null;
+    if (owner && owner.placedHeavy === chargeId) owner.placedHeavy = null;
 
     const targets = this.world.panelsNear(charge.pos, cfg.radius)
       .filter((pid) => cfg.breaksReinforced || !this.world.isReinforcedPanel(pid));
@@ -138,12 +143,14 @@ export class Destruction {
   // ---------------------------------------------------------------- reinforcement
 
   /** V: defenders reinforce the wall section they're looking at. */
-  startReinforce(id, p) {
+  startReinforce(id, p, personal = false) {
     if (!p.alive) return;
     if (p.member.team !== 'defense') return this.error(id, 'Only defenders can reinforce walls.');
     if (this.game.rounds.phase !== PHASE.PREP) return this.error(id, 'Walls can only be reinforced during the prep phase.');
     if (this.reinforcing.has(id)) return;
-    if (this.reinforcementsLeft <= 0) return this.error(id, 'Your team has no reinforcements left.');
+    if (personal ? p.ability?.charges <= 0 : this.reinforcementsLeft <= 0) {
+      return this.error(id, personal ? 'You have no extra reinforcements left.' : 'Your team has no reinforcements left.');
+    }
     const aim = this.aimedPanel(p, REINFORCE_REACH);
     if (!aim) return this.error(id, 'Aim at a destructible wall within 2 m.');
     const section = this.world.sections[aim.panel.sectionId];
@@ -153,7 +160,7 @@ export class Destruction {
     for (const r of this.reinforcing.values()) {
       if (r.sectionId === section.id) return this.error(id, 'A teammate is already reinforcing that wall.');
     }
-    this.reinforcing.set(id, { sectionId: section.id, doneAt: Date.now() + REINFORCE_TIME_MS });
+    this.reinforcing.set(id, { sectionId: section.id, doneAt: Date.now() + REINFORCE_TIME_MS, personal });
     this.emitTo(id, 'reinforceStart', { section: section.id, ms: REINFORCE_TIME_MS });
   }
 
@@ -171,10 +178,10 @@ export class Destruction {
       if (!p || !p.alive) continue;
       if (distanceToBox(p.state, section) > REINFORCE_REACH + 0.6) { this.emitTo(id, 'reinforceCancel', { reason: 'Moved too far away.' }); continue; }
       if (!this.world.sectionIntact(section.id)) { this.emitTo(id, 'reinforceCancel', { reason: 'The wall was damaged.' }); continue; }
-      if (this.world.reinforced[section.id] || this.reinforcementsLeft <= 0) { this.emitTo(id, 'reinforceCancel', { reason: '' }); continue; }
+      if (this.world.reinforced[section.id] || (r.personal ? !(p.ability?.charges > 0) : this.reinforcementsLeft <= 0)) { this.emitTo(id, 'reinforceCancel', { reason: '' }); continue; }
 
       this.world.reinforce(section.id);
-      this.reinforcementsLeft--;
+      if (r.personal) { p.ability.charges--; this.game.sendLoadout(id, p); } else this.reinforcementsLeft--;
       for (const pid of section.panelIds) this.panelHp[pid] = PANEL_HP;
       this.emitAll('reinforced', { section: section.id, left: this.reinforcementsLeft });
     }

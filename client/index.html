@@ -96,8 +96,14 @@
     </div>
 
     <div id="gadget-box" class="hud-panel">
-      <div id="gadget-label" class="hud-label"></div>
-      <div><span id="gadget-key" class="keycap"></span> <span id="gadget-value"></span></div>
+      <div id="op-chip"><span id="op-swatch"></span><span id="op-name"></span></div>
+      <div id="gadget-lines"></div>
+    </div>
+    <div id="stun-overlay"></div>
+    <div id="op-select" class="hidden">
+      <div class="op-head"><div class="op-title">Operator select</div><div id="op-timer"></div></div>
+      <div id="op-cards"></div>
+      <div class="op-foot">Each operator can be picked by one player per team. Anyone who hasn't chosen when the timer ends is assigned one.</div>
     </div>
     <div id="prompt" class="hidden"></div>
     <div id="progress" class="hidden"><div id="progress-label"></div><div class="bar"><div id="progress-bar"></div></div></div>
@@ -109,7 +115,7 @@
     </div>
 
     <div id="controls-hint" class="hud-chip">
-      WASD move · Shift sprint · Ctrl/Z crouch · Q/E lean · Click fire · R reload · Click ping from drone · X switch drone (prep) · G breach charge (attack) · V reinforce (defense) · 1/2/3 weapon (testing) or spawn point (attack prep) · Esc release mouse
+      WASD move · Shift sprint · Ctrl/Z crouch · Q/E lean · Click fire · R reload · F ability · G breach charge (attack) · V reinforce (defense) · C camera (defense) · Drone: click ping, X switch · 1/2/3 spawn point (attack prep) · Esc release mouse
     </div>
     <div id="click-to-play" class="hidden">Click to capture the mouse (or drag to look around)</div>
   </div>

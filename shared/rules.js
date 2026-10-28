@@ -8,7 +8,8 @@ import { MAP } from './map.js';
  * Intro and round end: nobody moves or fires. Prep: attackers wait in spawn
  * (they scout with drones from stage 5), defenders may move and shoot.
  */
-export function maskKeys(keys, team, phase) {
+export function maskKeys(keys, team, phase, viewingCamera = false) {
+  if (viewingCamera) return 0;   // watching a camera: the body stands still
   switch (phase) {
     case PHASE.ACTION: return keys;
     case PHASE.PREP: return team === 'defense' ? keys : keys & KEY.RELOAD;

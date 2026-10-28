@@ -79,6 +79,7 @@ export class World {
   }
 
   reset() {
+    this.extra = new Map();   // dynamic solid boxes (deployed shields), id -> box
     const { panels, sections } = this.layout;
     this.alive = new Uint8Array(panels.length).fill(1);
     this.reinforced = new Uint8Array(sections.length);
@@ -90,10 +91,14 @@ export class World {
     const { staticBoxes, panels } = this.layout;
     const boxes = staticBoxes.slice();
     for (const p of panels) if (this.alive[p.id]) boxes.push(p);
+    for (const b of this.extra.values()) boxes.push(b);
     this.boxes = boxes;
     // What defenders collide with during prep: the map plus plugs in every exterior opening.
     this.barrierView = { boxes: boxes.concat(MAP.barriers) };
   }
+
+  addBox(box) { this.extra.set(box.id, box); this.rebuild(); }
+  removeBox(id) { if (this.extra.delete(id)) this.rebuild(); }
 
   get panels() { return this.layout.panels; }
   get sections() { return this.layout.sections; }

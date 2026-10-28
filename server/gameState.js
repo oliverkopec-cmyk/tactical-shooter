@@ -6,7 +6,8 @@
 
 import { MAP } from '../shared/map.js';
 import { createPlayerState, stepPlayer } from '../shared/movement.js';
-import { createWeaponState, stepWeapon, WEAPON_ORDER } from '../shared/weapons.js';
+import { createWeaponState, stepWeapon } from '../shared/weapons.js';
+import { OPERATORS, defaultOperator, operatorsFor, speedMultiplier, damageMultiplier } from '../shared/operators.js';
 import { World } from '../shared/world.js';
 import { maskKeys, attackSpawnPoint } from '../shared/rules.js';
 import {
@@ -17,11 +18,12 @@ import { aimDirection } from '../shared/weapons.js';
 import { raycastWorld } from '../shared/raycast.js';
 import {
   SNAPSHOT_RATE, MAX_INPUT_DT, MAX_TIME_BUDGET, KEY_MASK, MAX_HEALTH, BASIC_CHARGES, PHASE, CAPTURE_TIME,
-  DRONES_PER_ATTACKER, SPOT_DURATION_MS, PING_COOLDOWN_MS,
+  SPOT_DURATION_MS, PING_COOLDOWN_MS,
 } from '../shared/constants.js';
 import { PoseHistory, resolveShot } from './combat.js';
 import { Destruction } from './destruction.js';
 import { RoundManager } from './rounds.js';
+import { Gadgets } from './abilities.js';
 
 const TICK_RATE = 60;
 const MAX_QUEUED_INPUTS = 120;
@@ -33,6 +35,7 @@ export class GameState {
     this.world = new World();
     this.destruction = new Destruction(this);
     this.rounds = new RoundManager(this);
+    this.gadgets = new Gadgets(this);
     this.players = new Map(); // id -> ServerPlayer
     this.history = new PoseHistory();
     this.drones = new Map();   // id -> { id, owner, state, hp, alive }
@@ -64,6 +67,12 @@ export class GameState {
       alive: joinsAlive,
       charges: member.team === 'attack' ? BASIC_CHARGES : 0,
       placedCharge: null,
+      operator: defaultOperator(member.team),
+      opConfirmed: false,     // picked on the select screen this round
+      ability: null,          // { charges, cdUntil, shieldId } for the current operator
+      camView: -1,            // index of the camera a defender is watching, or -1
+      stunUntil: 0,
+      placedHeavy: null,
       spawned: true,          // attackers have no body during prep
       spawnChoice: 1,         // which outside entry point (1-3) they appear at
       activeDrone: null,
@@ -72,6 +81,7 @@ export class GameState {
       lastSeq: -1,
       timeBudget: 0,
     });
+    this.applyOperator(this.players.get(member.id));
   }
 
   removePlayer(id) {
@@ -89,6 +99,8 @@ export class GameState {
     else if (type === 'reinforce') this.destruction.startReinforce(id, p);
     else if (type === 'droneNext') this.cycleDrone(p);
     else if (type === 'ping') this.pingFromDrone(id, p, Date.now());
+    else if (type === 'ability') this.gadgets.use(id, p);
+    else if (type === 'camView') this.gadgets.cycleCamera(id, p);
   }
 
   // ---------------------------------------------------------------- drones
@@ -100,8 +112,9 @@ export class GameState {
       p.activeDrone = null;
       if (!p.alive || p.member.team !== 'attack') continue;
       const [fx, fz] = forwardVec(p.state.yaw), [rx, rz] = rightVec(p.state.yaw);
-      for (let i = 0; i < DRONES_PER_ATTACKER; i++) {
-        const side = (i - (DRONES_PER_ATTACKER - 1) / 2) * 0.7;
+      const count = 1 + (OPERATORS[p.operator]?.extraDrones || 0);
+      for (let i = 0; i < count; i++) {
+        const side = (i - (count - 1) / 2) * 0.7;
         const drone = {
           id: this.nextDroneId++, owner: id, hp: DRONE.hp, alive: true,
           state: createDroneState(
@@ -163,13 +176,21 @@ export class GameState {
   pingFromDrone(id, p, now) {
     if (!p.alive || this.rounds.phase !== PHASE.PREP || now < (p.pingReadyAt || 0)) return;
     const drone = this.activeDroneOf(p);
-    if (!drone) return;
+    if (!drone || drone.jammed) return;
     p.pingReadyAt = now + PING_COOLDOWN_MS;
-    const eye = droneEye(drone.state);
-    const aim = aimDirection(drone.state.yaw, drone.state.pitch);
+    const hit = this.pingFrom(p, droneEye(drone.state), aimDirection(drone.state.yaw, drone.state.pitch), now);
+    this.io.to(id).emit('pingResult', { hit });
+  }
+
+  /**
+   * Mark the enemy nearest the aim line (small tolerance) if there is a clear
+   * line of sight from `eye`. Shared by drone pilots and Hawk's own eyes.
+   * The mark lasts a few seconds for the whole attacking team.
+   */
+  pingFrom(p, eye, aim, now) {
     let best = null;
     for (const q of this.players.values()) {
-      if (!q.alive || q.member.team !== 'defense') continue;
+      if (!q.alive || q.spawned === false || q.member.team !== 'defense') continue;
       for (const h of [1.55, 1.0, 0.4]) {
         const v = [q.state.x - eye[0], q.state.y + h - eye[1], q.state.z - eye[2]];
         const dist = Math.hypot(v[0], v[1], v[2]);
@@ -183,11 +204,90 @@ export class GameState {
       }
     }
     if (best) best.q.spottedUntil = now + SPOT_DURATION_MS;
-    this.io.to(id).emit('pingResult', { hit: !!best });
+    return !!best;
+  }
+
+  // ---------------------------------------------------------------- operators
+
+  /** Give a player their operator's weapon, ratings and ability stock. */
+  applyOperator(p) {
+    const op = OPERATORS[p.operator];
+    p.weapon = createWeaponState(op.weapon);
+    p.state.speedMul = speedMultiplier(op);
+    p.ability = op.ability ? { charges: op.ability.charges ?? 0, cdUntil: 0, shieldId: null } : null;
+    p.placedHeavy = null;
+    this.sendLoadout(p.member.id, p);
+  }
+
+  pickOperator(id, opId) {
+    const p = this.players.get(id);
+    const op = OPERATORS[opId];
+    if (!p || !op || this.rounds.phase !== PHASE.INTRO) return;
+    if (op.team !== p.member.team) return this.gadgets.error(id, 'That operator is on the other team.');
+    if (op.unique) {
+      const holder = [...this.players.values()].find((q) => q !== p && q.operator === opId && q.opConfirmed && q.member.team === p.member.team);
+      if (holder) return this.gadgets.error(id, `${op.name} is already taken by ${holder.member.name}.`);
+      // A teammate's unconfirmed carry-over from last round gives way
+      for (const q of this.players.values()) {
+        if (q !== p && q.operator === opId && q.member.team === p.member.team) {
+          q.operator = defaultOperator(q.member.team);
+          this.applyOperator(q);
+        }
+      }
+    }
+    p.operator = opId;
+    p.opConfirmed = true;
+    this.applyOperator(p);
+    this.sendPicks();
+  }
+
+  allPicked() {
+    return this.players.size > 0 && [...this.players.values()].every((p) => p.opConfirmed || !p.alive);
+  }
+
+  /** Select time is over: anyone who didn't choose keeps last round's operator if free, else gets a free one. */
+  finalizeOperators() {
+    for (const team of ['attack', 'defense']) {
+      const mates = [...this.players.values()].filter((p) => p.member.team === team);
+      const taken = new Set(mates.filter((p) => p.opConfirmed).map((p) => p.operator));
+      for (const p of mates.filter((q) => !q.opConfirmed)) {
+        const op = OPERATORS[p.operator];
+        if (op.unique && taken.has(p.operator)) {
+          const free = operatorsFor(team).find((o) => o.unique && !taken.has(o.id));
+          p.operator = free ? free.id : defaultOperator(team);
+        }
+        if (OPERATORS[p.operator].unique) taken.add(p.operator);
+        p.opConfirmed = true;
+        this.applyOperator(p);
+      }
+    }
+    this.sendPicks(true);
+  }
+
+  picksFor(team) {
+    const out = {};
+    for (const [id, p] of this.players) {
+      if (p.member.team === team) out[id] = { op: p.operator, confirmed: p.opConfirmed };
+    }
+    return out;
+  }
+
+  /** Teammates see each other's picks; the other team's choices stay hidden. */
+  sendPicks(final = false) {
+    for (const [id, p] of this.players) {
+      this.io.to(id).emit('opPicks', { picks: this.picksFor(p.member.team), final });
+    }
   }
 
   sendLoadout(id, p) {
-    this.io.to(id).emit('loadout', { charges: p.charges, placed: !!p.placedCharge });
+    const ab = p.ability, cfg = OPERATORS[p.operator]?.ability;
+    this.io.to(id).emit('loadout', {
+      op: p.operator, charges: p.charges, placed: !!p.placedCharge,
+      ability: cfg ? {
+        id: cfg.id, charges: ab.charges, cdLeft: Math.max(0, ab.cdUntil - Date.now()),
+        deployed: !!(ab.shieldId || p.placedHeavy),
+      } : null,
+    });
   }
 
   pickSpawn(team, random = false) {
@@ -224,8 +324,15 @@ export class GameState {
       p.timeBudget = 0;
       p.charges = team === 'attack' ? BASIC_CHARGES : 0;
       p.placedCharge = null;
+      p.placedHeavy = null;
       p.spottedUntil = 0;
+      p.stunUntil = 0;
+      p.camView = -1;
+      p.opConfirmed = false;
+      if (OPERATORS[p.operator]?.team !== team) p.operator = defaultOperator(team);   // sides swapped
+      this.applyOperator(p);
     }
+    this.gadgets.reset();
     this.placeAttackers();
   }
 
@@ -238,7 +345,10 @@ export class GameState {
       groups.get(p.spawnChoice).push(p);
     }
     for (const [choice, list] of groups) {
-      list.forEach((p, i) => { p.state = createPlayerState(attackSpawnPoint(choice, i, list.length)); });
+      list.forEach((p, i) => {
+        p.state = createPlayerState(attackSpawnPoint(choice, i, list.length));
+        p.state.speedMul = speedMultiplier(OPERATORS[p.operator]);
+      });
     }
   }
 
@@ -317,9 +427,9 @@ export class GameState {
         const drone = phase === PHASE.PREP ? this.activeDroneOf(p) : null;
         if (drone) {
           // Piloting a drone: inputs steer it, the operator's body stays put.
-          stepDrone(drone.state, { ...input, keys: input.keys & DRONE_KEYS }, input.dt, this.world);
+          if (!drone.jammed) stepDrone(drone.state, { ...input, keys: input.keys & DRONE_KEYS }, input.dt, this.world);
         } else {
-          input.keys = maskKeys(input.keys, p.member.team, phase);
+          input.keys = maskKeys(input.keys, p.member.team, phase, p.camView >= 0);
           // Defenders can't leave the building during prep
           const solid = phase === PHASE.PREP && p.member.team === 'defense' ? this.world.barrierView : this.world;
           stepPlayer(p.state, input, input.dt, solid);
@@ -330,6 +440,7 @@ export class GameState {
     }
 
     this.rounds.update(wallNow, realDt);
+    this.gadgets.update(realDt, wallNow);
     this.destruction.update(wallNow);
     this.history.record(wallNow, this.players);
     if (this.tick % Math.round(TICK_RATE / SNAPSHOT_RATE) === 0) this.broadcastSnapshot();
@@ -374,9 +485,10 @@ export class GameState {
   applyDamage(victimId, attackerId, amount, { head = false, weapon, from }) {
     const victim = this.players.get(victimId);
     if (!victim || !victim.alive || victim.spawned === false) return;
-    const dealt = Math.max(1, Math.round(amount));
+    const dealt = Math.max(1, Math.round(amount * damageMultiplier(OPERATORS[victim.operator])));
     victim.health = Math.max(0, victim.health - dealt);
     const killed = victim.health === 0;
+    this.gadgets.exitCamera(victimId, victim);   // getting shot pulls you out of a camera feed
 
     if (attackerId !== victimId) this.io.to(attackerId).emit('hitConfirm', { victim: victimId, damage: dealt, head, killed });
     this.io.to(victimId).emit('damaged', {
@@ -389,6 +501,7 @@ export class GameState {
   kill(victimId, victim, killerId, weaponId, head) {
     victim.alive = false;
     victim.queue.length = 0;
+    this.gadgets.exitCamera(victimId, victim);
     this.destruction.cancelReinforce(victimId, 'You were eliminated.');
     this.emitAll('kill', { killer: killerId, victim: victimId, weapon: weaponId, head });
   }
@@ -398,7 +511,7 @@ export class GameState {
     for (const [id, p] of this.players) {
       const s = p.state, w = p.weapon;
       players.push({
-        id, seq: p.lastSeq, alive: p.alive, u: p.spawned === false ? 1 : 0, hp: p.health, sp: p.spottedUntil > Date.now() ? 1 : 0,
+        id, seq: p.lastSeq, alive: p.alive, u: p.spawned === false ? 1 : 0, hp: p.health, o: p.operator, slow: p.state.slow, sm: p.state.speedMul, sp: p.spottedUntil > Date.now() ? 1 : 0,
         x: s.x, y: s.y, z: s.z, vx: s.vx, vy: s.vy, vz: s.vz,
         yaw: s.yaw, pitch: s.pitch, crouch: s.crouch, lean: s.lean, onGround: s.onGround,
         w: { id: w.id, ammo: w.ammo, reserve: w.reserve, cooldown: w.cooldown, reload: w.reload, bloom: w.bloom, trigger: w.trigger },
@@ -409,20 +522,23 @@ export class GameState {
     for (const d of this.drones.values()) {
       const s = d.state, owner = this.players.get(d.owner);
       drones.push({
-        id: d.id, o: d.owner, a: owner?.activeDrone === d.id ? 1 : 0, hp: d.hp,
+        id: d.id, o: d.owner, a: owner?.activeDrone === d.id ? 1 : 0, hp: d.hp, j: d.jammed ? 1 : 0,
         x: s.x, y: s.y, z: s.z, vx: s.vx, vy: s.vy, vz: s.vz, yaw: s.yaw, pitch: s.pitch, g: s.onGround,
       });
     }
-    this.io.to(this.room.channel).volatile.emit('snapshot', { t: Date.now(), players, cap, drones });
+    this.io.to(this.room.channel).volatile.emit('snapshot', { t: Date.now(), players, cap, drones, grenades: this.gadgets.snapshotGrenades() });
   }
 
-  startPayload() {
+  /** Everything a client needs to (re)build the round. Hidden gadgets are filtered by team. */
+  startPayload(team = 'attack') {
     return {
+      gadgets: this.gadgets.list(team),
+      picks: this.picksFor(team),
       mapName: MAP.name,
       players: [...this.players.entries()].map(([id, p]) => ({
         id, name: p.member.name, team: p.member.team, state: p.state,
         weapon: p.weapon, health: p.health, alive: p.alive,
-        charges: p.charges, placed: !!p.placedCharge, spawnChoice: p.spawnChoice,
+        charges: p.charges, placed: !!p.placedCharge, spawnChoice: p.spawnChoice, operator: p.operator,
       })),
       destruction: this.destruction.snapshot(),
       round: this.rounds.info(),
@@ -446,7 +562,7 @@ function sanitizeInput(raw) {
     keys: (raw.keys | 0) & KEY_MASK,
     yaw: yaw % (Math.PI * 2),
     pitch: Math.max(-MAX_PITCH, Math.min(MAX_PITCH, pitch)),
-    wsel: wsel >= 1 && wsel <= WEAPON_ORDER.length ? wsel : 0,
+    wsel: 0,   // weapons come from the operator now
     rt: Number.isFinite(rt) ? rt : 0,
   };
 }
