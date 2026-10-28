@@ -2,7 +2,7 @@
 
 A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite on the client, Node.js + Socket.IO on an authoritative server. One Node process serves both the game client and the realtime server, so the whole thing deploys as a single Render web service.
 
-## Status: Stage 7 (UI and polish)
+## Status: Stage 8 (barricades, melee, props, models)
 
 - Enter a name, create a room (4-letter code) or join one
 - Pick Attack or Defense in the lobby (max 5 per team); the host starts the match
@@ -29,7 +29,7 @@ A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite o
   | Flash (A) | Rifle | 3 stun grenades: blind and slow enemies in sight for 4 s |
   | Warden (D) | Shotgun | 2 barbed wire traps that slow anyone walking through |
   | Jammer (D) | SMG | Device that disables drones and breach charges within 5 m |
-  | Lookout (D) | Rifle | 2 hidden cameras, shown only to defenders; **C** cycles through the feeds |
+  | Lookout (D) | Rifle | 2 security cameras on walls; **C** cycles through the feeds. Everyone can see them, and one shot from an attacker (or a melee hit) destroys a camera and throws any defender watching it back to their body |
   | Mason (D) | Rifle | 2 extra wall reinforcements in prep, on top of the team's 10 |
 
   Speed rating changes walking speed (-8% / 0 / +8%), armor rating changes damage taken (+15% / 0 / -15%).
@@ -39,14 +39,12 @@ A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite o
 - Drones fit through doors and windows and climb stairs. Defenders can shoot them (40 HP: two rifle shots)
 - The pilot left-clicks to ping an enemy under the crosshair (30 m, clear line of sight, about 4° aim tolerance): a small red marker shows above that enemy's head for 3 s for the whole attacking team. Only the marker shows through walls, never the body
 - Polish: **Tab** shows a scoreboard (kills, deaths, your team's operators), **Esc** opens a pause menu with sensitivity, volume and field-of-view sliders (also on the home and lobby screens, saved in your browser), **H** hides the key hints (which change with your role and phase), round and phase banners, a low-health glow, a "Copy code" button and player counts in the lobby
+- **No shooting while sprinting:** pressing fire cancels a sprint, and the first shot comes 0.25 s later (you can't sprint while holding fire)
+- **Melee (right click):** 45 damage to an enemy in front of you (about 2 m), 0.8 s cooldown. It also breaks barricade planks and attackers can use it to smash cameras
+- **Barricades (B, defenders, prep only):** nail wooden planks over a doorway or window (1 second, 8 per team per round, not while someone stands in the gap). A barricade is a grid of 0.5 m planks: bullets (2 rifle hits per plank) and melee (1 hit) break them one by one, and a breach charge destroys the whole barricade at once. Planks block movement, bullets and drones until broken
+- **Props:** furniture, crates, barrels, concrete barriers, pallets, planters and parked vehicles inside and outside the building. They are solid, so waist-high ones are cover; rugs, pictures, monitors and plants are decoration only
+- **Player models:** other players are drawn as a humanoid with helmet, head, vest, arms holding the gun, and bending legs with a walk cycle, crouch pose and a melee swing
 - Defenders reinforce wall sections (V, 10 per team): darker, immune to bullets and basic charges; only a heavy charge (Spark, stage 6) breaks them
-
-## Roadmap: Stage 8 (planned, not started)
-
-- **No shooting or aiming while sprinting.** Pressing fire while sprinting stops the sprint first, with a short delay before the shot can happen.
-- **Map decorations:** furniture, crates and props inside and outside the building, some of them usable as cover.
-- **Door and window barricades:** during prep, defenders place a wooden barricade on a doorway or window (**B**, takes 1 second). Bullets and melee break it panel by panel, and a breach charge destroys it instantly. This stage also adds a **melee attack**.
-- **Better player models:** a simple but proper humanoid with head, torso, arms and legs, holding the gun, replacing the current basic shapes.
 
 ## Run locally
 
@@ -117,6 +115,10 @@ client/
 ## Rounds
 
 `server/rounds.js` runs `intro → prep → action → roundEnd`. Scores belong to a *squad* (A starts attacking, B starts defending), so they follow the players when sides swap after round 3; the HUD shows them by current side. The server broadcasts `roundStart` (full reset: map, spawns, health, charges), `phase` and `roundEnd` events plus the capture progress inside each snapshot. Phase rules in `shared/rules.js` are applied by both the server and the client's prediction, so frozen players don't rubber-band. Set `TIME_SCALE=0.1` when starting the server to run every phase 10× faster for testing.
+
+## Barricades, melee and props
+
+`MAP.openings` lists every door and window gap (generated in `shared/map.js`; `findOpening()` finds the one a ray passes through). A barricade is a set of dynamic boxes added to the shared `World` (`kind: 'barricade'`), so movement and bullets on both sides treat the planks as solid. The server owns plank health and sends `barricadeBroken` events; clients remove the same planks. Props live in the same `MAP.boxes` list as walls (`prop()` in `shared/map.js`), with `MAP.details` for visual-only decoration. Run the reachability check idea from the commit when you move props: every room, both staircases and all spawn points must stay open.
 
 ## Adding an operator
 

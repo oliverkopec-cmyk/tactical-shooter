@@ -15,6 +15,12 @@ const KIND_STYLE = {
   crate: { color: 0x9a7448, roughness: 0.9 },
   container: { color: 0x2f6f73, roughness: 0.6, metalness: 0.2 },
   boundary: { color: 0x6a7380, roughness: 1 },
+  furniture: { color: 0x8a6a45, roughness: 0.8 },
+  barrel: { color: 0x3d6a9a, roughness: 0.5, metalness: 0.4 },
+  planter: { color: 0x4b3a2b, roughness: 0.9 },
+  concrete: { color: 0x9a9a98, roughness: 1 },
+  pallet: { color: 0xb08a58, roughness: 0.9 },
+  car: { color: 0x8b2f2f, roughness: 0.35, metalness: 0.5 },
   objective: { color: 0xffd04a, emissive: 0xffa800, emissiveIntensity: 1.4, roughness: 0.3 },
 };
 
@@ -22,9 +28,10 @@ const unitBox = new THREE.BoxGeometry(1, 1, 1);
 
 export function buildMap(scene) {
   const materials = {};
-  const material = (kind) => {
-    if (!materials[kind]) materials[kind] = new THREE.MeshStandardMaterial(KIND_STYLE[kind] || { color: 0xff00ff });
-    return materials[kind];
+  const material = (kind, color) => {
+    const key = `${kind}:${color ?? ''}`;
+    if (!materials[key]) materials[key] = new THREE.MeshStandardMaterial({ ...(KIND_STYLE[kind] || { color: 0xff00ff }), ...(color !== undefined ? { color } : {}) });
+    return materials[key];
   };
 
   const group = new THREE.Group();
@@ -33,13 +40,23 @@ export function buildMap(scene) {
   // Destructible interior walls are drawn as panels by DestructionView.
   for (const b of getWallLayout().staticBoxes) {
     const sx = b.max[0] - b.min[0], sy = b.max[1] - b.min[1], sz = b.max[2] - b.min[2];
-    const mesh = new THREE.Mesh(unitBox, material(b.kind));
+    const mesh = new THREE.Mesh(unitBox, material(b.kind, b.color));
     mesh.scale.set(sx, sy, sz);
     mesh.position.set(b.min[0] + sx / 2, b.min[1] + sy / 2, b.min[2] + sz / 2);
     mesh.castShadow = b.kind !== 'ground' && b.kind !== 'boundary';
     mesh.receiveShadow = true;
     mesh.userData.boxId = b.id;
     meshesById.set(b.id, mesh);
+    group.add(mesh);
+  }
+
+  // Visual-only details: rugs, pictures, monitors, plants, car windows
+  for (const d of MAP.details) {
+    const mat = new THREE.MeshStandardMaterial({ color: d.color, roughness: 0.8, ...(d.emissive ? { emissive: d.color, emissiveIntensity: 0.6 } : {}) });
+    const mesh = new THREE.Mesh(unitBox, mat);
+    mesh.scale.set(d.max[0] - d.min[0], d.max[1] - d.min[1], d.max[2] - d.min[2]);
+    mesh.position.set((d.min[0] + d.max[0]) / 2, (d.min[1] + d.max[1]) / 2, (d.min[2] + d.max[2]) / 2);
+    mesh.receiveShadow = true;
     group.add(mesh);
   }
 

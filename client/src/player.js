@@ -6,7 +6,7 @@ import {
   KEY, MAX_INPUT_DT, INPUT_SEND_RATE, LEAN_ROLL,
 } from '../../shared/constants.js';
 import { stepDrone, copyDroneState, droneEye, DRONE_KEYS } from '../../shared/drone.js';
-import { createPlayerState, copyPlayerState, stepPlayer, getEyePosition } from '../../shared/movement.js';
+import { createPlayerState, copyPlayerState, stepPlayer, getEyePosition, weaponInput } from '../../shared/movement.js';
 import {
   WEAPONS, createWeaponState, copyWeaponState, stepWeapon, currentSpread, shotDirections,
 } from '../../shared/weapons.js';
@@ -25,7 +25,7 @@ const KEY_BINDINGS = {
 // Keys 1-3 choose the attacker entry point during prep (weapons come from the operator now)
 const DIGIT_KEYS = { Digit1: 1, Digit2: 2, Digit3: 3 };
 // One-shot actions sent as events: breach charge (attack), reinforce (defense)
-const ACTION_KEYS = { KeyG: 'breach', KeyV: 'reinforce', KeyX: 'droneNext', KeyF: 'ability', KeyC: 'camView' };
+const ACTION_KEYS = { KeyG: 'breach', KeyV: 'reinforce', KeyX: 'droneNext', KeyF: 'ability', KeyC: 'camView', KeyB: 'barricade' };
 
 import { settings } from './settings.js';
 
@@ -65,6 +65,7 @@ export class LocalPlayer {
     this.recoil = { pitch: 0, yaw: 0 };
     this.keys = 0;
     this.tapped = 0;     // keys pressed since the last frame, so quick taps aren't lost
+    this.meleeReady = 0;
     this.viewLocked = null;  // while watching a camera: the body keeps this facing
     this.seq = 0;
     this.pending = [];   // inputs sent but not yet acknowledged by the server
@@ -117,6 +118,15 @@ export class LocalPlayer {
   }
 
   handleButton(e, down) {
+    if (e.button === 2) {
+      // Right click: melee
+      if (down && e.target === this.canvas && this.alive && !this.droneState && !this.viewLocked && performance.now() >= this.meleeReady
+        && (this.pointerLocked || this.canFireUnlocked())) {
+        this.meleeReady = performance.now() + 800;
+        this.sendAction('melee');
+      }
+      return;
+    }
     if (e.button !== 0) return;
     if (!down) {
       this.keys &= ~KEY.FIRE;
@@ -218,10 +228,10 @@ export class LocalPlayer {
       return;
     }
     stepPlayer(this.state, input, input.dt, this.collisionWorld());
-    const fired = stepWeapon(this.weapon, input, input.dt);
+    const fired = stepWeapon(this.weapon, weaponInput(this.state, input), input.dt);
     if (!live) return;
     const s = this.state;
-    this.sprinting = (input.keys & KEY.SPRINT) && (input.keys & KEY.FORWARD) && s.crouch < 0.5 && Math.hypot(s.vx, s.vz) > 4.5;
+    this.sprinting = s.sprinting && Math.hypot(s.vx, s.vz) > 4.5;
     if (!fired) return;
 
     const w = this.weaponDef;
@@ -267,6 +277,8 @@ export class LocalPlayer {
 
     const s = this.state;
     for (const key of ['x', 'y', 'z', 'vx', 'vy', 'vz', 'crouch', 'lean', 'onGround', 'slow']) s[key] = serverState[key];
+    s.fireDelay = serverState.fd || 0;
+    s.sprinting = !!serverState.spr;
     if (serverState.w) Object.assign(this.weapon, serverState.w);
     if (serverState.sm) s.speedMul = serverState.sm;   // operator speed rating can change during select
     const ds = this.droneState;

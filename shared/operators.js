@@ -50,8 +50,8 @@ export const OPERATORS = {
   },
   lookout: {
     name: 'Lookout', team: 'defense', color: 0xc08be8, weapon: 'rifle', speed: 2, armor: 2,
-    ability: { id: 'camera', name: 'Hidden camera', charges: 2,
-      desc: 'Stick a hidden camera on a wall. Defenders view cameras with C.' },
+    ability: { id: 'camera', name: 'Security camera', charges: 2,
+      desc: 'Stick a camera on a wall. Defenders view feeds with C. Everyone can see it and attackers can shoot it down.' },
   },
   mason: {
     name: 'Mason', team: 'defense', color: 0x8d99a6, weapon: 'rifle', speed: 1, armor: 3,

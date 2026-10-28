@@ -4,7 +4,7 @@
 import {
   PLAYER_RADIUS, STAND_HEIGHT, CROUCH_HEIGHT, STAND_EYE, CROUCH_EYE, STEP_HEIGHT,
   WALK_SPEED, SPRINT_SPEED, CROUCH_SPEED, ACCEL_GROUND, GRAVITY,
-  CROUCH_TRANSITION, LEAN_SPEED, LEAN_OFFSET, KEY,
+  CROUCH_TRANSITION, LEAN_SPEED, LEAN_OFFSET, KEY, SPRINT_FIRE_DELAY,
 } from './constants.js';
 
 const EPS = 1e-4;
@@ -18,6 +18,8 @@ export function createPlayerState(spawn) {
     yaw: spawn.yaw || 0, pitch: 0,
     crouch: 0, lean: 0,
     onGround: true,
+    sprinting: false,
+    fireDelay: 0,  // > 0 while recovering from a sprint: no shooting yet
     speedMul: 1,   // operator speed rating
     slow: 1,       // temporary slow (barbed wire, stun), set by the server
   };
@@ -156,7 +158,12 @@ export function stepPlayer(s, input, dt, world) {
   if (len > 0) { wx /= len; wz /= len; }
 
   const leaning = (keys & (KEY.LEAN_LEFT | KEY.LEAN_RIGHT)) !== 0;
-  const sprinting = (keys & KEY.SPRINT) && fwd > 0 && s.crouch < 0.5 && !leaning;
+  // Holding fire cancels a sprint, and you can't shoot until you've recovered from it
+  const firing = (keys & KEY.FIRE) !== 0;
+  if (firing && s.sprinting) s.fireDelay = SPRINT_FIRE_DELAY;
+  s.fireDelay = Math.max(0, (s.fireDelay || 0) - dt);
+  const sprinting = !!(keys & KEY.SPRINT) && fwd > 0 && s.crouch < 0.5 && !leaning && !firing && s.fireDelay <= 0;
+  s.sprinting = sprinting;
   const baseSpeed = sprinting ? SPRINT_SPEED : WALK_SPEED;
   const speed = (baseSpeed + (CROUCH_SPEED - baseSpeed) * s.crouch) * (s.speedMul ?? 1) * (s.slow ?? 1);
 
@@ -216,4 +223,9 @@ export function getEyePosition(s, world) {
     z: s.z + rz * lean * LEAN_OFFSET,
     lean,
   };
+}
+
+/** The input the weapon should see: no trigger while recovering from a sprint. */
+export function weaponInput(s, input) {
+  return s.fireDelay > 0 ? { ...input, keys: input.keys & ~KEY.FIRE } : input;
 }

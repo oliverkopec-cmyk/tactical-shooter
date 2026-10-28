@@ -75,6 +75,7 @@ export class ViewModel {
     this.weaponId = null;
     this.gun = null;
     this.kick = 0;
+    this.swingT = 0;
     this.flashTime = 0;
     this.bobPhase = 0;
     this.visible = true;
@@ -98,6 +99,11 @@ export class ViewModel {
     this.kick = Math.min(1.5, this.kick + (weaponId === 'shotgun' ? 1.4 : 0.6));
     this.flashTime = 0.045;
     this.flash.rotation.z = Math.random() * Math.PI;
+  }
+
+  /** Melee strike: the gun is thrust forward and across. */
+  melee() {
+    this.swingT = 0.0001;
   }
 
   /** ctx: { speed, sprinting, crouch, reloadFrac (0..1 or -1), lean } */
@@ -124,7 +130,14 @@ export class ViewModel {
       REST.y - bobY - dip - sprint * 0.04,
       REST.z + this.kick * 0.06,
     );
-    this.holder.rotation.set(this.kick * 0.09 - tilt * 0.3, sprint * 0.6, tilt + ctx.lean * 0.2 + sprint * 0.25);
+    let swing = 0;
+    if (this.swingT > 0) {
+      this.swingT += dt / 0.3;
+      if (this.swingT >= 1) this.swingT = 0; else swing = Math.sin(this.swingT * Math.PI);
+    }
+    this.holder.position.z -= 0.28 * swing;
+    this.holder.position.x -= 0.18 * swing;
+    this.holder.rotation.set(this.kick * 0.09 - tilt * 0.3 - swing * 0.25, sprint * 0.6 + swing * 0.7, tilt + ctx.lean * 0.2 + sprint * 0.25 + swing * 0.5);
 
     if (this.gun) {
       this.gun.userData.muzzle.getWorldPosition(this.flashLight.position);

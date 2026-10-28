@@ -85,6 +85,14 @@ export const DRONES_PER_ATTACKER = 1;     // operators change this in stage 6 (H
 export const SPOT_DURATION_MS = 3000;     // how long a pinged enemy stays marked for the attackers
 export const PING_COOLDOWN_MS = 400;
 
+// Sprinting and shooting don't mix: pressing fire while sprinting ends the sprint,
+// and the first shot comes after this delay (seconds).
+export const SPRINT_FIRE_DELAY = 0.25;
+
+// Barricades and melee
+export const BARRICADE = { thickness: 0.12, panel: 0.5, hp: 35, channelMs: 1000, reach: 2.6, pool: 8, meleeDamage: 80, blastExtra: 0.9 };
+export const MELEE = { reach: 2.1, cone: 0.5, damage: 45, cooldown: 0.8 };
+
 // Operator gadgets
 export const SHIELD = { width: 1.9, height: 1.5, thickness: 0.14, distance: 1.1 };
 export const WIRE = { size: 1.8, height: 0.5, slow: 0.4, reach: 3.5 };

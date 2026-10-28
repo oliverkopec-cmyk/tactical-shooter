@@ -5,7 +5,7 @@
 // faster by sending extra inputs.
 
 import { MAP } from '../shared/map.js';
-import { createPlayerState, stepPlayer } from '../shared/movement.js';
+import { createPlayerState, stepPlayer, weaponInput } from '../shared/movement.js';
 import { createWeaponState, stepWeapon } from '../shared/weapons.js';
 import { OPERATORS, defaultOperator, operatorsFor, speedMultiplier, damageMultiplier } from '../shared/operators.js';
 import { World } from '../shared/world.js';
@@ -13,12 +13,12 @@ import { maskKeys, attackSpawnPoint } from '../shared/rules.js';
 import {
   DRONE, DRONE_KEYS, createDroneState, stepDrone, droneEye,
 } from '../shared/drone.js';
-import { forwardVec, rightVec } from '../shared/movement.js';
+import { forwardVec, rightVec, getEyePosition } from '../shared/movement.js';
 import { aimDirection } from '../shared/weapons.js';
 import { raycastWorld } from '../shared/raycast.js';
 import {
   SNAPSHOT_RATE, MAX_INPUT_DT, MAX_TIME_BUDGET, KEY_MASK, MAX_HEALTH, BASIC_CHARGES, PHASE, CAPTURE_TIME,
-  SPOT_DURATION_MS, PING_COOLDOWN_MS,
+  SPOT_DURATION_MS, PING_COOLDOWN_MS, MELEE, BARRICADE,
 } from '../shared/constants.js';
 import { PoseHistory, resolveShot } from './combat.js';
 import { Destruction } from './destruction.js';
@@ -73,6 +73,7 @@ export class GameState {
       opConfirmed: false,     // picked on the select screen this round
       ability: null,          // { charges, cdUntil, shieldId } for the current operator
       camView: -1,            // index of the camera a defender is watching, or -1
+      camId: null,
       stunUntil: 0,
       placedHeavy: null,
       spawned: true,          // attackers have no body during prep
@@ -91,6 +92,7 @@ export class GameState {
     for (const d of [...this.drones.values()]) if (d.owner === id) this.drones.delete(d.id);
     this.destruction.removeChargesOf(id);
     this.destruction.reinforcing.delete(id);
+    this.gadgets.barricading.delete(id);
   }
 
   /** Discrete actions that aren't part of the movement input stream. */
@@ -102,6 +104,8 @@ export class GameState {
     else if (type === 'droneNext') this.cycleDrone(p);
     else if (type === 'ping') this.pingFromDrone(id, p, Date.now());
     else if (type === 'ability') this.gadgets.use(id, p);
+    else if (type === 'barricade') this.gadgets.startBarricade(id, p);
+    else if (type === 'melee') this.melee(id, p, Date.now());
     else if (type === 'camView') this.gadgets.cycleCamera(id, p);
   }
 
@@ -281,6 +285,50 @@ export class GameState {
     }
   }
 
+  /** Right click: a quick strike at whatever is right in front of you. */
+  melee(id, p, now) {
+    const phase = this.rounds.phase;
+    if (!p.alive || p.spawned === false || p.camView >= 0 || (phase !== PHASE.PREP && phase !== PHASE.ACTION)) return;
+    if (now < (p.meleeReadyAt || 0)) return;
+    p.meleeReadyAt = now + MELEE.cooldown * 1000;
+    this.emitAll('melee', { id });
+
+    const eye = getEyePosition(p.state, this.world);
+    const origin = [eye.x, eye.y, eye.z];
+    const aim = aimDirection(p.state.yaw, p.state.pitch);
+    const inFront = (target, reach) => {
+      const v = [target[0] - origin[0], target[1] - origin[1], target[2] - origin[2]];
+      const dist = Math.hypot(...v);
+      if (dist > reach || dist < 0.05) return null;
+      const dir = v.map((c) => c / dist);
+      if (dir[0] * aim[0] + dir[1] * aim[1] + dir[2] * aim[2] < MELEE.cone) return null;
+      const wall = raycastWorld(this.world, origin, dir, dist);
+      return wall && wall.t < dist - 0.2 ? null : dist;
+    };
+
+    let best = null;
+    for (const [qid, q] of this.players) {
+      if (qid === id || !q.alive || q.spawned === false || q.member.team === p.member.team) continue;
+      for (const h of [1.45, 0.95]) {
+        const d = inFront([q.state.x, q.state.y + h, q.state.z], MELEE.reach + 0.35);
+        if (d !== null && (!best || d < best.d)) best = { id: qid, d };
+      }
+    }
+    if (best) {
+      this.applyDamage(best.id, id, MELEE.damage, { weapon: 'melee', from: [p.state.x, p.state.z] });
+      return;
+    }
+    if (p.member.team === 'attack') {
+      for (const c of [...this.gadgets.cameras.values()]) {
+        if (inFront(c.pos, MELEE.reach + 0.4) !== null) { this.gadgets.destroyCamera(c.id); return; }
+      }
+    }
+    if (phase === PHASE.ACTION) {
+      const wall = raycastWorld(this.world, origin, aim, MELEE.reach);
+      if (wall?.box.kind === 'barricade') this.gadgets.damageBarricadePanel(wall.box.barricadeId, wall.box.panelIndex, BARRICADE.meleeDamage);
+    }
+  }
+
   sendLoadout(id, p) {
     const ab = p.ability, cfg = OPERATORS[p.operator]?.ability;
     this.io.to(id).emit('loadout', {
@@ -435,7 +483,7 @@ export class GameState {
           // Defenders can't leave the building during prep
           const solid = phase === PHASE.PREP && p.member.team === 'defense' ? this.world.barrierView : this.world;
           stepPlayer(p.state, input, input.dt, solid);
-          if (stepWeapon(p.weapon, input, input.dt)) this.fire(id, p, input, wallNow);
+          if (stepWeapon(p.weapon, weaponInput(p.state, input), input.dt)) this.fire(id, p, input, wallNow);
         }
         p.lastSeq = input.seq;
       }
@@ -451,7 +499,8 @@ export class GameState {
   fire(shooterId, shooter, input, now) {
     const shot = resolveShot({
       shooterId, shooter, input, world: this.world, players: this.players, history: this.history, now,
-      drones: this.drones.values(),
+      drones: [...this.drones.values()],      // arrays, not iterators: every pellet checks them
+      cameras: [...this.gadgets.cameras.values()],
     });
 
     // Total damage per victim across pellets
@@ -473,6 +522,12 @@ export class GameState {
     const w = shooter.weapon.id;
     for (const pellet of shot.pellets) {
       if (pellet.panelId !== null && this.rounds.phase === PHASE.ACTION) this.destruction.damagePanel(pellet.panelId, pellet.panelDamage);
+    }
+    for (const pellet of shot.pellets) if (pellet.cameraId) this.gadgets.destroyCamera(pellet.cameraId);
+    if (this.rounds.phase === PHASE.ACTION) {
+      for (const pellet of shot.pellets) {
+        if (pellet.barricade) this.gadgets.damageBarricadePanel(pellet.barricade.id, pellet.barricade.index, pellet.panelDamage);
+      }
     }
     const droneDamage = new Map();
     for (const pellet of shot.pellets) {
@@ -504,6 +559,7 @@ export class GameState {
     victim.alive = false;
     victim.queue.length = 0;
     this.gadgets.exitCamera(victimId, victim);
+    this.gadgets.cancelBarricade(victimId, 'You were eliminated.');
     this.destruction.cancelReinforce(victimId, 'You were eliminated.');
     this.emitAll('kill', { killer: killerId, victim: victimId, weapon: weaponId, head });
     victim.deaths++;
@@ -524,7 +580,7 @@ export class GameState {
     for (const [id, p] of this.players) {
       const s = p.state, w = p.weapon;
       players.push({
-        id, seq: p.lastSeq, alive: p.alive, u: p.spawned === false ? 1 : 0, hp: p.health, o: p.operator, slow: p.state.slow, sm: p.state.speedMul, sp: p.spottedUntil > Date.now() ? 1 : 0,
+        id, seq: p.lastSeq, alive: p.alive, u: p.spawned === false ? 1 : 0, hp: p.health, o: p.operator, slow: p.state.slow, sm: p.state.speedMul, fd: p.state.fireDelay, spr: p.state.sprinting ? 1 : 0, sp: p.spottedUntil > Date.now() ? 1 : 0,
         x: s.x, y: s.y, z: s.z, vx: s.vx, vy: s.vy, vz: s.vz,
         yaw: s.yaw, pitch: s.pitch, crouch: s.crouch, lean: s.lean, onGround: s.onGround,
         w: { id: w.id, ammo: w.ammo, reserve: w.reserve, cooldown: w.cooldown, reload: w.reload, bloom: w.bloom, trigger: w.trigger },
@@ -546,6 +602,7 @@ export class GameState {
   startPayload(team = 'attack') {
     return {
       stats: this.statsPayload(),
+      barricadesLeft: this.gadgets.barricadesLeft,
       gadgets: this.gadgets.list(team),
       picks: this.picksFor(team),
       mapName: MAP.name,
