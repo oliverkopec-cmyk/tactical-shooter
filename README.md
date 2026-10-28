@@ -46,6 +46,17 @@ A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite o
 - **Player models:** other players are drawn as a humanoid with helmet, head, vest, arms holding the gun, and bending legs with a walk cycle, crouch pose and a melee swing
 - Defenders reinforce wall sections (V, 10 per team): darker, immune to bullets and basic charges; only a heavy charge (Spark, stage 6) breaks them
 
+## Roadmap: Stage 9 (planned, not started)
+
+- **Barricades must be breakable, and verified.** Bullets, melee and breach charges all break them. Stage 8's scripted tests covered all three; Stage 9 rechecks each one on the live site.
+- **Melee breaks walls.** Each melee hit knocks out one wall panel. Reinforced walls can't be broken by melee.
+- **Sound for everything,** positional and distance-based (heard from the right direction, quieter and filtered with distance):
+  - footsteps: sprinting is much louder and carries much further than walking, and crouch-walking is almost silent
+  - reloading, landing from a jump, barricades breaking
+  - gadgets being placed (shield, wire, jammer, camera, charges)
+  - drones moving
+- **Multiple objective sites.** Three possible sites in different rooms across both floors (today there is only one, in the upstairs east room). Defenders vote on one during operator select. Attackers are not told which one it is and have to find it with their drones. The capture zone, marker and HUD only appear for the chosen site once attackers have found it.
+
 ## Run locally
 
 ```bash
