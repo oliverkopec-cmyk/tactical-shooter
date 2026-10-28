@@ -3,7 +3,7 @@
 // owns the rules and tells clients what changed.
 
 import {
-  BREACH, CHARGE_REACH, REINFORCE_REACH, REINFORCE_TIME_MS, TEAM_REINFORCEMENTS,
+  BREACH, CHARGE_REACH, REINFORCE_REACH, REINFORCE_TIME_MS, TEAM_REINFORCEMENTS, PHASE,
 } from '../shared/constants.js';
 import { PANEL_HP } from '../shared/world.js';
 import { getEyePosition } from '../shared/movement.js';
@@ -18,6 +18,15 @@ export class Destruction {
     this.charges = new Map();      // id -> { id, owner, type, pos, normal }
     this.nextChargeId = 1;
     this.reinforcing = new Map();  // playerId -> { sectionId, doneAt }
+    this.reinforcementsLeft = TEAM_REINFORCEMENTS;
+    this.pendingDestroyed = [];
+  }
+
+  /** New round: every wall intact again, no charges, full reinforcement pool. */
+  reset() {
+    this.panelHp.fill(PANEL_HP);
+    this.charges.clear();
+    this.reinforcing.clear();
     this.reinforcementsLeft = TEAM_REINFORCEMENTS;
     this.pendingDestroyed = [];
   }
@@ -63,6 +72,7 @@ export class Destruction {
   /** G: plant a charge on the wall you're looking at, or detonate the one you planted. */
   useBreach(id, p, type = 'basic') {
     if (!p.alive) return;
+    if (this.game.rounds.phase !== PHASE.ACTION) return this.error(id, 'Breach charges work once the action phase starts.');
     if (p.placedCharge && this.charges.has(p.placedCharge)) {
       this.detonate(p.placedCharge);
       return;
@@ -131,6 +141,7 @@ export class Destruction {
   startReinforce(id, p) {
     if (!p.alive) return;
     if (p.member.team !== 'defense') return this.error(id, 'Only defenders can reinforce walls.');
+    if (this.game.rounds.phase !== PHASE.PREP) return this.error(id, 'Walls can only be reinforced during the prep phase.');
     if (this.reinforcing.has(id)) return;
     if (this.reinforcementsLeft <= 0) return this.error(id, 'Your team has no reinforcements left.');
     const aim = this.aimedPanel(p, REINFORCE_REACH);

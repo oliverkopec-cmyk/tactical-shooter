@@ -49,8 +49,21 @@ export function buildMap(scene) {
   glow.position.set(o.x, o.y + o.size + 0.3, o.z);
   group.add(glow);
 
+  // Capture zone marking on the floor
+  const zoneMat = new THREE.MeshBasicMaterial({ color: 0xffc43a, transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide });
+  const ring = new THREE.Mesh(new THREE.RingGeometry(o.zoneRadius - 0.1, o.zoneRadius, 64), zoneMat);
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.set(o.x, o.y + 0.03, o.z);
+  const disc = new THREE.Mesh(
+    new THREE.CircleGeometry(o.zoneRadius - 0.1, 64),
+    new THREE.MeshBasicMaterial({ color: 0xffc43a, transparent: true, opacity: 0.08, depthWrite: false, side: THREE.DoubleSide }),
+  );
+  disc.rotation.x = -Math.PI / 2;
+  disc.position.set(o.x, o.y + 0.025, o.z);
+  group.add(ring, disc);
+
   scene.add(group);
-  return { group, meshesById, objectiveLight: glow };
+  return { group, meshesById, objectiveLight: glow, zoneMat };
 }
 
 export function setupLighting(scene) {

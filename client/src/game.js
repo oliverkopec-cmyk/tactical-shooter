@@ -2,8 +2,9 @@
 
 import * as THREE from 'three';
 import {
-  MAX_HEALTH, MAX_SHOT_RANGE, RESPAWN_MS, CHARGE_REACH, REINFORCE_REACH, TEAM_REINFORCEMENTS,
+  MAX_HEALTH, MAX_SHOT_RANGE, CHARGE_REACH, REINFORCE_REACH, TEAM_REINFORCEMENTS, PHASE, ROUNDS_TO_WIN,
 } from '../../shared/constants.js';
+import { maskKeys } from '../../shared/rules.js';
 import { getEyePosition } from '../../shared/movement.js';
 import { currentSpread, aimDirection } from '../../shared/weapons.js';
 import { World } from '../../shared/world.js';
@@ -51,7 +52,9 @@ export class Game {
     this.health = MAX_HEALTH;
     this.running = false;
     this.lockFailed = false;
-    this.spectate = { index: 0, target: null, respawnAt: 0, deathPos: null };
+    this.spectate = { index: 0, target: null, deathPos: null };
+    this.round = { phase: PHASE.INTRO, endsAt: 0, round: 1, scores: { attack: 0, defense: 0 } };
+    this.capture = { p: 0, c: false };
     this.lastFrame = performance.now();
 
     this.resize();
@@ -71,7 +74,9 @@ export class Game {
     network.on('hitConfirm', (msg) => this.onHitConfirm(msg));
     network.on('damaged', (msg) => this.onDamaged(msg));
     network.on('kill', (msg) => this.onKill(msg));
-    network.on('respawn', (msg) => this.onRespawn(msg));
+    network.on('roundStart', (payload) => this.newRound(payload));
+    network.on('phase', (info) => this.onPhase(info));
+    network.on('roundEnd', (msg) => this.onRoundEnd(msg));
 
     // Destruction
     network.on('panelsDestroyed', ({ ids }) => { if (this.running) this.destruction.destroyPanels(ids); });
@@ -132,7 +137,23 @@ export class Game {
       onShot: (shot) => this.onLocalShot(shot),
       renderTime: () => this.network.renderTime(),
       canFireUnlocked: () => this.lockFailed,
+      mask: (keys) => maskKeys(keys, this.myTeam, this.round.phase),
     });
+    this.loadRound(payload, me);
+
+    this.running = true;
+    this.lastFrame = performance.now();
+    this.ui.setPointerLocked(!!document.pointerLockElement);
+    this.ui.hideRoundEnd();
+    this.ui.clearKillfeed();
+    this.lockPointer();
+    requestAnimationFrame((t) => this.frame(t));
+  }
+
+  /** Everything that resets at the start of a round (also used by late joiners). */
+  loadRound(payload, me) {
+    this.round = payload.round || this.round;
+    this.capture = { p: 0, c: false };
     this.health = me.health ?? MAX_HEALTH;
     this.loadout = { charges: me.charges ?? 0, placed: !!me.placed };
     this.reinforcing = null;
@@ -143,18 +164,67 @@ export class Game {
     this.destruction.clearCharges();
     for (const c of d.charges || []) this.destruction.addCharge(c);
     this.reinforcementsLeft = d.reinforcementsLeft ?? TEAM_REINFORCEMENTS;
-    for (const p of payload.players) if (p.id !== myId) this.addRemote(p);
+    this.effects.clearDecals();
 
-    this.running = true;
-    this.lastFrame = performance.now();
-    this.ui.setPointerLocked(!!document.pointerLockElement);
-    this.ui.hideDeath();
-    this.ui.clearKillfeed();
-    this.lockPointer();
-    requestAnimationFrame((t) => this.frame(t));
+    this.exitSpectate();
+    for (const r of this.remotes.values()) r.dispose();
+    this.remotes.clear();
+    for (const p of payload.players) if (p.id !== this.network.id) this.addRemote(p);
+
+    if (me.alive === false) {
+      this.local.die();
+      this.health = 0;
+      const s = this.local.state;
+      this.enterSpectate('Waiting for the next round', { x: s.x, y: s.y, z: s.z, yaw: this.local.aimYaw });
+    } else {
+      this.ui.hideDeath();
+    }
+  }
+
+  /** A new round begins: fresh map, everyone back at spawn, sides possibly swapped. */
+  newRound(payload) {
+    if (!this.running || !this.local) return;
+    const me = payload.players.find((p) => p.id === this.network.id);
+    if (!me) return;
+    this.myTeam = me.team;
+    this.members.clear();
+    for (const p of payload.players) this.members.set(p.id, { name: p.name, team: p.team });
+    this.local.respawn(me.state, me.weapon, me.team);
+    this.loadRound(payload, me);
+    this.ui.hideRoundEnd();
+    this.audio.beep(660, 0.12, 0.15, 'triangle');
+  }
+
+  onPhase(info) {
+    this.round = info;
+    if (info.phase === PHASE.ACTION) this.audio.beep(990, 0.25, 0.2, 'square');
+    else if (info.phase === PHASE.PREP) this.audio.beep(740, 0.12, 0.15, 'triangle');
+  }
+
+  onRoundEnd(msg) {
+    this.round = { phase: PHASE.ROUND_END, endsAt: msg.endsAt, round: msg.round, scores: msg.scores };
+    const { attack, defense } = msg.scores;
+    const score = `Attack ${attack} – ${defense} Defense`;
+    const side = msg.winner === 'attack' ? 'ATTACKERS' : 'DEFENDERS';
+    if (msg.matchOver) {
+      const won = msg.winner === this.myTeam;
+      this.ui.showRoundEnd({
+        title: won ? 'VICTORY' : 'DEFEAT', kind: won ? 'win' : 'lose',
+        reason: `${side} take the match (first to ${ROUNDS_TO_WIN} rounds)`, score, note: 'Returning to the lobby…',
+      });
+    } else {
+      this.ui.showRoundEnd({
+        title: `${side} WIN THE ROUND`, kind: msg.winner,
+        reason: msg.reason, score,
+        note: msg.halftime ? 'Halftime: teams are switching sides' : 'Next round starting…',
+      });
+    }
+    this.audio.beep(msg.winner === this.myTeam ? 880 : 220, 0.4, 0.2, 'triangle');
   }
 
   stop() {
+    this.ui.hideRoundEnd();
+    this.ui.hideDeath();
     this.running = false;
     this.local?.dispose();
     this.local = null;
@@ -186,6 +256,7 @@ export class Game {
 
   onSnapshot(snap) {
     if (!this.running) return;
+    if (snap.cap) this.capture = snap.cap;
     for (const p of snap.players) {
       if (p.id === this.network.id) {
         this.local?.reconcile(p);
@@ -265,19 +336,20 @@ export class Game {
       this.reinforcing = null;
       this.health = 0;
       const s = this.local.state;
-      this.spectate = { index: 0, target: null, respawnAt: performance.now() + RESPAWN_MS, deathPos: { x: s.x, y: s.y, z: s.z, yaw: this.local.aimYaw } };
-      this.ui.showDeath(`Eliminated by ${name(killer).name}`, '');
-      this.cycleSpectate(true);
+      this.enterSpectate(`Eliminated by ${name(killer).name}`, { x: s.x, y: s.y, z: s.z, yaw: this.local.aimYaw });
     }
   }
 
-  onRespawn({ state, weapon, health }) {
-    if (!this.local) return;
-    this.local.respawn(state, weapon);
-    this.health = health;
+  /** Dead (or joined mid-round): watch teammates until the round ends. */
+  enterSpectate(title, deathPos) {
+    this.spectate = { index: 0, target: null, deathPos };
+    this.ui.showDeath(title, '');
+    this.cycleSpectate(true);
+  }
+
+  exitSpectate() {
     if (this.spectate.target) this.spectate.target.hiddenForSpectate = false;
-    this.spectate.target = null;
-    this.ui.hideDeath();
+    this.spectate = { index: 0, target: null, deathPos: null };
   }
 
   // ---------------------------------------------------------------- spectating
@@ -298,14 +370,12 @@ export class Game {
   updateSpectateCamera(now) {
     let target = this.spectate.target;
     if (target && !target.alive) { this.cycleSpectate(true); target = this.spectate.target; }
-    const secs = Math.max(0, Math.ceil((this.spectate.respawnAt - now) / 1000));
-    const respawnText = `Respawning in ${secs}s`;
 
     if (target) {
       const eye = getEyePosition(target.pose, this.world);
       this.camera.position.set(eye.x, eye.y, eye.z);
       this.camera.rotation.set(target.pose.pitch, target.pose.yaw, 0, 'YXZ');
-      this.ui.setDeathSub(`Spectating ${target.name} · click to switch · ${respawnText}`);
+      this.ui.setDeathSub(`Spectating ${target.name} · click to switch teammate`);
     } else {
       // Nobody to watch: look down at where we fell.
       const d = this.spectate.deathPos;
@@ -313,7 +383,7 @@ export class Game {
         this.camera.position.set(d.x + Math.sin(d.yaw) * 3, d.y + 3.5, d.z + Math.cos(d.yaw) * 3);
         this.camera.lookAt(d.x, d.y + 0.5, d.z);
       }
-      this.ui.setDeathSub(`No teammates alive to spectate · ${respawnText}`);
+      this.ui.setDeathSub('No teammates alive to spectate');
     }
   }
 
@@ -327,7 +397,12 @@ export class Game {
       const reach = attack ? CHARGE_REACH : REINFORCE_REACH;
       const hit = raycastWorld(this.world, [eye.x, eye.y, eye.z], aimDirection(local.aimYaw, local.aimPitch), reach);
       const panel = hit?.box.kind === 'panel' ? hit.box : null;
-      if (attack && !this.loadout.placed && panel) {
+      const phase = this.round.phase;
+      if (attack && phase !== PHASE.ACTION) {
+        prompt = '';
+      } else if (!attack && phase !== PHASE.PREP) {
+        prompt = '';
+      } else if (attack && !this.loadout.placed && panel) {
         if (this.world.isReinforcedPanel(panel.id)) prompt = 'Reinforced wall: breach charges won\'t break it';
         else if (this.loadout.charges > 0) prompt = 'Press G to plant a breach charge';
       } else if (!attack && panel && !this.reinforcing) {
@@ -345,6 +420,24 @@ export class Game {
     this.ui.updateGadgets(attack
       ? { label: 'Breach charge', key: 'G', value: this.loadout.placed ? 'Planted: press G to detonate' : `×${this.loadout.charges}` }
       : { label: 'Team reinforcements', key: 'V', value: `${this.reinforcementsLeft} left` }, local.alive);
+  }
+
+  updateRoundHud() {
+    const { phase, endsAt, scores } = this.round;
+    const serverNow = Date.now() + (this.network.serverOffset ?? 0);
+    const left = Math.max(0, Math.ceil((endsAt - serverNow) / 1000));
+    const labels = { intro: 'GET READY', prep: 'PREP PHASE', action: 'ACTION', roundEnd: 'ROUND OVER' };
+    this.ui.updateRound({
+      attack: scores.attack, defense: scores.defense,
+      time: `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`,
+      label: `ROUND ${this.round.round} · ${labels[phase] || ''}`,
+      urgent: phase === PHASE.ACTION && left <= 30,
+      myTeam: this.myTeam,
+    });
+    const capturing = phase === PHASE.ACTION && this.capture.p > 0;
+    this.ui.setCapture(capturing ? this.capture.p : null, this.capture.c);
+    this.map.zoneMat.color.set(this.capture.c ? 0xff7a45 : capturing ? 0xffee88 : 0xffc43a);
+    this.map.zoneMat.opacity = capturing ? 0.9 : 0.55;
   }
 
   listener() {
@@ -385,6 +478,7 @@ export class Game {
     this.ui.updateCombat({ health: this.health, weapon: local.weapon, alive: local.alive });
 
     this.updateGadgetHud(now);
+    this.updateRoundHud();
     this.destruction.update(dt);
     this.effects.update(dt);
 

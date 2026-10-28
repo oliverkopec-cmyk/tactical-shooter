@@ -91,6 +91,10 @@ class Room {
       return;
     }
     if (this.hostId === socket.id) this.hostId = this.members.keys().next().value;
+    if (this.game && !this.game.hasBothSides()) {
+      this.endMatch('A team has no players left, so the match was ended.');
+      return;
+    }
     this.broadcastState();
   }
 
@@ -108,6 +112,9 @@ class Room {
   start(socketId) {
     if (socketId !== this.hostId) return { error: 'Only the host can start the match.' };
     if (this.phase !== 'lobby') return { error: 'Match already started.' };
+    if (this.teamCount(TEAMS.ATTACK) === 0 || this.teamCount(TEAMS.DEFENSE) === 0) {
+      return { error: 'Both teams need at least one player.' };
+    }
     this.phase = 'match';
     this.game = new GameState(this);
     for (const m of this.members.values()) this.game.addPlayer(m);
@@ -136,6 +143,16 @@ class Room {
 
   broadcastState() {
     this.io.to(this.channel).emit('roomState', this.publicState());
+  }
+
+  /** Back to the lobby, with everyone returned to the side they started on. */
+  endMatch(notice = '') {
+    if (this.game) this.game.stop();
+    this.game = null;
+    this.phase = 'lobby';
+    for (const m of this.members.values()) m.team = m.startTeam || m.team;
+    if (notice) this.io.to(this.channel).emit('notice', { message: notice });
+    this.broadcastState();
   }
 
   destroy() {
