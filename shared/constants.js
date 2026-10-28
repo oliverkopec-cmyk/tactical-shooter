@@ -79,3 +79,7 @@ export const MATCH_END_MS = 10000;
 export const ROUNDS_TO_WIN = 4;
 export const HALFTIME_AFTER_ROUND = 3;    // sides swap after this round
 export const CAPTURE_TIME = 10;           // seconds attackers must hold the objective zone
+
+// Drones and spotting
+export const DRONES_PER_ATTACKER = 1;     // operators change this in stage 6 (Hawk gets 3)
+export const SPOT_DURATION_MS = 5000;     // how long a spotted enemy stays outlined for the attackers

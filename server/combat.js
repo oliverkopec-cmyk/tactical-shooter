@@ -4,7 +4,8 @@
 // and the ray is tested against those historical hitboxes and the map.
 
 import { LAG_COMP_MAX_MS, MAX_SHOT_RANGE } from '../shared/constants.js';
-import { raycastWorld, rayPlayer } from '../shared/raycast.js';
+import { raycastWorld, rayPlayer, rayBox } from '../shared/raycast.js';
+import { DRONE } from '../shared/drone.js';
 import { WEAPONS, damageAtDistance, shotDirections, currentSpread } from '../shared/weapons.js';
 import { getEyePosition } from '../shared/movement.js';
 
@@ -56,7 +57,7 @@ export class PoseHistory {
  * Resolve one fired shot (all pellets).
  * Returns { origin, pellets: [{ end, hitId, head, damage }] }.
  */
-export function resolveShot({ shooterId, shooter, input, world, players, history, now }) {
+export function resolveShot({ shooterId, shooter, input, world, players, history, now, drones = [] }) {
   const w = WEAPONS[shooter.weapon.id];
   const eye = getEyePosition(shooter.state, world);
   const origin = [eye.x, eye.y, eye.z];
@@ -82,14 +83,27 @@ export function resolveShot({ shooterId, shooter, input, world, players, history
       const h = rayPlayer(origin, d, t.pose, maxT);
       if (h) { hit = { id: t.id, ...h }; maxT = h.t; }
     }
+    // Defenders can shoot enemy drones (nothing else is in their line of fire up to maxT)
+    let drone = null;
+    if (!hit && shooter.member.team === 'defense') {
+      for (const dr of drones) {
+        if (!dr.alive) continue;
+        const c = [dr.state.x, dr.state.y + DRONE.hitHalf[1], dr.state.z];
+        const h = rayBox(origin, d, [c[0] - DRONE.hitHalf[0], c[1] - DRONE.hitHalf[1], c[2] - DRONE.hitHalf[2]],
+          [c[0] + DRONE.hitHalf[0], c[1] + DRONE.hitHalf[1], c[2] + DRONE.hitHalf[2]], maxT);
+        if (h) { drone = { id: dr.id, t: h.t }; maxT = h.t; }
+      }
+    }
     const end = [origin[0] + d[0] * maxT, origin[1] + d[1] * maxT, origin[2] + d[2] * maxT];
     pellets.push({
       end,
       hitId: hit ? hit.id : null,
       head: hit ? hit.head : false,
       damage: hit ? damageAtDistance(w, hit.t, hit.head) : 0,
-      wall: !hit && !!wallHit,
-      panelId: !hit && wallHit?.box.kind === 'panel' ? wallHit.box.id : null,
+      wall: !hit && !drone && !!wallHit,
+      droneId: drone ? drone.id : null,
+      droneDamage: drone ? damageAtDistance(w, drone.t, false) : 0,
+      panelId: !hit && !drone && wallHit?.box.kind === 'panel' ? wallHit.box.id : null,
       panelDamage: w.damage,
     });
   }

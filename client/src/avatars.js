@@ -66,6 +66,20 @@ export class RemotePlayer {
     this.head.add(skull, visor);
     this.lean.add(this.head);
 
+    // Red silhouette drawn through walls while this enemy is spotted by a drone
+    const outlineMat = new THREE.MeshBasicMaterial({
+      color: 0xff2a2a, transparent: true, opacity: 0.7, depthTest: false, depthWrite: false,
+    });
+    const torsoOutline = new THREE.Mesh(this.torso.geometry, outlineMat);
+    torsoOutline.scale.set(1.2, 1.04, 1.35);
+    const headOutline = new THREE.Mesh(skull.geometry, outlineMat);
+    headOutline.scale.setScalar(1.3);
+    this.outlines = [torsoOutline, headOutline];
+    for (const o of this.outlines) { o.renderOrder = 20; o.visible = false; }
+    this.torso.add(torsoOutline);
+    this.head.add(headOutline);
+    this.spotted = false;
+
     // Held weapon: a scaled-down copy of the first-person model
     this.gunMount = new THREE.Group();
     this.lean.add(this.gunMount);
@@ -126,6 +140,7 @@ export class RemotePlayer {
     this.flashTime -= dt;
     this.flash.visible = this.flashTime > 0;
     this.root.visible = this.alive && !this.hiddenForSpectate;
+    for (const o of this.outlines) o.visible = this.spotted;
     const buf = this.buffer;
     if (!buf.length) return;
     let a = buf[0], b = buf[0];

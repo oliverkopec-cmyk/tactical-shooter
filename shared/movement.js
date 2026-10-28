@@ -54,47 +54,47 @@ export function isSpaceFree(world, x, y, z, h, r = R) {
 
 // Swept moves along one axis. Boxes we already overlap are ignored so a player
 // can never get permanently stuck inside geometry.
-function sweepX(world, x, y, z, h, dx) {
+export function sweepX(world, x, y, z, h, dx, r = R) {
   let nx = x + dx;
   if (dx === 0) return x;
   for (const b of world.boxes) {
-    if (!overlapsY(b, y, h) || !overlapsZ(b, z, R)) continue;
+    if (!overlapsY(b, y, h) || !overlapsZ(b, z, r)) continue;
     if (dx > 0) {
-      if (b.min[0] >= x + R - EPS && b.min[0] - R < nx) nx = b.min[0] - R;
-    } else if (b.max[0] <= x - R + EPS && b.max[0] + R > nx) {
-      nx = b.max[0] + R;
+      if (b.min[0] >= x + r - EPS && b.min[0] - r < nx) nx = b.min[0] - r;
+    } else if (b.max[0] <= x - r + EPS && b.max[0] + r > nx) {
+      nx = b.max[0] + r;
     }
   }
   return nx;
 }
 
-function sweepZ(world, x, y, z, h, dz) {
+export function sweepZ(world, x, y, z, h, dz, r = R) {
   let nz = z + dz;
   if (dz === 0) return z;
   for (const b of world.boxes) {
-    if (!overlapsY(b, y, h) || !overlapsX(b, x, R)) continue;
+    if (!overlapsY(b, y, h) || !overlapsX(b, x, r)) continue;
     if (dz > 0) {
-      if (b.min[2] >= z + R - EPS && b.min[2] - R < nz) nz = b.min[2] - R;
-    } else if (b.max[2] <= z - R + EPS && b.max[2] + R > nz) {
-      nz = b.max[2] + R;
+      if (b.min[2] >= z + r - EPS && b.min[2] - r < nz) nz = b.min[2] - r;
+    } else if (b.max[2] <= z - r + EPS && b.max[2] + r > nz) {
+      nz = b.max[2] + r;
     }
   }
   return nz;
 }
 
-function sweepDown(world, x, y, z, h, dist) {
+export function sweepDown(world, x, y, z, h, dist, r = R) {
   let ny = y - dist;
   for (const b of world.boxes) {
-    if (!overlapsX(b, x, R) || !overlapsZ(b, z, R)) continue;
+    if (!overlapsX(b, x, r) || !overlapsZ(b, z, r)) continue;
     if (b.max[1] <= y + EPS && b.max[1] > ny) ny = b.max[1];
   }
   return ny;
 }
 
-function sweepUp(world, x, y, z, h, dist) {
+export function sweepUp(world, x, y, z, h, dist, r = R) {
   let ny = y + dist;
   for (const b of world.boxes) {
-    if (!overlapsX(b, x, R) || !overlapsZ(b, z, R)) continue;
+    if (!overlapsX(b, x, r) || !overlapsZ(b, z, r)) continue;
     if (b.min[1] >= y + h - EPS && b.min[1] - h < ny) ny = b.min[1] - h;
   }
   return Math.max(y, ny);
