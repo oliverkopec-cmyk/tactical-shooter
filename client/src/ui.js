@@ -1,6 +1,7 @@
 // DOM screens: home (name + create/join), room lobby, and the in-game HUD.
 
-import { MAX_PER_TEAM } from '../../shared/constants.js';
+import { MAX_PER_TEAM, MAX_HEALTH } from '../../shared/constants.js';
+import { WEAPONS } from '../../shared/weapons.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -81,6 +82,95 @@ export class UI {
     $('lobby-status').textContent = isHost
       ? `${room.players.length} player${room.players.length === 1 ? '' : 's'} in room. Start when everyone is ready.`
       : 'Waiting for the host to start the match…';
+  }
+
+  // ---------------------------------------------------------------- combat HUD
+
+  updateCombat({ health, weapon, alive }) {
+    if (health !== this.lastHealth) {
+      this.lastHealth = health;
+      $('health-value').textContent = Math.ceil(health);
+      $('health-bar').style.width = `${(health / MAX_HEALTH) * 100}%`;
+      $('health-box').classList.toggle('low', health <= 30);
+    }
+    if (weapon) {
+      const w = WEAPONS[weapon.id];
+      const key = `${weapon.id}|${weapon.ammo}|${weapon.reserve}|${weapon.reload > 0}`;
+      if (key !== this.lastAmmoKey) {
+        this.lastAmmoKey = key;
+        $('weapon-name').textContent = `${w.name} · ${w.kind}`;
+        $('ammo-mag').textContent = weapon.ammo;
+        $('ammo-reserve').textContent = ` / ${weapon.reserve}`;
+        $('reload-text').classList.toggle('hidden', !(weapon.reload > 0));
+        $('ammo-box').classList.toggle('empty', weapon.ammo === 0);
+      }
+    }
+    for (const id of ['crosshair', 'health-box', 'ammo-box']) $(id).classList.toggle('hidden', !alive);
+    this.hud.classList.toggle('dead', !alive);
+  }
+
+  setCrosshairGap(px) {
+    $('crosshair').style.setProperty('--gap', `${Math.round(Math.max(4, Math.min(80, px)))}px`);
+  }
+
+  showHitmarker(head, kill) {
+    const el = $('hitmarker');
+    el.className = '';
+    void el.offsetWidth; // restart the fade
+    el.classList.add('show');
+    if (head) el.classList.add('head');
+    if (kill) el.classList.add('kill');
+    clearTimeout(this.hitTimer);
+    this.hitTimer = setTimeout(() => el.classList.remove('show'), kill ? 220 : 90);
+  }
+
+  /** angle: direction of the attacker relative to where we face, radians, clockwise. */
+  showDamage(angle) {
+    const v = $('damage-vignette');
+    v.classList.remove('show'); void v.offsetWidth; v.classList.add('show');
+    clearTimeout(this.vigTimer);
+    this.vigTimer = setTimeout(() => v.classList.remove('show'), 80);
+
+    const d = $('damage-indicator');
+    d.style.transform = `rotate(${angle}rad)`;
+    d.classList.remove('show'); void d.offsetWidth; d.classList.add('show');
+    clearTimeout(this.dirTimer);
+    this.dirTimer = setTimeout(() => d.classList.remove('show'), 150);
+  }
+
+  addKill({ killer, victim, weapon, head, mine }) {
+    const li = document.createElement('li');
+    if (mine) li.classList.add('mine');
+    const k = document.createElement('span');
+    k.className = killer.team; k.textContent = killer.name;
+    const w = document.createElement('span');
+    w.className = 'weapon'; w.textContent = `${WEAPONS[weapon]?.kind || weapon}${head ? ' · head' : ''}`;
+    const v = document.createElement('span');
+    v.className = victim.team; v.textContent = victim.name;
+    li.append(k, w, v);
+    const feed = $('killfeed');
+    feed.prepend(li);
+    while (feed.children.length > 5) feed.lastChild.remove();
+    setTimeout(() => li.classList.add('fade'), 6000);
+    setTimeout(() => li.remove(), 6600);
+  }
+
+  showDeath(title, sub) {
+    $('death-overlay').classList.remove('hidden');
+    $('death-title').textContent = title;
+    $('death-sub').textContent = sub;
+  }
+
+  setDeathSub(sub) {
+    $('death-sub').textContent = sub;
+  }
+
+  hideDeath() {
+    $('death-overlay').classList.add('hidden');
+  }
+
+  clearKillfeed() {
+    $('killfeed').innerHTML = '';
   }
 
   setPointerLocked(locked) {

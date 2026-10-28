@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { TEAM_COLORS, LEAN_OFFSET, STAND_EYE } from '../../shared/constants.js';
 import { bodyHeight } from '../../shared/movement.js';
+import { makeGunModel } from './weapons.js';
 
 const LEAN_ANGLE = Math.atan2(LEAN_OFFSET, STAND_EYE);
 const BUFFER_MS = 1000;
@@ -40,6 +41,10 @@ export class RemotePlayer {
     this.team = team;
     this.buffer = []; // [{ t, s }]
     this.scene = scene;
+    this.alive = true;
+    this.hiddenForSpectate = false;
+    this.pose = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, crouch: 0, lean: 0 };
+    this.flashTime = 0;
 
     const color = TEAM_COLORS[team] ?? 0xffffff;
     const bodyMat = new THREE.MeshStandardMaterial({ color, roughness: 0.7 });
@@ -61,6 +66,16 @@ export class RemotePlayer {
     this.head.add(skull, visor);
     this.lean.add(this.head);
 
+    // Held weapon: a scaled-down copy of the first-person model
+    this.gunMount = new THREE.Group();
+    this.lean.add(this.gunMount);
+    this.weaponId = null;
+    this.flash = new THREE.Mesh(
+      new THREE.SphereGeometry(0.07, 8, 6),
+      new THREE.MeshBasicMaterial({ color: 0xffd27a, transparent: true, opacity: 0.9 }),
+    );
+    this.flash.visible = false;
+
     this.label = makeLabel(name, color);
     if (isTeammate) {
       // Teammate names show through walls; enemy names only in line of sight.
@@ -72,14 +87,45 @@ export class RemotePlayer {
     scene.add(this.root);
   }
 
+  setWeapon(id) {
+    if (!id || id === this.weaponId) return;
+    this.weaponId = id;
+    this.gunMount.clear();
+    const gun = makeGunModel(id);
+    gun.scale.setScalar(1.3);
+    gun.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+    this.gunMount.add(gun);
+    this.muzzle = gun.userData.muzzle;
+    this.muzzle.add(this.flash);
+  }
+
+  /** World position of the muzzle, for tracers. */
+  muzzlePosition() {
+    const v = new THREE.Vector3();
+    if (this.muzzle) this.muzzle.getWorldPosition(v);
+    else v.set(this.pose.x, this.pose.y + 1.4, this.pose.z);
+    return [v.x, v.y, v.z];
+  }
+
+  showFlash() {
+    this.flashTime = 0.05;
+  }
+
   push(t, s) {
+    if (s.w) this.setWeapon(s.w.id);
+    // Coming back to life: don't interpolate from the death spot to the spawn.
+    if (s.alive !== false && !this.alive) this.buffer.length = 0;
+    this.alive = s.alive !== false;
     this.buffer.push({ t, s });
     const cutoff = t - BUFFER_MS;
     while (this.buffer.length > 2 && this.buffer[0].t < cutoff) this.buffer.shift();
   }
 
   /** Place the avatar at renderTime by interpolating the two surrounding snapshots. */
-  update(renderTime) {
+  update(renderTime, dt = 0) {
+    this.flashTime -= dt;
+    this.flash.visible = this.flashTime > 0;
+    this.root.visible = this.alive && !this.hiddenForSpectate;
     const buf = this.buffer;
     if (!buf.length) return;
     let a = buf[0], b = buf[0];
@@ -96,15 +142,22 @@ export class RemotePlayer {
 
     const crouch = L('crouch');
     const h = bodyHeight(crouch);
-    this.root.position.set(L('x'), L('y'), L('z'));
-    this.root.rotation.y = lerpAngle(a.s.yaw, b.s.yaw, t);
-    this.lean.rotation.z = -L('lean') * LEAN_ANGLE;
+    const p = this.pose;
+    p.x = L('x'); p.y = L('y'); p.z = L('z');
+    p.yaw = lerpAngle(a.s.yaw, b.s.yaw, t);
+    p.pitch = lerpAngle(a.s.pitch, b.s.pitch, t);
+    p.crouch = crouch; p.lean = L('lean');
+    this.root.position.set(p.x, p.y, p.z);
+    this.root.rotation.y = p.yaw;
+    this.lean.rotation.z = -p.lean * LEAN_ANGLE;
 
     const torsoH = h - 0.36;
     this.torso.scale.y = torsoH;
     this.torso.position.y = torsoH / 2;
     this.head.position.y = h - 0.18;
-    this.head.rotation.x = lerpAngle(a.s.pitch, b.s.pitch, t);
+    this.head.rotation.x = p.pitch;
+    this.gunMount.position.set(0.24, torsoH * 0.82, -0.2);
+    this.gunMount.rotation.x = p.pitch;
     this.label.position.y = h + 0.35;
   }
 
