@@ -57,7 +57,9 @@ export class PoseHistory {
  * Resolve one fired shot (all pellets).
  * Returns { origin, pellets: [{ end, hitId, head, damage }] }.
  */
-export function resolveShot({ shooterId, shooter, input, world, players, history, now, drones = [] }) {
+export const CAMERA_HIT_HALF = 0.22;
+
+export function resolveShot({ shooterId, shooter, input, world, players, history, now, drones = [], cameras = [] }) {
   const w = WEAPONS[shooter.weapon.id];
   const eye = getEyePosition(shooter.state, world);
   const origin = [eye.x, eye.y, eye.z];
@@ -94,16 +96,27 @@ export function resolveShot({ shooterId, shooter, input, world, players, history
         if (h) { drone = { id: dr.id, t: h.t }; maxT = h.t; }
       }
     }
+    // Attackers can shoot Lookout's cameras (one shot is enough)
+    let camera = null;
+    if (!hit && !drone && shooter.member.team === 'attack') {
+      for (const c of cameras) {
+        const q = CAMERA_HIT_HALF;
+        const h = rayBox(origin, d, [c.pos[0] - q, c.pos[1] - q, c.pos[2] - q], [c.pos[0] + q, c.pos[1] + q, c.pos[2] + q], maxT);
+        if (h) { camera = { id: c.id, t: h.t }; maxT = h.t; }
+      }
+    }
     const end = [origin[0] + d[0] * maxT, origin[1] + d[1] * maxT, origin[2] + d[2] * maxT];
     pellets.push({
       end,
       hitId: hit ? hit.id : null,
       head: hit ? hit.head : false,
       damage: hit ? damageAtDistance(w, hit.t, hit.head) : 0,
-      wall: !hit && !drone && !!wallHit,
+      wall: !hit && !drone && !camera && !!wallHit,
+      cameraId: camera ? camera.id : null,
+      barricade: !hit && !drone && !camera && wallHit?.box.kind === 'barricade' ? { id: wallHit.box.barricadeId, index: wallHit.box.panelIndex } : null,
       droneId: drone ? drone.id : null,
       droneDamage: drone ? damageAtDistance(w, drone.t, false) : 0,
-      panelId: !hit && !drone && wallHit?.box.kind === 'panel' ? wallHit.box.id : null,
+      panelId: !hit && !drone && !camera && wallHit?.box.kind === 'panel' ? wallHit.box.id : null,
       panelDamage: w.damage,
     });
   }

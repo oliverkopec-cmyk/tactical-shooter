@@ -14,6 +14,7 @@ const BX0 = -12, BX1 = 12, BZ0 = -8, BZ1 = 8;
 const IX0 = BX0 + T / 2, IX1 = BX1 - T / 2, IZ0 = BZ0 + T / 2, IZ1 = BZ1 - T / 2;
 
 const boxes = [];
+const allOpenings = [];   // every door and window gap in a wall (barricades go here)
 const barriers = [];   // invisible plugs in exterior openings; only defenders in prep collide with them
 let nextId = 1;
 
@@ -56,6 +57,12 @@ function wall(axis, fixed, from, to, y0, y1, kind, openings = [], name = '') {
     cursor = op.to;
   }
   push(cursor, to, y0, y1);
+  for (const op of ops) {
+    allOpenings.push({
+      id: allOpenings.length, axis, fixed, from: op.from, to: op.to, y0: op.y0, y1: op.y1,
+      exterior: kind === 'exterior', name,
+    });
+  }
   if (kind === 'exterior') {
     for (const op of ops) {
       const [bx0, bz0, bx1, bz1] = axis === 'x'
@@ -154,6 +161,113 @@ for (const [x, z, s] of crates) box(x - s / 2, 0, z - s / 2, x + s / 2, s, z + s
 box(-15, 0, -20, -9, 2.4, -17.6, 'container');
 box(10, 0, 20, 16, 2.4, 22.4, 'container');
 
+// ---------------------------------------------------------------- furniture and props
+// Solid props block movement and bullets, so the waist-high ones work as cover.
+// `details` are visual only (rugs, pictures, monitors, plants, car windows).
+const details = [];
+const FL0 = 0.02;   // ground-floor walking height
+
+/** Centred solid prop. */
+function prop(kind, cx, cz, w, d, h, color, base = 0) {
+  return box(cx - w / 2, base, cz - d / 2, cx + w / 2, base + h, cz + d / 2, kind, { color });
+}
+/** Visual-only box (no collision). */
+function detail(cx, cy, cz, w, h, d, color, emissive = false) {
+  details.push({ min: [cx - w / 2, cy - h / 2, cz - d / 2], max: [cx + w / 2, cy + h / 2, cz + d / 2], color, emissive });
+}
+
+// --- ground floor: west room
+prop('furniture', -8.2, -5, 2.0, 1.0, 0.75, 0x8a6a45, FL0);        // table
+prop('furniture', -11.55, -5.8, 0.5, 2.8, 1.9, 0x5b4630, FL0);     // shelf on the west wall
+prop('furniture', -7.7, 2.05, 1.8, 0.9, 0.8, 0x5e6f8c, FL0);       // sofa
+prop('crate', -5.1, -6.9, 1.0, 1.0, 1.2, 0x9a7448, FL0);
+prop('barrel', -11.1, 3.3, 0.6, 0.6, 0.9, 0x3d6a9a, FL0);
+// --- ground floor: lobby
+prop('furniture', -2.6, -7.05, 1.8, 0.9, 0.8, 0x8c5e5e, FL0);      // sofa by the front door
+prop('furniture', 2.8, -1.4, 1.8, 0.9, 1.0, 0x6b5a45, FL0);        // reception counter
+prop('crate', -3.0, -0.5, 1.0, 1.0, 1.0, 0x9a7448, FL0);
+// --- ground floor: back room
+prop('furniture', -2.7, 7.1, 1.8, 0.9, 0.75, 0x7a5c3a, FL0);       // desk on the north wall
+prop('furniture', 3.15, 7.5, 1.1, 0.5, 1.9, 0x5b4630, FL0);        // bookshelf
+prop('furniture', 0, 5.7, 1.6, 1.0, 0.75, 0x8a6a45, FL0);          // table
+prop('crate', 3.3, 1.8, 0.8, 0.8, 0.9, 0x9a7448, FL0);
+// --- ground floor: east side
+prop('furniture', 11.4, -1.7, 0.8, 3.4, 0.9, 0x6b5a45, FL0);       // kitchen counter on the east wall
+prop('furniture', 7.8, -1.95, 1.6, 0.9, 0.75, 0x8a6a45, FL0);      // table
+prop('crate', 9.8, 6.8, 1.2, 1.2, 1.2, 0x9a7448, FL0);
+prop('barrel', 5.2, -6.6, 0.6, 0.6, 0.9, 0x3d6a9a, FL0);
+prop('barrel', 5.9, -6.9, 0.6, 0.6, 0.9, 0x9a3d3d, FL0);
+// --- upper floor: west room
+prop('furniture', -10.4, -6.0, 2.0, 2.0, 0.6, 0x6a7fa0, FLOOR2);    // bed
+prop('furniture', -11.3, -1.0, 1.0, 2.0, 2.0, 0x5b4630, FLOOR2);    // wardrobe
+prop('furniture', -7.2, -3.5, 1.5, 1.0, 0.75, 0x8a6a45, FLOOR2);    // table
+prop('crate', -5.4, -7.0, 1.0, 1.0, 1.2, 0x9a7448, FLOOR2);
+// --- upper floor: middle
+prop('furniture', -2.4, -7.05, 2.0, 0.9, 0.8, 0x5e8c6f, FLOOR2);    // couch
+prop('furniture', -2.5, 7.0, 1.8, 0.9, 0.75, 0x7a5c3a, FLOOR2);     // desk
+prop('furniture', 0.1, 0.1, 1.4, 0.9, 0.75, 0x8a6a45, FLOOR2);      // table
+prop('crate', 2.1, 4.3, 0.9, 0.9, 0.9, 0x9a7448, FLOOR2);
+// --- upper floor: north-east room
+prop('furniture', 8.5, -6.0, 1.8, 1.0, 0.75, 0x8a6a45, FLOOR2);     // table
+prop('crate', 11.1, -7.1, 1.0, 1.0, 1.2, 0x9a7448, FLOOR2);
+prop('furniture', 3.45, -3.2, 0.5, 1.2, 1.9, 0x5b4630, FLOOR2);     // shelf
+prop('furniture', 10.3, -3.0, 1.0, 0.6, 1.3, 0x6b6f75, FLOOR2);     // filing cabinet
+// --- upper floor: objective room (cover around the zone)
+prop('furniture', 4.9, 6.4, 1.2, 1.2, 0.75, 0x7a5c3a, FLOOR2);      // desk
+prop('furniture', 11.3, 6.8, 0.8, 1.8, 1.6, 0x5b4630, FLOOR2);      // shelf
+prop('crate', 5.8, 0.9, 0.9, 0.9, 0.9, 0x9a7448, FLOOR2);
+prop('crate', 9.6, 4.9, 0.9, 0.9, 1.0, 0x9a7448, FLOOR2);
+prop('furniture', 3.7, 6.7, 0.7, 0.9, 1.3, 0x6b6f75, FLOOR2);       // filing cabinet
+
+// --- outside
+prop('planter', -2.1, -8.9, 1.0, 0.8, 0.7, 0x4b3a2b);              // flank the front door
+prop('planter', 2.1, -8.9, 1.0, 0.8, 0.7, 0x4b3a2b);
+prop('concrete', -8.0, -13.0, 3.0, 0.5, 0.9, 0x9a9a98);
+prop('concrete', 8.5, -19.0, 3.0, 0.5, 0.9, 0x9a9a98);
+prop('concrete', -20.5, 3.2, 0.5, 3.0, 0.9, 0x9a9a98);
+prop('concrete', 19.5, -7.8, 3.0, 0.5, 0.9, 0x9a9a98);
+for (const [x, z] of [[-2, -19], [-1.3, -19.6], [16, -5], [16.7, -5.4], [-18, 14], [-17.3, 14.6]]) prop('barrel', x, z, 0.6, 0.6, 0.9, 0x3d6a9a);
+prop('pallet', 4, -20, 1.2, 1.2, 0.5, 0xb08a58);
+prop('pallet', 4, -20, 1.0, 1.0, 0.5, 0xa77f4d, 0.5);
+prop('pallet', -6, -31, 1.2, 1.2, 0.5, 0xb08a58);
+prop('pallet', 28, -12, 1.2, 1.2, 0.5, 0xb08a58);
+prop('car', 4.1, 13.5, 4.2, 1.8, 1.35, 0x8b2f2f);                  // parked sedan
+prop('car', -24, -6, 4.2, 1.8, 1.35, 0x46607a);
+prop('car', 25.2, 7.8, 6.5, 2.4, 2.2, 0xd9d4c8);                   // delivery van
+prop('furniture', -14, 19.5, 2.0, 0.9, 0.75, 0x8a6a45);            // picnic tables
+prop('furniture', 18, -24, 2.0, 0.9, 0.75, 0x8a6a45);
+
+// --- visual details
+detail(-0.2, FL0 + 0.01, -3.8, 4.0, 0.02, 3.0, 0x7a2f2f);          // lobby rug
+detail(-8, FL0 + 0.01, -0.5, 3.4, 0.02, 2.4, 0x2f4f7a);            // west room rug
+detail(0, FL0 + 0.01, 3.9, 3.0, 0.02, 2.2, 0x4f6f3a);              // back room rug
+detail(-7.5, FLOOR2 + 0.01, -0.5, 3.4, 0.02, 2.4, 0x6f3a5a);       // upper west rug
+detail(0.3, FLOOR2 + 0.01, 1.6, 3.0, 0.02, 2.0, 0x2f4f7a);         // upper middle rug
+detail(7.5, FLOOR2 + 0.01, 2.5, 3.6, 0.02, 3.6, 0x3a3a46);         // objective room rug
+detail(-2.6, 0.62, -7.55, 1.7, 0.4, 0.15, 0x6e4747);               // sofa back cushions
+detail(-7.7, 0.64, 2.45, 1.7, 0.36, 0.14, 0x4b5a74);
+detail(-2.4, FLOOR2 + 0.62, -7.55, 1.9, 0.4, 0.15, 0x4a7358);
+detail(-8.2, 0.8, -5, 0.18, 0.1, 0.18, 0xe8d9a8, true);            // table lamps
+detail(0, 0.8, 5.7, 0.18, 0.1, 0.18, 0xe8d9a8, true);
+detail(8.5, FLOOR2 + 0.8, -6, 0.18, 0.1, 0.18, 0xe8d9a8, true);
+detail(-2.7, 1.0, 7.3, 0.6, 0.4, 0.05, 0x1c2433, true);            // monitors
+detail(-2.5, FLOOR2 + 1.0, 7.2, 0.6, 0.4, 0.05, 0x1c2433, true);
+detail(4.9, FLOOR2 + 1.0, 6.6, 0.6, 0.4, 0.05, 0x1c2433, true);
+for (const [x, y, z, w, d, c] of [
+  [-6.2, 1.8, -7.78, 1.0, 0.04, 0x4a6fa5], [-8.8, 1.7, -7.78, 0.7, 0.04, 0xa5764a], [-9.6, 1.8, 7.78, 0.9, 0.04, 0x6aa56f],
+  [3.5, 1.8, -7.78, 0.8, 0.04, 0xa54a6f], [8, 1.8, -7.78, 1.0, 0.04, 0x4aa5a0], [-1.0, 1.8, 7.78, 1.1, 0.04, 0xa59a4a],
+]) detail(x, y, z, w, 0.6, d, c);                                    // pictures on walls (ground floor)
+for (const [x, z, c] of [[-6.2, -7.78, 0x6aa56f], [0, 7.78, 0xa54a4a], [8.3, -7.78, 0x4a6fa5]]) detail(x, FLOOR2 + 1.8, z, 1.0, 0.6, 0.04, c);
+for (const [x, z] of [[-2.1, -8.9], [2.1, -8.9]]) detail(x, 1.0, z, 0.8, 0.6, 0.6, 0x3f7a3a);   // plants
+detail(-11.4, 0.5, -7.4, 0.5, 1.0, 0.5, 0x3f7a3a);
+detail(11.4, 0.5, 7.4, 0.5, 1.0, 0.5, 0x3f7a3a);
+for (const [x, z, w, c] of [[4.1, 13.5, 4.2, 0x8b2f2f], [-24, -6, 4.2, 0x46607a]]) {
+  detail(x, 1.12, z, w * 0.5, 0.45, 1.84, 0x1a2230);               // car windows
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) detail(x + sx * w * 0.32, 0.22, z + sz * 0.9, 0.7, 0.44, 0.1, 0x16181b);   // wheels
+}
+detail(25.2, 1.55, 7.8, 6.7, 0.5, 2.5, 0x1a2230);                  // van window strip
+for (const sx of [-1, 1]) for (const sz of [-1, 1]) detail(25.2 + sx * 2.2, 0.28, 7.8 + sz * 1.2, 0.8, 0.56, 0.1, 0x16181b);
+
 // ---------------------------------------------------------------- objective & spawns
 export const OBJECTIVE = { x: 7.5, y: FLOOR2, z: 2.5, size: 0.9, zoneRadius: 2.5 };
 box(OBJECTIVE.x - OBJECTIVE.size / 2, FLOOR2, OBJECTIVE.z - OBJECTIVE.size / 2,
@@ -179,6 +293,25 @@ export const MAP = {
   name: 'Dockside House',
   boxes,
   barriers,
+  openings: allOpenings,
+  details,
   objective: OBJECTIVE,
   spawns: SPAWNS,
 };
+
+/**
+ * The door/window opening a ray passes through within `reach`, or null.
+ * Used by the server to place barricades and by the client for the aim prompt.
+ */
+export function findOpening(origin, dir, reach) {
+  let best = null;
+  for (const o of MAP.openings) {
+    const [n, a, di, da] = o.axis === 'x' ? [2, 0, dir[2], dir[0]] : [0, 2, dir[0], dir[2]];
+    if (Math.abs(di) < 1e-6) continue;
+    const t = (o.fixed - origin[n]) / di;
+    if (t <= 0 || t > reach || (best && t >= best.t)) continue;
+    const along = origin[a] + da * t, y = origin[1] + dir[1] * t;
+    if (along >= o.from - 0.05 && along <= o.to + 0.05 && y >= o.y0 - 0.05 && y <= o.y1 + 0.05) best = { o, t };
+  }
+  return best ? best.o : null;
+}

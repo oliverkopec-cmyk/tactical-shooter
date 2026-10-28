@@ -2,7 +2,7 @@
 
 import * as THREE from 'three';
 import {
-  MAX_HEALTH, MAX_SHOT_RANGE, CHARGE_REACH, REINFORCE_REACH, TEAM_REINFORCEMENTS, PHASE, ROUNDS_TO_WIN,
+  MAX_HEALTH, MAX_SHOT_RANGE, BARRICADE, CHARGE_REACH, REINFORCE_REACH, TEAM_REINFORCEMENTS, PHASE, ROUNDS_TO_WIN,
 } from '../../shared/constants.js';
 import { maskKeys } from '../../shared/rules.js';
 import { MAP } from '../../shared/map.js';
@@ -19,6 +19,7 @@ import { Audio } from './audio.js';
 import { DestructionView } from './destruction.js';
 import { DroneView } from './drones.js';
 import { GadgetView } from './gadgets.js';
+import { findOpening } from '../../shared/map.js';
 import { OPERATORS } from '../../shared/operators.js';
 import { settings, onSettingsChange } from './settings.js';
 import { DRONE } from '../../shared/drone.js';
@@ -50,6 +51,7 @@ export class Game {
     this.drones = new DroneView(this.scene, this.effects, this.audio);
     this.gadgets = new GadgetView(this.scene, this.world);
     this.picks = {};
+    this.barricadesLeft = BARRICADE.pool;
     this.abilityCdEnd = 0;
     this.stunUntil = 0;
     this.stunMs = 0;
@@ -139,9 +141,28 @@ export class Game {
     });
     network.on('loadout', (l) => { this.loadout = l; this.abilityCdEnd = performance.now() + (l.ability?.cdLeft || 0); });
     network.on('stats', (s) => { this.stats = s; });
+    network.on('barricadeStart', ({ ms }) => { this.reinforcing = { section: null, start: performance.now(), ms, label: 'Barricading…' }; });
+    network.on('barricadesLeft', ({ left }) => { this.barricadesLeft = left; });
+    network.on('barricadeBroken', ({ id, ids }) => {
+      if (!this.running) return;
+      const centers = this.gadgets.breakPanels(id, ids);
+      for (const c of centers) this.effects.debris(c, 0x8a5a2b, 3);
+      if (centers.length) this.audio.clank(centers[0]);
+    });
+    network.on('melee', ({ id }) => { this.remotes.get(id)?.swing(); });
     network.on('opPicks', ({ picks }) => { this.picks = picks; });
     network.on('gadgetAdd', (rec) => { if (this.running) this.gadgets.add(rec); });
     network.on('gadgetRemove', ({ kind, id }) => this.gadgets.remove(kind, id));
+    network.on('cameraDestroyed', ({ pos }) => {
+      if (!this.running) return;
+      this.effects.debris(pos, 0x2a2d31, 6);
+      this.effects.puff(pos, 0xffd27a, 0.25);
+      this.audio.clank(pos);
+      if (this.camView && !this.gadgets.cameras().some((c) => c.id === this.camView.rec.id)) {
+        this.exitCam();
+        this.ui.toast('Your camera was destroyed');
+      }
+    });
     network.on('stunned', ({ ms }) => {
       this.stunUntil = performance.now() + ms;
       this.stunMs = ms;
@@ -193,6 +214,7 @@ export class Game {
       mask: (keys) => maskKeys(keys, this.myTeam, this.round.phase, !!this.local?.viewLocked),
       collisionWorld: () => (this.myTeam === 'defense' && this.round.phase === PHASE.PREP ? this.world.barrierView : this.world),
       onDigit: (n) => this.pickSpawn(n),
+      onAction: (type) => { if (type === 'melee') { this.viewModel.melee(); this.audio.beep(260, 0.08, 0.12, 'sawtooth'); } },
     });
     this.loadRound(payload, me);
 
@@ -214,6 +236,7 @@ export class Game {
     this.loadout = { ...this.loadout, op: me.operator, charges: me.charges ?? 0, placed: !!me.placed };
     this.reinforcing = null;
     this.picks = payload.picks || {};
+    this.barricadesLeft = payload.barricadesLeft ?? BARRICADE.pool;
     if (payload.stats) this.stats = payload.stats;
     this.stunUntil = 0;
     this.exitCam();
@@ -281,10 +304,10 @@ export class Game {
     if (!this.local.alive) return 'Click to switch teammate · Tab scoreboard · H hide this';
     if (watching) return 'C next camera · mouse pans the feed · you can\'t move while watching';
     if (inDrone) return 'Drone: WASD drive · Shift fast · click ping enemy · X switch · 1/2/3 spawn point · Tab scoreboard';
-    const base = 'WASD move · Shift sprint · Ctrl/Z crouch · Q/E lean · R reload';
+    const base = 'WASD move · Shift sprint · Ctrl/Z crouch · Q/E lean · R reload · right-click melee';
     const f = OPERATORS[this.loadout.op]?.ability ? ' · F ability' : '';
     if (attack) return phase === PHASE.PREP ? 'Fly your drone: 1/2/3 choose where you appear' : `${base}${f} · G breach charge · Tab scoreboard · H hide`;
-    return `${base}${f} · ${phase === PHASE.PREP ? 'V reinforce · ' : ''}C cameras · Tab scoreboard · H hide`;
+    return `${base}${f} · ${phase === PHASE.PREP ? 'V reinforce · B barricade · ' : ''}C cameras · Tab scoreboard · H hide`;
   }
 
   /** Rows for the Tab scoreboard. */
@@ -538,11 +561,17 @@ export class Game {
         else if (section.reinforceable && this.reinforcementsLeft > 0) prompt = 'Press V to reinforce this wall';
       }
     }
+    // Defenders in prep: aiming at a bare doorway or window offers a barricade
+    if (!prompt && !attack && local.alive && this.round.phase === PHASE.PREP && !this.reinforcing && this.barricadesLeft > 0) {
+      const eye = getEyePosition(local.state, this.world);
+      const o = findOpening([eye.x, eye.y, eye.z], aimDirection(local.aimYaw, local.aimPitch), BARRICADE.reach);
+      if (o && !this.gadgets.hasBarricade(o.id)) prompt = `Press B to barricade (${this.barricadesLeft} left)`;
+    }
     this.ui.setPrompt(prompt);
 
     let progress = null;
     if (this.reinforcing) progress = Math.min(1, (now - this.reinforcing.start) / this.reinforcing.ms);
-    this.ui.setProgress(progress, 'Reinforcing…');
+    this.ui.setProgress(progress, this.reinforcing?.label || 'Reinforcing…');
 
     // Operator + ability panel
     const op = OPERATORS[this.loadout.op];
@@ -562,6 +591,7 @@ export class Game {
     if (attack) lines.push({ key: 'G', label: 'Breach charge', value: this.loadout.placed ? 'planted, G detonates' : `×${this.loadout.charges}` });
     else {
       lines.push({ key: 'V', label: 'Team reinforcements', value: `${this.reinforcementsLeft}` });
+      lines.push({ key: 'B', label: 'Barricades', value: `${this.barricadesLeft}` });
       lines.push({ key: 'C', label: 'Cameras', value: `${this.gadgets.cameras().length}` });
     }
     this.ui.updateGadgets(op, lines, local.alive);

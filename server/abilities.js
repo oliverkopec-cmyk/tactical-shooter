@@ -6,8 +6,9 @@
 // the Gadgets class below and are synced with `gadgetAdd` / `gadgetRemove` events.
 
 import {
-  PHASE, SHIELD, WIRE, JAMMER_RANGE, CAMERA_REACH, STUN, GADGET_REACH, HAWK_MISS_COOLDOWN_MS,
+  PHASE, SHIELD, WIRE, JAMMER_RANGE, CAMERA_REACH, STUN, GADGET_REACH, HAWK_MISS_COOLDOWN_MS, BARRICADE,
 } from '../shared/constants.js';
+import { MAP, findOpening } from '../shared/map.js';
 import { OPERATORS } from '../shared/operators.js';
 import { getEyePosition, forwardVec } from '../shared/movement.js';
 import { aimDirection } from '../shared/weapons.js';
@@ -26,6 +27,9 @@ export class Gadgets {
     this.jammers = new Map();
     this.cameras = new Map();
     this.grenades = new Map();
+    this.barricades = new Map();       // id -> { id, openingId, panels: [{ i, min, max, hp, alive }] }
+    this.barricading = new Map();      // playerId -> { openingId, doneAt, x, z }
+    this.barricadesLeft = BARRICADE.pool;
   }
 
   get world() { return this.game.world; }
@@ -33,11 +37,8 @@ export class Gadgets {
 
   // ---------------------------------------------------------------- sync
 
-  /** Cameras are hidden from attackers: only defenders hear about them. */
   broadcast(event, kind, payload) {
-    const msg = { kind, ...payload };
-    if (kind !== 'camera') return this.game.emitAll(event, msg);
-    for (const [pid, q] of this.game.players) if (q.member.team === 'defense') this.game.io.to(pid).emit(event, msg);
+    this.game.emitAll(event, { kind, ...payload });
   }
 
   list(team) {
@@ -45,7 +46,8 @@ export class Gadgets {
     for (const s of this.shields.values()) out.push({ kind: 'shield', ...s });
     for (const w of this.wires.values()) out.push({ kind: 'wire', ...w });
     for (const j of this.jammers.values()) out.push({ kind: 'jammer', ...j });
-    if (team === 'defense') for (const c of this.cameras.values()) out.push({ kind: 'camera', ...c });
+    for (const c of this.cameras.values()) out.push({ kind: 'camera', ...c });
+    for (const b of this.barricades.values()) out.push(this.barricadeRecord(b));
     return out;
   }
 
@@ -84,6 +86,7 @@ export class Gadgets {
 
   update(dt, now) {
     this.stepGrenades(dt, now);
+    this.updateBarricading(now);
     for (const p of this.game.players.values()) {
       let slow = 1;
       if (p.stunUntil > now) slow = Math.min(slow, STUN.slow);
@@ -156,6 +159,118 @@ export class Gadgets {
     return [...this.grenades.values()].map((g) => ({ id: g.id, x: g.pos[0], y: g.pos[1], z: g.pos[2] }));
   }
 
+  // ---------------------------------------------------------------- barricades (B)
+
+  barricadeRecord(b) {
+    return { kind: 'barricade', id: b.id, openingId: b.openingId, panels: b.panels.filter((p) => p.alive).map((p) => ({ i: p.i, min: p.min, max: p.max })) };
+  }
+
+  barricadeAt(openingId) {
+    return [...this.barricades.values()].find((b) => b.openingId === openingId);
+  }
+
+  /** Anyone standing in (or right next to) the gap would be trapped inside the planks. */
+  openingBlocked(o) {
+    for (const q of this.game.players.values()) {
+      if (!q.alive || q.spawned === false) continue;
+      const across = Math.abs((o.axis === 'x' ? q.state.z : q.state.x) - o.fixed);
+      const along = o.axis === 'x' ? q.state.x : q.state.z;
+      if (across < 0.75 && along > o.from - 0.35 && along < o.to + 0.35 && q.state.y + 1.8 > o.y0 && q.state.y < o.y1) return true;
+    }
+    return false;
+  }
+
+  /** B: a defender starts nailing planks over the doorway or window they're aiming at. */
+  startBarricade(id, p) {
+    if (!p.alive || p.member.team !== 'defense') return this.error(id, 'Only defenders can barricade.');
+    if (this.game.rounds.phase !== PHASE.PREP) return this.error(id, 'Barricades can only be built during the prep phase.');
+    if (this.barricading.has(id)) return;
+    if (this.barricadesLeft <= 0) return this.error(id, 'Your team has no barricades left.');
+    const eye = getEyePosition(p.state, this.world);
+    const o = findOpening([eye.x, eye.y, eye.z], aimDirection(p.state.yaw, p.state.pitch), BARRICADE.reach);
+    if (!o) return this.error(id, 'Aim at a doorway or window within 2.5 m.');
+    if (this.barricadeAt(o.id) || [...this.barricading.values()].some((b) => b.openingId === o.id)) return this.error(id, 'That opening is already barricaded.');
+    if (this.openingBlocked(o)) return this.error(id, 'Someone is standing in the way.');
+    this.barricading.set(id, { openingId: o.id, doneAt: Date.now() + BARRICADE.channelMs, x: p.state.x, z: p.state.z });
+    this.game.io.to(id).emit('barricadeStart', { ms: BARRICADE.channelMs });
+  }
+
+  cancelBarricade(id, reason) {
+    if (this.barricading.delete(id)) this.game.io.to(id).emit('reinforceCancel', { reason });
+  }
+
+  updateBarricading(now) {
+    for (const [id, b] of this.barricading) {
+      const p = this.game.players.get(id);
+      if (!p || !p.alive || this.game.rounds.phase !== PHASE.PREP) { this.barricading.delete(id); continue; }
+      if (Math.hypot(p.state.x - b.x, p.state.z - b.z) > 0.8) { this.cancelBarricade(id, 'You moved away.'); continue; }
+      if (now < b.doneAt) continue;
+      this.barricading.delete(id);
+      const o = MAP.openings[b.openingId];
+      if (this.openingBlocked(o)) { this.game.io.to(id).emit('reinforceCancel', { reason: 'Someone is standing in the way.' }); continue; }
+      this.placeBarricade(o);
+    }
+  }
+
+  placeBarricade(o) {
+    const t = BARRICADE.thickness / 2;
+    const cols = Math.max(1, Math.round((o.to - o.from) / BARRICADE.panel)), rows = Math.max(1, Math.round((o.y1 - o.y0) / BARRICADE.panel));
+    const pw = (o.to - o.from) / cols, ph = (o.y1 - o.y0) / rows;
+    const bid = this.nextId++;
+    const panels = [];
+    for (let c = 0; c < cols; c++) {
+      for (let r = 0; r < rows; r++) {
+        const a0 = o.from + c * pw, y0 = o.y0 + r * ph;
+        const min = o.axis === 'x' ? [a0, y0, o.fixed - t] : [o.fixed - t, y0, a0];
+        const max = o.axis === 'x' ? [a0 + pw, y0 + ph, o.fixed + t] : [o.fixed + t, y0 + ph, a0 + pw];
+        const panel = { i: panels.length, min, max, hp: BARRICADE.hp, alive: true };
+        panels.push(panel);
+        this.world.addBox({ id: `bar-${bid}-${panel.i}`, kind: 'barricade', barricadeId: bid, panelIndex: panel.i, min, max });
+      }
+    }
+    const b = { id: bid, openingId: o.id, panels };
+    this.barricades.set(bid, b);
+    this.barricadesLeft--;
+    this.game.emitAll('gadgetAdd', this.barricadeRecord(b));
+    this.game.emitAll('barricadesLeft', { left: this.barricadesLeft });
+  }
+
+  /** Remove panels (bullets, melee or a blast) and tell everyone. */
+  breakPanels(bid, indices) {
+    const b = this.barricades.get(bid);
+    if (!b) return;
+    const gone = [];
+    for (const i of indices) {
+      const panel = b.panels[i];
+      if (!panel || !panel.alive) continue;
+      panel.alive = false;
+      this.world.removeBox(`bar-${bid}-${i}`);
+      gone.push(i);
+    }
+    if (!gone.length) return;
+    this.game.emitAll('barricadeBroken', { id: bid, ids: gone });
+    if (!b.panels.some((p) => p.alive)) {
+      this.barricades.delete(bid);
+      this.game.emitAll('gadgetRemove', { kind: 'barricade', id: bid });
+    }
+  }
+
+  damageBarricadePanel(bid, index, amount) {
+    const panel = this.barricades.get(bid)?.panels[index];
+    if (!panel || !panel.alive) return;
+    panel.hp -= amount;
+    if (panel.hp <= 0) this.breakPanels(bid, [index]);
+  }
+
+  /** A breach charge flattens every barricade it reaches, all at once. */
+  blastBarricades(pos, radius) {
+    for (const b of [...this.barricades.values()]) {
+      const near = b.panels.some((p) => p.alive && Math.hypot(
+        (p.min[0] + p.max[0]) / 2 - pos[0], (p.min[1] + p.max[1]) / 2 - pos[1], (p.min[2] + p.max[2]) / 2 - pos[2]) <= radius);
+      if (near) this.breakPanels(b.id, b.panels.map((p) => p.i));
+    }
+  }
+
   // ---------------------------------------------------------------- camera view (C)
 
   cycleCamera(id, p) {
@@ -166,13 +281,32 @@ export class Gadgets {
     if (!cams.length) return this.error(id, 'No cameras placed.');
     const next = p.camView + 1 >= cams.length ? -1 : p.camView + 1;
     p.camView = next;
+    p.camId = next >= 0 ? cams[next].id : null;
     this.game.io.to(id).emit('camView', { index: next, cam: next >= 0 ? cams[next] : null, count: cams.length });
   }
 
   exitCamera(id, p) {
     if (p.camView < 0) return;
     p.camView = -1;
+    p.camId = null;
     this.game.io.to(id).emit('camView', { index: -1, cam: null, count: this.cameras.size });
+  }
+
+  /** One shot from an attacker destroys a camera; anyone watching it is thrown back to their body. */
+  destroyCamera(id) {
+    const cam = this.cameras.get(id);
+    if (!cam) return;
+    this.cameras.delete(id);
+    this.broadcast('gadgetRemove', 'camera', { id });
+    this.game.emitAll('cameraDestroyed', { id, pos: cam.pos });
+    const cams = [...this.cameras.values()];
+    for (const [pid, q] of this.game.players) {
+      if (q.camView < 0) continue;
+      if (q.camId === id) { this.exitCamera(pid, q); continue; }
+      // Another feed: its position in the list may have shifted
+      q.camView = cams.findIndex((c) => c.id === q.camId);
+      this.game.io.to(pid).emit('camView', { index: q.camView, cam: cams[q.camView] || null, count: cams.length });
+    }
   }
 }
 

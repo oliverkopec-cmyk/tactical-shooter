@@ -77,17 +77,64 @@ export class RemotePlayer {
     this.lean = new THREE.Group();        // tilts around the feet
     this.root.add(this.lean);
 
-    this.torso = new THREE.Mesh(new THREE.BoxGeometry(0.62, 1, 0.38), bodyMat);
-    this.torso.castShadow = true;
-    this.lean.add(this.torso);
+    // A simple humanoid: head with helmet, torso with vest, two arms holding the gun,
+    // and two-segment legs. Poses are driven from snapshots in update().
+    const skinMat = new THREE.MeshStandardMaterial({ color: 0xcfa27d, roughness: 0.8 });
+    const bootMat = new THREE.MeshStandardMaterial({ color: 0x15181b, roughness: 0.7 });
+    const box = (w, h, d, mat, y = 0) => {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+      m.position.y = y;
+      m.castShadow = true;
+      return m;
+    };
+
+    // Legs: thigh and shin hang from the hip and bend to match the crouch
+    this.hips = new THREE.Group();
+    this.legs = [-1, 1].map((side) => {
+      const thigh = new THREE.Group();
+      thigh.position.x = side * 0.12;
+      thigh.add(box(0.16, 0.46, 0.17, darkMat, -0.23));
+      const shin = new THREE.Group();
+      shin.position.y = -0.46;
+      shin.add(box(0.14, 0.4, 0.15, darkMat, -0.2));
+      const boot = box(0.15, 0.08, 0.24, bootMat, -0.43);
+      boot.position.z = -0.03;
+      shin.add(boot);
+      thigh.add(shin);
+      this.hips.add(thigh);
+      return { thigh, shin };
+    });
+    this.hips.add(box(0.36, 0.14, 0.24, darkMat, 0));
+    this.lean.add(this.hips);
+
+    // Torso with a vest, and arms pivoting at the shoulders
+    this.upper = new THREE.Group();
+    this.upper.add(box(0.46, 0.55, 0.27, bodyMat, 0.275));
+    this.upper.add(box(0.5, 0.36, 0.31, darkMat, 0.3));
+    this.arms = [1, -1].map((side) => {
+      const arm = new THREE.Group();
+      arm.position.set(side * 0.31, 0.5, 0);
+      arm.add(box(0.11, 0.3, 0.11, bodyMat, -0.15));
+      const fore = box(0.1, 0.27, 0.1, skinMat, -0.43);
+      arm.add(fore);
+      arm.add(box(0.1, 0.08, 0.1, bootMat, -0.6));      // glove
+      arm.rotation.order = 'YXZ';
+      this.upper.add(arm);
+      return arm;
+    });
+    this.lean.add(this.upper);
 
     this.head = new THREE.Group();
-    const skull = new THREE.Mesh(new THREE.SphereGeometry(0.17, 16, 12), bodyMat);
-    skull.castShadow = true;
-    const visor = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.08, 0.06), this.visorMat);
-    visor.position.set(0, 0.02, -0.16);
-    this.head.add(skull, visor);
+    this.head.add(new THREE.Mesh(new THREE.SphereGeometry(0.14, 16, 12), skinMat));
+    const helmet = new THREE.Mesh(new THREE.SphereGeometry(0.165, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.62), bodyMat);
+    helmet.position.y = 0.015;
+    helmet.castShadow = true;
+    const visor = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.07, 0.05), this.visorMat);
+    visor.position.set(0, 0.0, -0.13);
+    this.head.add(helmet, visor);
     this.lean.add(this.head);
+    this.walkPhase = 0;
+    this.swingT = 0;
 
     // Small red marker above the head while a drone pilot has pinged this enemy.
     // Only the marker is drawn through walls; the body is not.
@@ -145,6 +192,11 @@ export class RemotePlayer {
     return [v.x, v.y, v.z];
   }
 
+  /** Melee animation. */
+  swing() {
+    this.swingT = 0.0001;
+  }
+
   showFlash() {
     this.flashTime = 0.05;
   }
@@ -193,13 +245,37 @@ export class RemotePlayer {
     this.root.rotation.y = p.yaw;
     this.lean.rotation.z = -p.lean * LEAN_ANGLE;
 
-    const torsoH = h - 0.36;
-    this.torso.scale.y = torsoH;
-    this.torso.position.y = torsoH / 2;
+    // Pose the body from the snapshot: height from crouch, legs from speed, arms from aim
+    const speed = Math.hypot(L('vx'), L('vz'));
+    const sprinting = speed > 5;
+    this.walkPhase += speed * dt * 2.3;
+    const k = Math.min(1, speed / 4);
+    const shoulderY = h - 0.33;
+    const hipY = shoulderY - 0.55;
+    this.hips.position.y = hipY + Math.abs(Math.sin(this.walkPhase)) * 0.025 * k;
+    const bend = Math.acos(Math.min(1, Math.max(0, hipY / 0.92)));     // thigh angle that puts the foot under the hip
+    const swing = Math.sin(this.walkPhase) * 0.65 * k;
+    this.legs[0].thigh.rotation.x = bend + swing;
+    this.legs[1].thigh.rotation.x = bend - swing;
+    this.legs[0].shin.rotation.x = -2 * bend - Math.max(0, swing) * 0.9;
+    this.legs[1].shin.rotation.x = -2 * bend - Math.max(0, -swing) * 0.9;
+
+    this.upper.position.y = hipY;
+    this.upper.rotation.x = sprinting ? -0.18 : 0;
     this.head.position.y = h - 0.18;
     this.head.rotation.x = p.pitch;
-    this.gunMount.position.set(0.24, torsoH * 0.82, -0.2);
-    this.gunMount.rotation.x = p.pitch;
+
+    // Melee: both arms chop forward and up, then settle
+    let strike = 0;
+    if (this.swingT > 0) {
+      this.swingT += dt / 0.3;
+      if (this.swingT >= 1) this.swingT = 0; else strike = Math.sin(this.swingT * Math.PI);
+    }
+    const armBase = sprinting ? 0.55 : Math.PI / 2 + p.pitch;        // sprinting carries the gun low
+    this.arms[0].rotation.set(armBase + strike * 0.9, 0.25 - strike * 0.3, 0);
+    this.arms[1].rotation.set(armBase + strike * 0.9, -0.5 + strike * 0.3, 0);
+    this.gunMount.position.set(0.1, shoulderY - 0.1 - (sprinting ? 0.12 : 0), -0.3 - strike * 0.25);
+    this.gunMount.rotation.x = sprinting ? -0.2 : p.pitch + strike * 0.5;
     this.label.position.y = h + 0.35;
     this.markerPhase = (this.markerPhase || 0) + dt * 5;
     this.marker.position.y = h + 0.75 + Math.sin(this.markerPhase) * 0.05;

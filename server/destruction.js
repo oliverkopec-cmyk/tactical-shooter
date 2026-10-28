@@ -3,7 +3,7 @@
 // owns the rules and tells clients what changed.
 
 import {
-  BREACH, CHARGE_REACH, REINFORCE_REACH, REINFORCE_TIME_MS, TEAM_REINFORCEMENTS, PHASE,
+  BREACH, BARRICADE, CHARGE_REACH, REINFORCE_REACH, REINFORCE_TIME_MS, TEAM_REINFORCEMENTS, PHASE,
 } from '../shared/constants.js';
 import { PANEL_HP } from '../shared/world.js';
 import { getEyePosition } from '../shared/movement.js';
@@ -58,12 +58,12 @@ export class Destruction {
   }
 
   /** The panel a player is looking at within reach, or null. */
-  aimedPanel(p, reach) {
+  aimedPanel(p, reach, allowBarricade = false) {
     const eye = getEyePosition(p.state, this.world);
     const origin = [eye.x, eye.y, eye.z];
     const dir = aimDirection(p.state.yaw, p.state.pitch);
     const hit = raycastWorld(this.world, origin, dir, reach);
-    if (!hit || hit.box.kind !== 'panel') return null;
+    if (!hit || (hit.box.kind !== 'panel' && !(allowBarricade && hit.box.kind === 'barricade'))) return null;
     return { hit, panel: hit.box };
   }
 
@@ -82,10 +82,10 @@ export class Destruction {
     }
     if (p.member.team !== 'attack') return this.error(id, 'Only attackers carry breach charges.');
     if ((type === 'heavy' ? p.ability?.charges : p.charges) <= 0) return this.error(id, 'No breach charges left.');
-    const aim = this.aimedPanel(p, CHARGE_REACH);
+    const aim = this.aimedPanel(p, CHARGE_REACH, true);
     if (!aim) return this.error(id, 'Aim at a destructible wall within 2 m.');
     const cfg = BREACH[type];
-    if (this.world.isReinforcedPanel(aim.panel.id) && !cfg.breaksReinforced) {
+    if (aim.panel.kind === 'panel' && this.world.isReinforcedPanel(aim.panel.id) && !cfg.breaksReinforced) {
       return this.error(id, 'That wall is reinforced. Only a heavy charge breaks it.');
     }
 
@@ -115,6 +115,7 @@ export class Destruction {
     const targets = this.world.panelsNear(charge.pos, cfg.radius)
       .filter((pid) => cfg.breaksReinforced || !this.world.isReinforcedPanel(pid));
     const removed = this.world.destroyPanels(targets);
+    this.game.gadgets.blastBarricades(charge.pos, cfg.radius + BARRICADE.blastExtra);
     this.emitAll('chargeExploded', { id: charge.id, pos: charge.pos, normal: charge.normal, panels: removed });
 
     // Blast damage to the owner and enemies nearby (walls don't shield; it's a breach charge)

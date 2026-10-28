@@ -12,6 +12,9 @@ const wireMat = new THREE.MeshStandardMaterial({ color: 0x2a2d31, roughness: 0.6
 const spikeMat = new THREE.MeshStandardMaterial({ color: 0xc9ccd1, roughness: 0.4, metalness: 0.8 });
 const darkMat = new THREE.MeshStandardMaterial({ color: 0x1b1e23, roughness: 0.5, metalness: 0.5 });
 const greenLed = new THREE.MeshBasicMaterial({ color: 0x4dff88 });
+const redLed = new THREE.MeshBasicMaterial({ color: 0xff2a2a });
+const camBodyMat = new THREE.MeshStandardMaterial({ color: 0xd9dce0, roughness: 0.45, metalness: 0.3 });
+const woodMats = [0x8a5a2b, 0x7a4e24, 0x96663a].map((c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.9 }));
 const grenadeMat = new THREE.MeshStandardMaterial({ color: 0xe8e8ff, emissive: 0x9999ff, emissiveIntensity: 0.8, roughness: 0.3 });
 
 function makeWire(half) {
@@ -52,14 +55,17 @@ function makeJammer() {
   return g;
 }
 
+/** A small security camera: light housing, black lens, a blinking red light so it can be spotted. */
 function makeCamera() {
   const g = new THREE.Group();
-  const body = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.12, 0.2), darkMat);
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.12, 0.22), camBodyMat);
+  const mount = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.05), darkMat);
+  mount.position.z = -0.13;
   const lens = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.05, 0.05, 12).rotateX(Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x050508, metalness: 0.9, roughness: 0.1 }));
-  lens.position.z = 0.12;
-  const led = new THREE.Mesh(new THREE.SphereGeometry(0.012, 6, 6), greenLed);
-  led.position.set(0.05, 0.05, 0.1);
-  g.add(body, lens, led);
+  lens.position.z = 0.13;
+  const led = new THREE.Mesh(new THREE.SphereGeometry(0.022, 8, 6), redLed);
+  led.position.set(0.055, 0.075, 0.08);
+  g.add(body, mount, lens, led);
   g.userData.led = led;
   return g;
 }
@@ -88,6 +94,19 @@ export class GadgetView {
     } else if (rec.kind === 'jammer') {
       group = makeJammer();
       group.position.set(...rec.pos);
+    } else if (rec.kind === 'barricade') {
+      // Wooden planks over a doorway or window, one box per breakable panel
+      group = new THREE.Group();
+      group.userData.meshes = new Map();
+      for (const p of rec.panels) {
+        const sx = p.max[0] - p.min[0], sy = p.max[1] - p.min[1], sz = p.max[2] - p.min[2];
+        const m = new THREE.Mesh(new THREE.BoxGeometry(sx * 0.97, sy * 0.94, sz), woodMats[p.i % woodMats.length]);
+        m.position.set(p.min[0] + sx / 2, p.min[1] + sy / 2, p.min[2] + sz / 2);
+        m.castShadow = true;
+        group.add(m);
+        group.userData.meshes.set(p.i, m);
+        this.world.addBox({ id: `bar-${rec.id}-${p.i}`, kind: 'barricade', barricadeId: rec.id, panelIndex: p.i, min: p.min, max: p.max });
+      }
     } else if (rec.kind === 'camera') {
       group = makeCamera();
       group.position.set(...rec.pos);
@@ -103,8 +122,30 @@ export class GadgetView {
     const it = this.items.get(key);
     if (!it) return;
     if (kind === 'shield') this.world.removeBox(`shield-${id}`);
+    if (kind === 'barricade') for (const i of it.group.userData.meshes.keys()) this.world.removeBox(`bar-${id}-${i}`);
     this.scene.remove(it.group);
     this.items.delete(key);
+  }
+
+  /** Planks knocked out of a barricade: returns their centres (for debris). */
+  breakPanels(id, ids) {
+    const it = this.items.get(`barricade:${id}`);
+    if (!it) return [];
+    const centers = [];
+    for (const i of ids) {
+      const m = it.group.userData.meshes.get(i);
+      if (!m) continue;
+      centers.push([m.position.x, m.position.y, m.position.z]);
+      it.group.remove(m);
+      it.group.userData.meshes.delete(i);
+      this.world.removeBox(`bar-${id}-${i}`);
+    }
+    return centers;
+  }
+
+  hasBarricade(openingId) {
+    for (const it of this.items.values()) if (it.kind === 'barricade' && it.rec.openingId === openingId) return true;
+    return false;
   }
 
   /** Hide the housing of the camera being watched (the feed starts inside it). */
