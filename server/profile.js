@@ -7,11 +7,13 @@ import { SKINS, SKIN_IDS, FREE_SKINS } from '../shared/skins.js';
 import { WEAPONS } from '../shared/weapons.js';
 import { OPERATORS } from '../shared/operators.js';
 
-// On a local development database every skin is unlocked so they can all be tried
-// before the shop sells them (also with UNLOCK_ALL_SKINS=1). Never on a hosted database.
+// Developer switches (see Accounts): UNLOCK_ALL_SKINS=1 unlocks every skin, and on a local
+// test database there is a button that adds Money so the shop can be tried.
 let unlockAll = false;
-export function configureProfile(opts) { unlockAll = !!opts.unlockAll; }
+let devTools = false;
+export function configureProfile(opts) { unlockAll = !!opts.unlockAll; devTools = !!opts.devTools; }
 export const skinsUnlocked = () => unlockAll;
+export const devToolsEnabled = () => devTools;
 
 /** Every skin the account may equip: the free ones, what it bought, or all of them in dev mode. */
 export function ownedSkinsOf(row) {
@@ -66,6 +68,7 @@ export function profileOf(row) {
     equippedSkins: equippedSkinsOf(row),
     equippedOperators: equippedOperatorsOf(row),
     skinsUnlocked: unlockAll,
+    devTools,
     settings: sanitizeSettings(row.settings),
     quests: questsOf(row),
     stats: row.stats || {},

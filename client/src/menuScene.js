@@ -79,11 +79,22 @@ export class MenuScene {
     this.camera.updateProjectionMatrix();
   }
 
-  /** 'play': the operator stands in the middle. 'operators': they step left to make room for the gun showcase. */
+  /**
+   * 'play': the operator stands in the middle. 'operators': they step left to make room for the gun showcase.
+   * 'shop': just the big gun, to look at a skin before buying it.
+   */
   setMode(mode) {
     this.mode = mode;
     this.targetX = mode === 'operators' ? -0.8 : 0;
-    if (this.showcase) this.showcase.visible = mode === 'operators';
+    this.applyShowcaseLayout();
+  }
+
+  applyShowcaseLayout() {
+    if (!this.showcase) return;
+    const shop = this.mode === 'shop';
+    this.showcase.visible = this.mode === 'operators' || shop;
+    this.showcase.position.x = shop ? 0.2 : 0.3;
+    this.showcase.scale.setScalar(shop ? 1.35 : 1);
   }
 
   /** What to show: { team, operatorId, weaponId, skinId } */
@@ -110,9 +121,9 @@ export class MenuScene {
       gun.traverse((o) => { if (o.isMesh) o.castShadow = true; });
       holder.add(gun);
       holder.position.set(0.3, 1.2, 0);
-      holder.visible = this.mode === 'operators';
       this.scene.add(holder);
       this.showcase = holder;
+      this.applyShowcaseLayout();
     }
   }
 
@@ -152,6 +163,7 @@ export class MenuScene {
       const yaw = Math.PI - 0.7 + Math.sin(this.time * 0.5) * 0.22 + this.userYaw;   // turned a little so the gun is seen from the side
       this.avatar.push(now, { x: this.x, y: 0, z: 0, yaw, pitch: 0, crouch: 0, prone: 0, lean: 0, vx: 0, vy: 0, vz: 0, onGround: true, alive: true });
       this.avatar.update(now, dt);
+      this.avatar.root.visible = this.mode !== 'shop';
     }
     if (this.showcase?.visible) {
       this.showcase.rotation.y = this.time * 0.7;

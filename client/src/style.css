@@ -829,3 +829,25 @@ button.small { font-size: 12px; padding: 4px 10px; margin-top: 6px; }
   .side-col, .side-col.wide { width: 100%; max-height: none; }
   .menu-hint { display: none; }
 }
+
+/* ---------------------------------------------------------------- stage 14: shop */
+.side-col.wide-left { width: 520px; }
+#shop-main { gap: 8px; }
+.shop-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.shop-all { margin-top: 10px; }
+.shop-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.shop-card { display: flex; flex-direction: column; gap: 4px; align-items: stretch; text-align: left; padding: 8px; font-weight: 400; border: 2px solid var(--rar, var(--line)); border-radius: 10px; }
+.shop-card.selected { background: rgba(240, 180, 60, 0.14); box-shadow: 0 0 0 1px var(--accent); }
+.shop-card.owned { opacity: 0.65; }
+.shop-card.featured { background: rgba(255, 255, 255, 0.06); }
+.shop-card .skin-swatch { height: 46px; }
+.shop-row { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
+.shop-price { font-weight: 800; color: var(--accent); font-variant-numeric: tabular-nums; }
+.shop-price.short { color: var(--muted); }
+.shop-owned { color: #6fdc7a; font-size: 12px; font-weight: 700; }
+.shop-balance { display: flex; justify-content: space-between; align-items: baseline; margin-top: 8px; }
+.shop-balance b { font-size: 22px; }
+.buy-btn { margin-top: 4px; padding: 12px; font-size: 15px; }
+.shop-ok { color: #6fdc7a; margin: 0; font-size: 13px; min-height: 1em; }
+.dev-box { margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--line); display: flex; flex-direction: column; gap: 6px; }
+@media (max-width: 900px) { .side-col.wide-left { width: 100%; } .shop-grid { grid-template-columns: repeat(2, 1fr); } }

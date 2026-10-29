@@ -44,3 +44,30 @@ export function skinList() {
 }
 
 export const hexColor = (n) => `#${n.toString(16).padStart(6, '0')}`;
+
+// ---------------------------------------------------------------- shop
+
+/** Money price by rarity. Common skins are free, so the shop only sells the rest. */
+export const SKIN_PRICES = { rare: 1000, epic: 2500, legendary: 6000 };
+export const priceOf = (skinId) => (SKINS[skinId] ? SKIN_PRICES[SKINS[skinId].rarity] ?? null : null);
+/** Skins the shop sells, cheapest rarity first. */
+export const shopSkins = () => skinList().filter((s) => priceOf(s.id) !== null);
+
+export const DAY_MS = 24 * 60 * 60 * 1000;
+/** The UTC day number the featured skins are picked for. */
+export const dayIndex = (now = Date.now()) => Math.floor(now / DAY_MS);
+
+/**
+ * Today's featured skins: one of each rarity the shop sells, picked from the day number so
+ * everyone sees the same ones and they change at 00:00 UTC.
+ */
+export function featuredSkins(day = dayIndex()) {
+  let a = (day * 2654435761) >>> 0;
+  const rand = () => { a = (a + 0x6d2b79f5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  const out = [];
+  for (const rarity of Object.keys(SKIN_PRICES)) {
+    const pool = SKIN_IDS.filter((id) => SKINS[id].rarity === rarity);
+    out.push(pool[Math.floor(rand() * pool.length)]);
+  }
+  return out;
+}

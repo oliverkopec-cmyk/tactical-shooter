@@ -37,3 +37,10 @@ export function syncSettingsToAccount(isLoggedIn) {
 export const equipSkin = (weapon, skin) => call('PUT', 'equip/skin', { weapon, skin });
 /** Equip an operator for their side; they also become the one shown in the main menu. */
 export const equipOperator = (operator) => call('PUT', 'equip/operator', { operator });
+
+/** Today's featured skins: { featured: [skinId], resetsAt } */
+export const getShop = () => call('GET', 'shop');
+/** Buy a skin with Money. The server checks the price, your Money and ownership. */
+export const buySkin = (skin) => call('POST', 'shop/buy', { skin });
+/** Local test database only: adds Money so the shop can be tried. */
+export const devMoney = () => call('POST', 'dev/money');
