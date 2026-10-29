@@ -37,6 +37,15 @@ const SCHEMA = `
   ALTER TABLE accounts ADD COLUMN IF NOT EXISTS quests JSONB NOT NULL DEFAULT '{}';
   ALTER TABLE accounts ADD COLUMN IF NOT EXISTS stats JSONB NOT NULL DEFAULT '{}';
   ALTER TABLE accounts ADD COLUMN IF NOT EXISTS equipped_operators JSONB NOT NULL DEFAULT '{}';
+  CREATE TABLE IF NOT EXISTS friendships (
+    id         BIGSERIAL PRIMARY KEY,
+    requester  BIGINT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    addressee  BIGINT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    status     TEXT NOT NULL DEFAULT 'pending',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS friendships_pair_idx ON friendships (LEAST(requester, addressee), GREATEST(requester, addressee));
+  CREATE INDEX IF NOT EXISTS friendships_addressee_idx ON friendships (addressee);
 `;
 
 /** Create or update the tables (safe to run every start). */

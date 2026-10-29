@@ -33,7 +33,8 @@ const io = new Server(server, {
   pingTimeout: 8000,
 });
 
-const rooms = new RoomManager(io, accounts.progression);
+const rooms = new RoomManager(io, accounts.progression, accounts.social);
+const social = accounts.social;
 const SHARED_VERSION = sharedCodeVersion();
 // Pages built from different shared code would mispredict movement: send them back to reload.
 // ('dev' is the Vite dev server, which always runs the current files.)
@@ -48,11 +49,39 @@ io.on('connection', (socket) => {
   accounts.trackOnline(socket);
 
   socket.on('createRoom', (ack) => {
+    const me = socket.data.account.id;
+    const party = social.partyOf.get(me);
+    // A party's room is made by its leader, and the whole party comes with them
+    if (party && party.leader !== me) {
+      return reply(ack, { ok: false, error: 'Only the party leader can create a room for the party. Leave the party to make your own.' });
+    }
     if (socket.data.room) socket.data.room.remove(socket);
     const room = rooms.createRoom();
     room.add(socket);
-    reply(ack, { ok: true, code: room.code, id: socket.id });
+    const joined = [], busy = [];
+    if (party) {
+      const leaderTeam = room.members.get(socket.id).team;
+      for (const id of party.members) {
+        if (id === me) continue;
+        const member = social.socketOf(id);
+        if (!member) continue;
+        if (member.data.room) { busy.push(member.data.account.username); social.notice(me, `${member.data.account.username} is in another room, so they didn't join.`); continue; }
+        room.add(member);
+        room.setTeam(member.id, leaderTeam);   // the party plays together
+        joined.push(member.data.account.username);
+      }
+    }
+    reply(ack, { ok: true, code: room.code, id: socket.id, party: party ? { joined, busy } : null });
   });
+
+  // ---- parties (invites come from the Friends tab)
+  socket.on('partyInvite', async (accountId, ack) => {
+    const res = await social.invite(socket.data.account.id, Number(accountId));
+    reply(ack, res);
+  });
+  socket.on('partyRespond', ({ partyId, accept } = {}, ack) => reply(ack, social.respondInvite(socket.data.account.id, Number(partyId), !!accept)));
+  socket.on('partyLeave', (ack) => { social.leaveParty(socket.data.account.id); reply(ack, { ok: true }); });
+  socket.on('partyState', (ack) => reply(ack, { party: social.partyState(social.partyOf.get(socket.data.account.id)) }));
 
   socket.on('joinRoom', ({ code } = {}, ack) => {
     const room = rooms.get(code);
