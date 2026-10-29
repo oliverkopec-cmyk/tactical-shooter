@@ -7,6 +7,8 @@ import { MAP } from '../../shared/map.js';
 import { operatorsFor, OPERATORS } from '../../shared/operators.js';
 import { settings, setSetting, setKeybinds, onSettingsChange } from './settings.js';
 import { fillKeys, keyFor } from './controls.js';
+import { rankIcon } from './rankIcon.js';
+import { rankInfo, rankStep, xpForLevel } from '../../shared/progression.js';
 import { BIND_ACTIONS, DEFAULT_KEYBINDS, keyLabel, isBindableCode, RESERVED_CODES } from '../../shared/keybinds.js';
 
 const $ = (id) => document.getElementById(id);
@@ -20,6 +22,7 @@ export class UI {
     this.authMode = 'login';
     this.bindSettings();
     this.bindGunTips();
+    $('summary-close').addEventListener('click', () => this.hideMatchSummary());
   }
 
   // ---------------------------------------------------------------- settings
@@ -243,7 +246,88 @@ export class UI {
     $('profile-level').textContent = `Level ${p.level}`;
     $('profile-money').textContent = p.money.toLocaleString();
     $('profile-polish').textContent = p.polishMoney.toLocaleString();
-    $('profile-rank').textContent = p.rankPoints.toLocaleString();
+    $('profile-xp').textContent = `${(p.xp - xpForLevel(p.level)).toLocaleString()} / ${(xpForLevel(p.level + 1) - xpForLevel(p.level)).toLocaleString()}`;
+    const rank = rankInfo(p.rankPoints);
+    $('profile-rank-icon').innerHTML = rankIcon(rank, 44);
+    $('profile-rank-label').textContent = rank.label;
+    $('profile-rank-label').style.color = rank.color;
+    $('profile-rank').textContent = rank.ceiling === null ? `${p.rankPoints} points` : `${p.rankPoints} / ${rank.ceiling} to ${rank.nextLabel}`;
+    $('profile-rank-bar').style.width = `${Math.round(rank.progress * 100)}%`;
+    $('profile-rank-bar').style.background = rank.color;
+    this.renderQuests(p.quests);
+  }
+
+  // ---------------------------------------------------------------- daily quests
+
+  renderQuests(quests) {
+    this.questsExpireAt = quests?.expiresAt ? Date.parse(quests.expiresAt) : 0;
+    $('quest-list').innerHTML = (quests?.list || []).map((q) => `
+      <div class="quest${q.done ? ' done' : ''}">
+        <div class="quest-top"><span class="quest-label">${q.done ? '✔ ' : ''}${escapeHtml(q.label)}</span><b>+${q.reward}</b></div>
+        <div class="quest-row"><div class="bar thin"><div style="width:${Math.round((q.progress / q.target) * 100)}%"></div></div><span class="muted">${q.progress} / ${q.target}</span></div>
+      </div>`).join('') || '<div class="muted">No quests right now.</div>';
+    this.updateQuestTimer();
+    if (!this.questTimer) this.questTimer = setInterval(() => this.updateQuestTimer(), 30000);
+  }
+
+  updateQuestTimer() {
+    const left = this.questsExpireAt - Date.now();
+    const el = $('quest-timer');
+    if (!this.questsExpireAt) { el.textContent = ''; return; }
+    if (left <= 0) { el.textContent = 'New quests on your next visit'; return; }
+    const h = Math.floor(left / 3600000), m = Math.floor((left % 3600000) / 60000);
+    el.textContent = `New quests in ${h}h ${String(m).padStart(2, '0')}m`;
+  }
+
+  // ---------------------------------------------------------------- end-of-match summary
+
+  /** The server's verdict on a finished match: Money, XP, quests and the rank change. */
+  showMatchSummary(s) {
+    if (document.pointerLockElement) document.exitPointerLock();
+    const el = $('match-summary');
+    el.classList.remove('hidden');
+    const body = $('summary-body');
+    if (s.none) {
+      $('summary-title').textContent = 'MATCH OVER';
+      $('summary-title').className = 'summary-title';
+      $('summary-score').textContent = '';
+      body.innerHTML = `<p class="muted center">${escapeHtml(s.reason || '')}</p>`;
+      return;
+    }
+    $('summary-title').textContent = s.won ? 'VICTORY' : 'DEFEAT';
+    $('summary-title').className = `summary-title ${s.won ? 'win' : 'lose'}`;
+    $('summary-score').textContent = `${s.score.yours} – ${s.score.theirs} in rounds · ${s.stats.kills} kills · ${s.stats.deaths} deaths`;
+
+    const before = rankInfo(s.rank.before), after = rankInfo(s.rank.after);
+    const stepDelta = rankStep(s.rank.after) - rankStep(s.rank.before);
+    const verdict = stepDelta > 0 ? `<div class="rank-verdict up">PROMOTED to ${after.label}</div>`
+      : stepDelta < 0 ? `<div class="rank-verdict down">Demoted to ${after.label}</div>` : '';
+    const sign = s.rank.delta > 0 ? '+' : s.rank.delta < 0 ? '−' : '±';
+    const rankBlock = `
+      <div class="summary-rank">
+        <div class="rank-side">${rankIcon(before, 46)}<span style="color:${before.color}">${before.label}</span></div>
+        <div class="rank-mid"><b class="${s.rank.delta >= 0 ? 'up' : 'down'}">${sign}${Math.abs(s.rank.delta)}</b><span class="muted">rank points</span></div>
+        <div class="rank-side">${rankIcon(after, 46)}<span style="color:${after.color}">${after.label}</span></div>
+      </div>
+      ${verdict}
+      <div class="bar thin"><div style="width:${Math.round(after.progress * 100)}%;background:${after.color}"></div></div>
+      <div class="muted center small-note">${after.ceiling === null ? `${s.rank.after} points` : `${s.rank.after} / ${after.ceiling} to ${after.nextLabel}`}</div>`;
+
+    const lines = s.money.lines.map((l) => `<div class="sum-line"><span>${escapeHtml(l.label)}</span><b>+${l.amount}</b></div>`).join('');
+    const quests = s.money.quests.length
+      ? `<div class="sum-sub">Quests completed</div>${s.money.quests.map((q) => `<div class="sum-line quest-done"><span>✔ ${escapeHtml(q.label)}</span><b>+${q.reward}</b></div>`).join('')}` : '';
+    const leveled = s.xp.levelAfter > s.xp.levelBefore ? `<div class="levelup">LEVEL UP! You are now level ${s.xp.levelAfter}</div>` : '';
+    body.innerHTML = `
+      ${rankBlock}
+      <div class="sum-sub">Money earned</div>
+      ${lines}${quests}
+      <div class="sum-line total"><span>Total</span><b>+${s.money.total + s.money.questTotal}</b></div>
+      <div class="muted center small-note">Balance: ${s.money.balance.toLocaleString()} · +${s.xp.gained} XP</div>
+      ${leveled}`;
+  }
+
+  hideMatchSummary() {
+    $('match-summary').classList.add('hidden');
   }
 
   get code() {

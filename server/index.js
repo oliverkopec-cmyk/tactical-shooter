@@ -33,7 +33,7 @@ const io = new Server(server, {
   pingTimeout: 8000,
 });
 
-const rooms = new RoomManager(io);
+const rooms = new RoomManager(io, accounts.progression);
 const SHARED_VERSION = sharedCodeVersion();
 // Pages built from different shared code would mispredict movement: send them back to reload.
 // ('dev' is the Vite dev server, which always runs the current files.)

@@ -117,7 +117,7 @@ export class RoundManager {
   }
 
   updateAction(now, dt) {
-    const { attackersAlive, defendersAlive, attackersIn, defendersIn } = this.census();
+    const { attackersAlive, defendersAlive, attackersIn, defendersIn } = this.census(dt);
 
     if (attackersAlive === 0) return this.endRound('defense', 'All attackers eliminated', now);
     if (defendersAlive === 0) return this.endRound('attack', 'All defenders eliminated', now);
@@ -138,11 +138,12 @@ export class RoundManager {
     if (now >= this.endsAt) this.endRound('defense', 'Time ran out', now);
   }
 
-  census() {
+  census(dt = 0) {
     const out = { attackersAlive: 0, defendersAlive: 0, attackersIn: 0, defendersIn: 0 };
     for (const p of this.game.players.values()) {
       if (!p.alive) continue;
       const inZone = inObjectiveZone(this.game.activeSite(), p.state);
+      if (inZone) p.stats.objSecs += dt;     // time on the objective earns Money and counts for quests
       if (p.member.team === 'attack') { out.attackersAlive++; if (inZone) out.attackersIn++; }
       else { out.defendersAlive++; if (inZone) out.defendersIn++; }
     }
@@ -158,6 +159,7 @@ export class RoundManager {
     this.phase = PHASE.ROUND_END;
     this.endsAt = now + ms(this.matchOver ? MATCH_END_MS : ROUND_END_MS);
     this.lastResult = { winner: winnerSide, reason, halftime };
+    if (this.matchOver) this.game.settleMatch(winnerSquad);
     this.game.emitAll('roundEnd', {
       ...this.info(), winner: winnerSide, reason, halftime,
       matchOver: this.matchOver,

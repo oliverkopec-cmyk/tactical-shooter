@@ -8,6 +8,7 @@ import { MAP } from '../shared/map.js';
 import { createPlayerState, stepPlayer, weaponInput } from '../shared/movement.js';
 import { createWeaponState, stepWeapon, gunMobility } from '../shared/weapons.js';
 import { UTILITIES } from '../shared/utilities.js';
+import { MIN_ROUNDS_TO_COUNT } from './progression.js';
 import { OPERATORS, defaultOperator, operatorsFor, speedMultiplier, damageMultiplier } from '../shared/operators.js';
 import { World } from '../shared/world.js';
 import { maskKeys, attackSpawnPoint, inObjectiveZone } from '../shared/rules.js';
@@ -73,6 +74,8 @@ export class GameState {
       placedCharge: null,
       kills: 0,
       deaths: 0,
+      // What the rewards and daily quests count; the server tallies these itself
+      stats: { rounds: 0, headshots: 0, plants: 0, reinforced: 0, barricades: 0, utilities: 0, objSecs: 0 },
       operator: defaultOperator(member.team),
       opConfirmed: false,     // picked on the select screen this round
       ability: null,          // { charges, cdUntil, shieldId } for the current operator
@@ -95,6 +98,12 @@ export class GameState {
   }
 
   removePlayer(id) {
+    const leaving = this.players.get(id);
+    // Walking out of a match that is still going counts as a forfeit (no reward, rank points lost)
+    const started = this.rounds.round > 1 || this.rounds.phase !== PHASE.INTRO;
+    if (leaving && !this.settled && started && leaving.stats.rounds >= 1 && leaving.member.accountId) {
+      this.room.progression?.forfeit(leaving.member.accountId).catch((err) => console.error('Forfeit failed:', err.message));
+    }
     this.players.delete(id);
     for (const d of [...this.drones.values()]) if (d.owner === id) this.drones.delete(d.id);
     this.destruction.removeChargesOf(id);
@@ -413,6 +422,7 @@ export class GameState {
       p.spawned = true;
       p.health = MAX_HEALTH;
       p.alive = true;
+      p.stats.rounds++;
       p.queue.length = 0;
       p.timeBudget = 0;
       p.charges = team === 'attack' ? BASIC_CHARGES : 0;
@@ -566,6 +576,36 @@ export class GameState {
     return sides.has('attack') && sides.has('defense');
   }
 
+  /**
+   * The match is over: pay every player who was in it long enough, then send each their summary.
+   * winnerSquad is 'A' or 'B'. Called once, from the round manager.
+   */
+  settleMatch(winnerSquad) {
+    if (this.settled) return;
+    this.settled = true;
+    const progression = this.room.progression;
+    if (!progression) return;
+    const scores = this.rounds.squadScores;
+    for (const [id, p] of this.players) {
+      const accountId = p.member.accountId;
+      if (!accountId) continue;
+      if (p.stats.rounds < MIN_ROUNDS_TO_COUNT) {
+        this.io.to(id).emit('matchSummary', { none: true, reason: 'You joined too late for this match to count towards rewards or rank.' });
+        continue;
+      }
+      const squad = p.member.squad, other = squad === 'A' ? 'B' : 'A';
+      const match = {
+        won: squad === winnerSquad, rounds: p.stats.rounds, roundsWon: Math.min(scores[squad], p.stats.rounds),
+        kills: p.kills, deaths: p.deaths, headshots: p.stats.headshots, plants: p.stats.plants, reinforced: p.stats.reinforced,
+        barricades: p.stats.barricades, utilities: p.stats.utilities, objSecs: p.stats.objSecs,
+        score: { yours: scores[squad], theirs: scores[other] },
+      };
+      progression.settle(accountId, match)
+        .then((summary) => { if (summary) this.io.to(id).emit('matchSummary', summary); })
+        .catch((err) => console.error('Match payout failed:', err.message));
+    }
+  }
+
   finishMatch() {
     this.room.endMatch();
   }
@@ -696,7 +736,10 @@ export class GameState {
     this.emitAll('kill', { killer: killerId, victim: victimId, weapon: weaponId, head });
     victim.deaths++;
     const killer = this.players.get(killerId);
-    if (killer && killerId !== victimId) killer.kills++;
+    if (killer && killerId !== victimId) {
+      killer.kills++;
+      if (head) killer.stats.headshots++;
+    }
     this.emitAll('stats', this.statsPayload());
   }
 

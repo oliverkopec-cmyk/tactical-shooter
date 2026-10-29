@@ -28,6 +28,7 @@ function enterAccount(profile) {
 }
 
 function leaveAccount(message = '') {
+  ui.hideMatchSummary();
   account = null;
   room = null;
   game.stop();
@@ -105,6 +106,14 @@ network.on('matchStart', (payload) => {
 
 network.on('matchStart', () => ui.lobbyError(''));
 network.on('notice', ({ message }) => ui.lobbyError(message));
+
+// The server pays out rewards and rank changes itself and tells us the new numbers.
+network.on('profile', (profile) => {
+  if (!account) return;
+  account = { ...account, ...profile };
+  ui.renderProfile(account);
+});
+network.on('matchSummary', (summary) => ui.showMatchSummary(summary));
 
 network.on('sessionReplaced', () => { replaced = true; });
 

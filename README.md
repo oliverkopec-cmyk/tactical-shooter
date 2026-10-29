@@ -2,7 +2,18 @@
 
 A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite on the client, Node.js + Socket.IO on an authoritative server. One Node process serves both the game client and the realtime server, so the whole thing deploys as a single Render web service.
 
-## Status: Stage 11 (weapons and loadouts)
+## Status: Stage 12 (rewards, quests and ranks)
+
+- **Money after every match**, worked out by the server: 100 for playing, +150 for winning, +25 per round your side won, +10 per kill (+5 more for a headshot kill), +2 per second on the objective (up to +80) and +5 per breach charge planted. A typical loss pays about 150, a typical win 350-550.
+- **XP and levels:** the match Money is also XP. Level 2 needs 250 XP in total, level 3 750, level 4 1500 (`125 × n × (n−1)`).
+- **3 daily quests** that pay Money when completed and refresh 24 hours after they were handed out. Progress counts finished matches: kills, headshot kills, matches won or played, rounds won, utilities used, time on the objective, and (for one side only) breach charges planted, walls reinforced or barricades built. A set never has more than one side-specific quest.
+- **Ranked points:** a win is about +25 and a loss about −20, nudged by up to 7 points by how you did (kills minus deaths per round, plus time on the objective). Wins stay between +15 and +35, losses between −8 and −30. Points never drop below 0.
+- **Ranks with icons:** Bronze, Silver, Gold, Platinum and Diamond, three tiers each (I-III, 100 points per tier), then Champion at 1500 points. The icons are drawn in code: a shield in the rank's colour with 1-3 chevrons, or a star for Champion.
+- **End-of-match screen:** a summary with the result, a rank before/after with the points change (and PROMOTED/Demoted), every Money line, completed quests and level-ups. It stays up until you press Continue.
+- The home screen now shows your rank, progress to the next tier, level XP and the three quests with a countdown.
+- **Fair play rules, all on the server:** a match only counts for players who were in it for at least 2 rounds; leaving a match that is still going costs 25 rank points and pays nothing (so you can't dodge a loss by quitting); a match is paid once; matches that end early because a side emptied pay nothing.
+
+### Earlier: Stage 11 (weapons and loadouts)
 
 - **Every operator has a unique primary and secondary gun** (20 guns in all: assault rifles, a carbine, SMGs, shotgun, LMG, marksman and battle rifles, pistols, revolvers, a hand cannon and machine pistol), plus their F ability. The two Recruits are the standard-issue loadouts.
 - **Weapon keys:** `1` primary, `2` secondary (drawing a gun takes 0.4 s; ammo is kept per gun). Both are rebindable.
@@ -121,10 +132,13 @@ shared/            Code used by BOTH client and server
   account.js       username/password rules, which operators an account owns
   settings.js      setting defaults and limits (the server cleans saved settings with these)
   keybinds.js      rebindable actions, default keys, key names, keybind cleaning
+  progression.js   rank ladder, level maths, daily quest definitions
 server/
   index.js         Express static hosting + Socket.IO events
   db.js            Postgres connection (DATABASE_URL) or local PGlite fallback, table setup
-  accounts.js      sign-up/log-in API, session cookies, profiles, socket login check
+  accounts.js      sign-up/log-in API, session cookies, socket login check
+  profile.js       what an account's profile looks like to its owner
+  progression.js   match rewards, rank points, daily quests, forfeits
   rooms.js         room codes, join/leave, teams, host
   gameState.js     authoritative simulation and snapshots per room
   combat.js        pose history (lag compensation) and shot resolution
@@ -194,6 +208,14 @@ Other players' sounds are derived on each client from the snapshots (speed, stan
 ## Barricades, melee and props
 
 `MAP.openings` lists every door and window gap (generated in `shared/map.js`; `findOpening()` finds the one a ray passes through). A barricade is a set of dynamic boxes added to the shared `World` (`kind: 'barricade'`), so movement and bullets on both sides treat the planks as solid. The server owns plank health and sends `barricadeBroken` events; clients remove the same planks. Props live in the same `MAP.boxes` list as walls (`prop()` in `shared/map.js`), with `MAP.details` for visual-only decoration. Run the reachability check idea from the commit when you move props: every room, both staircases and all spawn points must stay open.
+
+## Rewards, quests and ranks
+
+- `shared/progression.js` has what menus need: the rank ladder (`rankInfo()`), level maths and the quest list. `server/progression.js` has the numbers that decide rewards (`REWARD`, `RANK`) and the database side.
+- The game tallies each player's stats itself (`p.stats`: kills and headshots at the kill, plants and reinforcements when they happen, time on the objective each tick). When a side reaches 4 rounds, `rounds.endRound` calls `GameState.settleMatch`, which hands each account to `Progression.settle`. That reads the account, adds Money, XP, rank points and quest progress, writes it back and sends the player a `matchSummary` plus a fresh `profile`. A per-account lock makes two matches ending at once safe.
+- Nothing in the client can ask for Money, XP or rank points: there are no socket events for it, only the server pushes `profile` and `matchSummary`.
+- `Progression.forfeit` handles leavers. Daily quests live on the account (`quests` column: ids and progress; labels, targets and rewards are looked up from the shared list) and are replaced when `expiresAt` passes, checked at login, on each page load and at match end.
+- To tune the economy, change `REWARD` / `RANK` in `server/progression.js` and the quest list in `shared/progression.js`.
 
 ## Weapons and utilities
 
