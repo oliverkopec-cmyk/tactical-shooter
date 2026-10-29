@@ -30,8 +30,8 @@ export const UTILITIES = {
 };
 
 export const UTIL_STATS = {
-  frag: { speed: 13, fuse: 2.2, radius: 5.5, damage: 95, minDamage: 0.2, barricade: 2 },
-  impact: { speed: 17, fuse: 4, radius: 3.2, damage: 60, minDamage: 0.3, barricade: 1.6 },
+  frag: { speed: 13, fuse: 2.2, radius: 5.5, damage: 95, minDamage: 0.2, barricade: 2, panels: 1.3 },
+  impact: { speed: 17, fuse: 4, radius: 3.2, damage: 60, minDamage: 0.3, barricade: 1.6, panels: 0.8 },
   flash: { speed: 14, fuse: 1.4, radius: 10, duration: 3.2, awayScale: 0.4 },
   smoke: { speed: 12, fuse: 1.1, radius: 3.6, duration: 12 },
   claymore: { arm: 1.2, range: 3.4, halfAngleCos: 0.8, damage: 85, minDamage: 0.5, reach: 3 },

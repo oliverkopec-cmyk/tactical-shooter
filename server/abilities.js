@@ -206,6 +206,12 @@ export class Gadgets {
         this.game.applyDamage(pid, g.owner, amount, { weapon: g.type, from: [g.pos[0], g.pos[2]] });
       }
       this.blastBarricades(g.pos, B.barricade);
+      // Soft walls near the blast: a bigger hole for a frag than for an impact grenade
+      const owner = this.game.players.get(g.owner);
+      if (owner && this.game.canBreakWalls(owner)) {
+        const ids = this.world.panelsNear(g.pos, B.panels).filter((pid) => !this.world.isReinforcedPanel(pid));
+        if (ids.length) this.game.destruction.destroy(ids);
+      }
     }
     this.game.emitAll('grenadeExploded', { id: g.id, pos, type: g.type });
   }

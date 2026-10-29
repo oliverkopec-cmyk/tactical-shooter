@@ -11,10 +11,11 @@ A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite o
 - **Utilities:** every operator offers two; you pick one on the operator select screen before each round (your choice is remembered). `4` uses it (rebindable). 2 charges each, 0.8 s between uses:
   - **Claymore**: sticks to a floor or wall, arms after 1.2 s, then blasts the first enemy to walk into the cone in front of it (up to 3.4 m, 85 damage, falling off with distance; teammates and anyone behind it are safe)
   - **Flash grenade**: blinds enemies who can see the burst for 3.2 s (40% as long if they look away); no slow
-  - **Impact grenade**: explodes the moment it hits anything, including an enemy; 60 damage within 3.2 m and smashes barricades
+  - **Impact grenade**: explodes the moment it hits anything, including an enemy; 60 damage within 3.2 m, smashes barricades and blows a small hole (0.8 m) in soft walls
   - **Smoke grenade**: a thick cloud that blocks sight for 12 s
-  - **Frag grenade**: bounces, bursts after 2.2 s; 95 damage within 5.5 m (falling off), blocked by walls, and it smashes barricades
-- Utilities are placed or thrown in prep (defenders) and action. They only ever hurt enemies.
+  - **Frag grenade**: bounces, bursts after 2.2 s; 95 damage within 5.5 m (falling off, blocked by walls), smashes barricades and blows a bigger hole (1.3 m) in soft walls
+- Utilities are placed or thrown in prep (defenders) and action. They only ever hurt enemies. Reinforced walls are never affected by grenades.
+- **Prep wall damage:** during prep, defenders can damage soft walls with bullets, melee and frag/impact grenades, to open sight lines and shooting holes before the round (attackers have no body in prep, so it's defenders only). Walls can't be damaged during operator select. Barricades still only take damage in the action phase.
 
 ### Earlier: Stage 10 (movement and keybinds)
 

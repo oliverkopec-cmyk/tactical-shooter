@@ -307,6 +307,15 @@ export class GameState {
     }
   }
 
+  /**
+   * Who may damage soft walls (bullets, melee, grenades): everyone in the action
+   * phase, and defenders in prep so they can open sight lines before the round.
+   */
+  canBreakWalls(p) {
+    const phase = this.rounds.phase;
+    return phase === PHASE.ACTION || (phase === PHASE.PREP && p.member.team === 'defense');
+  }
+
   /** Right click: a quick strike at whatever is right in front of you. */
   melee(id, p, now) {
     const phase = this.rounds.phase;
@@ -345,10 +354,11 @@ export class GameState {
         if (inFront(c.pos, MELEE.reach + 0.4) !== null) { this.gadgets.destroyCamera(c.id); return; }
       }
     }
-    if (phase === PHASE.ACTION) {
+    if (this.canBreakWalls(p)) {
       const wall = raycastWorld(this.world, origin, aim, MELEE.reach);
-      if (wall?.box.kind === 'barricade') this.gadgets.damageBarricadePanel(wall.box.barricadeId, wall.box.panelIndex, BARRICADE.meleeDamage);
-      else if (wall?.box.kind === 'panel') {
+      if (wall?.box.kind === 'barricade') {
+        if (phase === PHASE.ACTION) this.gadgets.damageBarricadePanel(wall.box.barricadeId, wall.box.panelIndex, BARRICADE.meleeDamage);
+      } else if (wall?.box.kind === 'panel') {
         // Each melee hit knocks out one wall panel. Reinforced walls shrug it off.
         if (this.world.isReinforcedPanel(wall.box.id)) this.io.to(id).emit('actionError', { msg: 'Reinforced walls can\'t be broken by melee.' });
         else this.destruction.destroy([wall.box.id]);
@@ -636,8 +646,9 @@ export class GameState {
     else this.emitAll('shot', shotMsg);
 
     const w = shooter.weapon.id;
+    const breaksWalls = this.canBreakWalls(shooter);
     for (const pellet of shot.pellets) {
-      if (pellet.panelId !== null && this.rounds.phase === PHASE.ACTION) this.destruction.damagePanel(pellet.panelId, pellet.panelDamage);
+      if (pellet.panelId !== null && breaksWalls) this.destruction.damagePanel(pellet.panelId, pellet.panelDamage);
     }
     for (const pellet of shot.pellets) if (pellet.cameraId) this.gadgets.destroyCamera(pellet.cameraId);
     if (this.rounds.phase === PHASE.ACTION) {
