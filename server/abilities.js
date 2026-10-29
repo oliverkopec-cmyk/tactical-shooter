@@ -10,10 +10,10 @@ import {
 } from '../shared/constants.js';
 import { MAP, findOpening } from '../shared/map.js';
 import { OPERATORS } from '../shared/operators.js';
-import { getEyePosition, forwardVec, eyeHeight } from '../shared/movement.js';
+import { getEyePosition, forwardVec, eyeHeight, bodyHeight } from '../shared/movement.js';
 import { aimDirection } from '../shared/weapons.js';
 import { raycastWorld } from '../shared/raycast.js';
-import { UTILITIES, UTIL_STATS } from '../shared/utilities.js';
+import { UTILITIES, UTIL_STATS, claymoreLines } from '../shared/utilities.js';
 
 export class Gadgets {
   constructor(game) {
@@ -268,17 +268,34 @@ export class Gadgets {
     return true;
   }
 
-  /** Enemies standing in a claymore's cone with a clear line to it. */
-  claymoreTargets(c, range) {
+  /** Does an enemy's body touch one of the claymore's tripwires? */
+  tripped(c) {
+    const touch = UTIL_STATS.claymore.touch;
+    for (const line of claymoreLines(this.world, c.pos, c.dir)) {
+      const [ax, , az] = line.from, [bx, , bz] = line.to;
+      const abx = bx - ax, abz = bz - az, len2 = abx * abx + abz * abz || 1;
+      for (const [pid, q] of this.game.players) {
+        if (!q.alive || q.spawned === false || q.member.team === c.team) continue;
+        const s = q.state;
+        const y = line.from[1];
+        if (y < s.y - 0.05 || y > s.y + bodyHeight(s.crouch, s.prone || 0)) continue;   // the line passes over or under them
+        const t = Math.max(0, Math.min(1, ((s.x - ax) * abx + (s.z - az) * abz) / len2));
+        if (Math.hypot(s.x - (ax + abx * t), s.z - (az + abz * t)) <= touch) return pid;
+      }
+    }
+    return null;
+  }
+
+  /** Enemies in front of the claymore, close enough and in the clear, caught by the blast. */
+  claymoreTargets(c) {
     const C = UTIL_STATS.claymore;
     const out = [];
     for (const [pid, q] of this.game.players) {
       if (!q.alive || q.spawned === false || q.member.team === c.team) continue;
-      const centre = [q.state.x, q.state.y + 0.9, q.state.z];
-      const vx = centre[0] - c.pos[0], vy = centre[1] - c.pos[1], vz = centre[2] - c.pos[2];
+      const vx = q.state.x - c.pos[0], vy = q.state.y + 0.9 - c.pos[1], vz = q.state.z - c.pos[2];
       const flat = Math.hypot(vx, vz);
-      if (flat > range || Math.abs(vy) > 1.5) continue;
-      if (flat > 0.3 && (vx * c.dir[0] + vz * c.dir[2]) / flat < C.halfAngleCos) continue;
+      if (flat > C.blastRange || Math.abs(vy) > 1.5) continue;
+      if (flat > 0.3 && vx * c.dir[0] + vz * c.dir[2] < 0) continue;           // behind it: safe
       const dist = Math.hypot(vx, vy, vz);
       const wall = raycastWorld(this.world, c.pos, [vx / dist, vy / dist, vz / dist], dist);
       if (wall && wall.t < dist - 0.3) continue;
@@ -290,16 +307,31 @@ export class Gadgets {
   checkClaymores(now) {
     const C = UTIL_STATS.claymore;
     for (const c of [...this.claymores.values()]) {
-      if (now < c.armedAt || !this.claymoreTargets(c, C.range).length) continue;
-      const victims = this.claymoreTargets(c, C.range);
-      this.claymores.delete(c.id);
-      this.broadcast('gadgetRemove', 'claymore', { id: c.id });
+      if (now < c.armedAt) continue;
+      const toucher = this.tripped(c);
+      if (toucher === null) continue;
+      const victims = this.claymoreTargets(c);
+      if (!victims.some((v) => v.pid === toucher)) victims.push({ pid: toucher, dist: C.touch });   // whoever tripped it is always caught
+      this.removeClaymore(c.id);
       this.game.emitAll('claymoreBlast', { id: c.id, pos: c.pos, dir: c.dir });
       for (const { pid, dist } of victims) {
-        const amount = C.damage * (1 - (1 - C.minDamage) * (dist / C.range));
+        const amount = C.damage * (1 - (1 - C.minDamage) * Math.min(1, dist / C.blastRange));
         this.game.applyDamage(pid, c.owner, amount, { weapon: 'claymore', from: [c.pos[0], c.pos[2]] });
       }
     }
+  }
+
+  removeClaymore(id) {
+    if (!this.claymores.delete(id)) return false;
+    this.broadcast('gadgetRemove', 'claymore', { id });
+    return true;
+  }
+
+  /** Shot or hit by an enemy: the claymore is destroyed without going off. */
+  destroyClaymore(id) {
+    const c = this.claymores.get(id);
+    if (!c || !this.removeClaymore(id)) return;
+    this.game.emitAll('claymoreDestroyed', { id, pos: c.pos });
   }
 
   // ---------------------------------------------------------------- barricades (B)

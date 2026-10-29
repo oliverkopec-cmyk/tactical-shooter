@@ -219,6 +219,12 @@ export class Game {
       this.effects.puff(cloud.pos, 0xcfd2d6, 0.5);
       this.sound.placed('smoke', cloud.pos);
     });
+    network.on('claymoreDestroyed', ({ pos }) => {
+      if (!this.running) return;
+      this.effects.debris(pos, 0x4a5a3a, 5);
+      this.effects.puff(pos, 0xffd27a, 0.2);
+      this.audio.clank(pos);
+    });
     network.on('claymoreBlast', ({ pos }) => {
       if (!this.running) return;
       this.effects.explosion(pos);

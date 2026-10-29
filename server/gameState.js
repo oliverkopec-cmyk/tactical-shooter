@@ -354,6 +354,9 @@ export class GameState {
         if (inFront(c.pos, MELEE.reach + 0.4) !== null) { this.gadgets.destroyCamera(c.id); return; }
       }
     }
+    for (const c of [...this.gadgets.claymores.values()]) {
+      if (c.team !== p.member.team && inFront(c.pos, MELEE.reach + 0.3) !== null) { this.gadgets.destroyClaymore(c.id); return; }
+    }
     if (this.canBreakWalls(p)) {
       const wall = raycastWorld(this.world, origin, aim, MELEE.reach);
       if (wall?.box.kind === 'barricade') {
@@ -627,6 +630,7 @@ export class GameState {
       shooterId, shooter, input, world: this.world, players: this.players, history: this.history, now,
       drones: [...this.drones.values()],      // arrays, not iterators: every pellet checks them
       cameras: [...this.gadgets.cameras.values()],
+      claymores: [...this.gadgets.claymores.values()],
     });
 
     // Total damage per victim across pellets
@@ -651,6 +655,7 @@ export class GameState {
       if (pellet.panelId !== null && breaksWalls) this.destruction.damagePanel(pellet.panelId, pellet.panelDamage);
     }
     for (const pellet of shot.pellets) if (pellet.cameraId) this.gadgets.destroyCamera(pellet.cameraId);
+    for (const pellet of shot.pellets) if (pellet.claymoreId) this.gadgets.destroyClaymore(pellet.claymoreId);
     if (this.rounds.phase === PHASE.ACTION) {
       for (const pellet of shot.pellets) {
         if (pellet.barricade) this.gadgets.damageBarricadePanel(pellet.barricade.id, pellet.barricade.index, pellet.panelDamage);

@@ -5,6 +5,7 @@
 // raycasts agree with the server.
 
 import * as THREE from 'three';
+import { claymoreLines, UTIL_STATS } from '../../shared/utilities.js';
 
 const shieldMat = new THREE.MeshStandardMaterial({
   color: 0x6fb8d8, transparent: true, opacity: 0.55, roughness: 0.2, metalness: 0.4, emissive: 0x1a4a66, emissiveIntensity: 0.6,
@@ -27,6 +28,7 @@ function grenadeMaterial(kind) {
 }
 const claymoreMat = new THREE.MeshStandardMaterial({ color: 0x4a5a3a, roughness: 0.7 });
 const smokeGeo = new THREE.SphereGeometry(1, 12, 9);
+const wireGeo = new THREE.BoxGeometry(1, 1, 1);
 
 function makeWire(half) {
   const g = new THREE.Group();
@@ -149,7 +151,18 @@ export class GadgetView {
     } else return;
     group.traverse((o) => { if (o.isMesh) o.castShadow = rec.kind !== 'shield'; });
     this.scene.add(group);
-    this.items.set(key, { kind: rec.kind, group, rec });
+    const item = { kind: rec.kind, group, rec };
+    if (rec.kind === 'claymore') {
+      // Three faint laser tripwires, shown once it is armed. Each one is cut short by the first thing in its way.
+      item.born = performance.now();
+      item.lines = [0, 1, 2].map(() => {
+        const m = new THREE.Mesh(wireGeo, new THREE.MeshBasicMaterial({ color: 0xff3030, transparent: true, opacity: 0.4, depthWrite: false }));
+        m.visible = false;
+        this.scene.add(m);
+        return m;
+      });
+    }
+    this.items.set(key, item);
   }
 
   remove(kind, id) {
@@ -159,6 +172,7 @@ export class GadgetView {
     if (kind === 'shield') this.world.removeBox(`shield-${id}`);
     if (kind === 'barricade') for (const i of it.group.userData.meshes.keys()) this.world.removeBox(`bar-${id}-${i}`);
     this.scene.remove(it.group);
+    for (const m of it.lines || []) { this.scene.remove(m); m.material.dispose(); }
     this.items.delete(key);
   }
 
@@ -193,7 +207,10 @@ export class GadgetView {
   }
 
   clear() {
-    for (const it of this.items.values()) this.scene.remove(it.group);
+    for (const it of this.items.values()) {
+      this.scene.remove(it.group);
+      for (const m of it.lines || []) this.scene.remove(m);
+    }
     this.items.clear();
     for (const g of this.grenades.values()) this.scene.remove(g.mesh);
     this.grenades.clear();
@@ -255,6 +272,23 @@ export class GadgetView {
       const grow = Math.min(1, s.age / 0.9), fade = Math.min(1, (s.life - s.age) / 3);
       s.group.scale.setScalar(0.25 + 0.75 * (1 - (1 - grow) ** 2));
       for (const ball of s.group.children) ball.material.opacity = 0.93 * fade;
+    }
+    // Claymore tripwires: recomputed every frame so they stop where walls, props, shields or barricades are
+    for (const it of this.items.values()) {
+      if (!it.lines) continue;
+      const armed = performance.now() - it.born >= UTIL_STATS.claymore.arm * 1000;
+      const lines = armed ? claymoreLines(this.world, it.rec.pos, it.rec.dir) : null;
+      const pulse = 0.32 + 0.1 * Math.sin(this.t * 6);
+      it.lines.forEach((mesh, i) => {
+        mesh.visible = !!lines;
+        if (!lines) return;
+        const { from, to, len } = lines[i];
+        mesh.visible = len > 0.05;
+        mesh.position.set((from[0] + to[0]) / 2, from[1], (from[2] + to[2]) / 2);
+        mesh.scale.set(0.012, 0.012, len);
+        mesh.lookAt(to[0], to[1], to[2]);
+        mesh.material.opacity = pulse;
+      });
     }
     const on = this.t % 1.2 < 0.25;
     for (const it of this.items.values()) {
