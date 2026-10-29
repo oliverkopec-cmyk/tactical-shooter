@@ -2,13 +2,19 @@
 
 A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite on the client, Node.js + Socket.IO on an authoritative server. One Node process serves both the game client and the realtime server, so the whole thing deploys as a single Render web service.
 
-## Status: Stage 9 (accounts)
+## Status: Stage 10 (movement and keybinds)
+
+- Jump (Space) for players and drones; players can't shoot in mid-air
+- Prone (Z, toggle): slow, no sprinting, a smaller hitbox lying along the body; crouch moved to C and defender cameras to T
+- Settings → Keybinds: rebind every action to any key or mouse button, reset to default; saved to the account
+
+### Earlier: Stage 9 (accounts)
 
 - Log in or create an account (username + password); you stay logged in between visits
 - Your profile shows your level, Money, Polish Money and rank points, and saves your settings
 - Create a room (4-letter code) or join one; your username is your name in the lobby and in matches
 - Pick Attack or Defense in the lobby (max 5 per team); the host starts the match
-- First-person movement: WASD, mouse look (pointer lock), Shift sprint, Ctrl or Z crouch, Q/E lean
+- First-person movement: WASD, mouse look (pointer lock), Shift sprint, Space jump, C crouch, Z prone, Q/E lean (all rebindable)
 - Server-authoritative movement with client-side prediction, reconciliation and interpolation of other players
 - Two-storey map with interior and exterior stairs, a balcony, and the objective box
 - Hitscan weapons (rifle, SMG, shotgun) with recoil, spread, magazines and reload (R)
@@ -88,6 +94,7 @@ shared/            Code used by BOTH client and server
   rules.js         which inputs are allowed in each round phase, objective zone test
   account.js       username/password rules, which operators an account owns
   settings.js      setting defaults and limits (the server cleans saved settings with these)
+  keybinds.js      rebindable actions, default keys, key names, keybind cleaning
 server/
   index.js         Express static hosting + Socket.IO events
   db.js            Postgres connection (DATABASE_URL) or local PGlite fallback, table setup
@@ -102,6 +109,7 @@ client/
   index.html       lobby screens + HUD markup
   src/main.js      wires login, UI, network, game
   src/account.js   calls the account API (session, sign-up, log-in, settings)
+  src/controls.js  current keybinds: action for a key, key name for an action
   src/network.js   Socket.IO wrapper, server clock estimate
   src/game.js      Three.js scene and frame loop
   src/player.js    local player: input, prediction, reconciliation, camera
@@ -116,6 +124,15 @@ client/
   src/map.js       renders the shared map, lighting
   src/ui.js        lobby and HUD DOM
 ```
+
+## Movement and keybinds
+
+- Jump and prone are input bits (`KEY.JUMP`, `KEY.PRONE`) simulated by `shared/movement.js` on both sides, so prediction and the server agree. Prone is a toggle on the client, which sends the PRONE bit while it's on; crouching or jumping gets you up.
+- `state.prone` (0..1) blends height, eye height and speed. Getting up needs head room; if standing doesn't fit, you end up crouched.
+- Lying down (`prone >= 0.5`), the hitbox in `shared/raycast.js` is a low box along the facing direction with the head in front. The avatar in `client/src/avatars.js` uses the same measurements, and lag compensation records `prone` with every pose.
+- No shooting mid-air: `weaponInput()` drops the trigger while `!onGround`.
+- Keybinds live in `settings.keybinds` (action → `KeyboardEvent.code` or `MouseN`). The server cleans them with `sanitizeKeybinds()`: unknown actions are dropped, bad codes reset, and duplicates unbound. Esc and 1-3 can't be rebound. Binding a key that's already used swaps the two actions.
+- Hints, prompts and ability descriptions use `keyFor(action)` / `{action}` placeholders, so they show the player's own keys.
 
 ## Accounts
 

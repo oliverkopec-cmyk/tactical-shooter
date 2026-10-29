@@ -142,7 +142,7 @@ export function currentSpread(ws, ps) {
   const speed = Math.hypot(ps.vx, ps.vz) / WALK_SPEED;
   let spread = w.baseSpread + ws.bloom + w.moveSpread * Math.min(1.6, speed);
   if (!ps.onGround) spread += w.moveSpread * 2;
-  spread *= 1 - 0.3 * ps.crouch;
+  spread *= 1 - Math.max(0.3 * ps.crouch, 0.45 * (ps.prone || 0));   // steadier crouched, steadiest lying down
   return spread;
 }
 

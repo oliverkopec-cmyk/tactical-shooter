@@ -173,6 +173,15 @@
       <label>Field of view <span id="val-fov" class="muted"></span>
         <input id="set-fov" type="range" min="60" max="100" step="1" />
       </label>
+      <div class="keybinds">
+        <div class="keybinds-head">
+          <h2>Keybinds</h2>
+          <button id="keybinds-reset" class="ghost small">Reset to default</button>
+        </div>
+        <p class="muted">Click a binding, then press a key or mouse button. Esc cancels, Delete unbinds. 1-3 always pick the entry point.</p>
+        <div id="keybind-list"></div>
+        <p id="keybind-msg" class="muted"></p>
+      </div>
       <button id="settings-close" class="primary">Close</button>
       <p id="settings-hint" class="muted center hidden">Press Esc or click Close to go back to the game.</p>
     </div>

@@ -15,7 +15,7 @@ export const OPERATORS = {
   spark: {
     name: 'Spark', team: 'attack', color: 0xff7a2e, weapon: 'rifle', speed: 2, armor: 2,
     ability: { id: 'heavyBreach', name: 'Heavy breach charge', charges: 1,
-      desc: 'Plant on a wall, press F again to blow it. Destroys reinforced walls.' },
+      desc: 'Plant on a wall, press {ability} again to blow it. Destroys reinforced walls.' },
   },
   hawk: {
     name: 'Hawk', team: 'attack', color: 0xf2c230, weapon: 'smg', speed: 3, armor: 1, extraDrones: 2,
@@ -25,7 +25,7 @@ export const OPERATORS = {
   bulwark: {
     name: 'Bulwark', team: 'attack', color: 0x6fb8d8, weapon: 'shotgun', speed: 1, armor: 3,
     ability: { id: 'shield', name: 'Portable shield', charges: 1,
-      desc: 'Deploy a bulletproof shield in front of you. Press F next to it to pick it up again.' },
+      desc: 'Deploy a bulletproof shield in front of you. Press {ability} next to it to pick it up again.' },
   },
   flash: {
     name: 'Flash', team: 'attack', color: 0xe8e8ff, weapon: 'rifle', speed: 3, armor: 1,

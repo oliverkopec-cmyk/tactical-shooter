@@ -24,6 +24,7 @@ import { findOpening } from '../../shared/map.js';
 import { OPERATORS } from '../../shared/operators.js';
 import { settings, onSettingsChange } from './settings.js';
 import { DRONE } from '../../shared/drone.js';
+import { actionFor, mouseCode, keyFor } from './controls.js';
 
 const TRACER_OFFSET = new THREE.Vector3(0.2, -0.17, -0.9); // muzzle, roughly, in camera space
 
@@ -101,7 +102,10 @@ export class Game {
     this.stats = {};
     this.boardOn = false;
     window.addEventListener('keydown', (e) => this.onKeyDown(e));
-    window.addEventListener('keyup', (e) => { if (e.code === 'Tab') this.boardOn = false; });
+    window.addEventListener('keyup', (e) => { if (actionFor(e.code) === 'scoreboard') this.boardOn = false; });
+    // The scoreboard and hint toggle can be bound to mouse buttons too
+    window.addEventListener('mousedown', (e) => this.onUiAction(actionFor(mouseCode(e.button)), e.target === this.canvas));
+    window.addEventListener('mouseup', (e) => { if (actionFor(mouseCode(e.button)) === 'scoreboard') this.boardOn = false; });
     window.addEventListener('blur', () => { this.boardOn = false; });
     document.addEventListener('pointerlockerror', () => { this.lockFailed = true; });
 
@@ -328,22 +332,33 @@ export class Game {
 
   onKeyDown(e) {
     if (!this.running) return;
-    if (e.code === 'Tab') { e.preventDefault(); this.boardOn = true; }
-    else if (e.code === 'KeyH' && !e.repeat && !(e.target instanceof HTMLInputElement)) this.ui.toggleHint();
-    else if (e.code === 'Escape' && this.ui.settingsOpen && this.ui.settingsInGame) { this.ui.closeSettings(); this.ui.onSettingsClosed(); }
+    if (e.code === 'Escape' && this.ui.settingsOpen && this.ui.settingsInGame) { this.ui.closeSettings(); this.ui.onSettingsClosed(); return; }
+    if (e.repeat || e.target instanceof HTMLInputElement) return;
+    const action = actionFor(e.code);
+    if (action === 'scoreboard') e.preventDefault();
+    this.onUiAction(action, true);
+  }
+
+  onUiAction(action, inGame) {
+    if (!this.running || !inGame) return;
+    if (action === 'scoreboard') this.boardOn = true;
+    else if (action === 'toggleHint') this.ui.toggleHint();
   }
 
   /** Short, context-sensitive reminder of what the keys do right now. */
   hintText(watching, inDrone) {
     const phase = this.round.phase, attack = this.myTeam === 'attack';
     if (phase === PHASE.INTRO) return 'Choose your operator. Anyone who hasn\'t picked is assigned one.';
-    if (!this.local.alive) return 'Click to switch teammate · Tab scoreboard · H hide this';
-    if (watching) return 'C next camera · mouse pans the feed · you can\'t move while watching';
-    if (inDrone) return 'Drone: WASD drive · Shift fast · click ping enemy · X switch · 1/2/3 spawn point · Tab scoreboard';
-    const base = 'WASD move · Shift sprint · Ctrl/Z crouch · Q/E lean · R reload · right-click melee';
-    const f = OPERATORS[this.loadout.op]?.ability ? ' · F ability' : '';
-    if (attack) return phase === PHASE.PREP ? 'Fly your drone to find the objective · 1/2/3 choose where you appear' : `${base}${f} · G breach charge · Tab scoreboard · H hide`;
-    return `${base}${f} · ${phase === PHASE.PREP ? 'V reinforce · B barricade · ' : ''}C cameras · Tab scoreboard · H hide`;
+    const k = keyFor;
+    const move = `${k('forward')}${k('left')}${k('back')}${k('right')}`;
+    const tail = `${k('scoreboard')} scoreboard · ${k('toggleHint')} hide`;
+    if (!this.local.alive) return `Click to switch teammate · ${tail}`;
+    if (watching) return `${k('camView')} next camera · mouse pans the feed · you can't move while watching`;
+    if (inDrone) return `Drone: ${move} drive · ${k('sprint')} fast · ${k('jump')} hop · ${k('fire')} ping enemy · ${k('droneNext')} switch · 1/2/3 spawn point · ${k('scoreboard')} scoreboard`;
+    const base = `${move} move · ${k('sprint')} sprint · ${k('jump')} jump · ${k('crouch')} crouch · ${k('prone')} prone · ${k('leanLeft')}/${k('leanRight')} lean · ${k('reload')} reload · ${k('melee')} melee`;
+    const f = OPERATORS[this.loadout.op]?.ability ? ` · ${k('ability')} ability` : '';
+    if (attack) return phase === PHASE.PREP ? 'Fly your drone to find the objective · 1/2/3 choose where you appear' : `${base}${f} · ${k('breach')} breach charge · ${tail}`;
+    return `${base}${f} · ${phase === PHASE.PREP ? `${k('reinforce')} reinforce · ${k('barricade')} barricade · ` : ''}${k('camView')} cameras · ${tail}`;
   }
 
   /** Rows for the Tab scoreboard. */
@@ -590,18 +605,18 @@ export class Game {
         prompt = '';
       } else if (attack && !this.loadout.placed && panel) {
         if (this.world.isReinforcedPanel(panel.id)) prompt = 'Reinforced wall: breach charges won\'t break it';
-        else if (this.loadout.charges > 0) prompt = 'Press G to plant a breach charge';
+        else if (this.loadout.charges > 0) prompt = `Press ${keyFor('breach')} to plant a breach charge`;
       } else if (!attack && panel && !this.reinforcing) {
         const section = this.world.sections[panel.sectionId];
         if (this.world.reinforced[section.id]) prompt = 'Reinforced';
-        else if (section.reinforceable && this.reinforcementsLeft > 0) prompt = 'Press V to reinforce this wall';
+        else if (section.reinforceable && this.reinforcementsLeft > 0) prompt = `Press ${keyFor('reinforce')} to reinforce this wall`;
       }
     }
     // Defenders in prep: aiming at a bare doorway or window offers a barricade
     if (!prompt && !attack && local.alive && this.round.phase === PHASE.PREP && !this.reinforcing && this.barricadesLeft > 0) {
       const eye = getEyePosition(local.state, this.world);
       const o = findOpening([eye.x, eye.y, eye.z], aimDirection(local.aimYaw, local.aimPitch), BARRICADE.reach);
-      if (o && !this.gadgets.hasBarricade(o.id)) prompt = `Press B to barricade (${this.barricadesLeft} left)`;
+      if (o && !this.gadgets.hasBarricade(o.id)) prompt = `Press ${keyFor('barricade')} to barricade (${this.barricadesLeft} left)`;
     }
     this.ui.setPrompt(prompt);
 
@@ -620,15 +635,15 @@ export class Game {
         value = cd > 0 ? `recharging ${cd}s` : 'ready';
       } else {
         value = `×${ab.charges}`;
-        if (ab.deployed) value += cfg.id === 'shield' ? ' · deployed, F picks up' : ' · planted, F detonates';
+        if (ab.deployed) value += cfg.id === 'shield' ? ` · deployed, ${keyFor('ability')} picks up` : ` · planted, ${keyFor('ability')} detonates`;
       }
-      lines.push({ key: 'F', label: cfg.name, value });
+      lines.push({ key: keyFor('ability'), label: cfg.name, value });
     }
-    if (attack) lines.push({ key: 'G', label: 'Breach charge', value: this.loadout.placed ? 'planted, G detonates' : `×${this.loadout.charges}` });
+    if (attack) lines.push({ key: keyFor('breach'), label: 'Breach charge', value: this.loadout.placed ? `planted, ${keyFor('breach')} detonates` : `×${this.loadout.charges}` });
     else {
-      lines.push({ key: 'V', label: 'Team reinforcements', value: `${this.reinforcementsLeft}` });
-      lines.push({ key: 'B', label: 'Barricades', value: `${this.barricadesLeft}` });
-      lines.push({ key: 'C', label: 'Cameras', value: `${this.gadgets.cameras().length}` });
+      lines.push({ key: keyFor('reinforce'), label: 'Team reinforcements', value: `${this.reinforcementsLeft}` });
+      lines.push({ key: keyFor('barricade'), label: 'Barricades', value: `${this.barricadesLeft}` });
+      lines.push({ key: keyFor('camView'), label: 'Cameras', value: `${this.gadgets.cameras().length}` });
     }
     this.ui.updateGadgets(op, lines, local.alive);
 
@@ -672,7 +687,7 @@ export class Game {
     const mine = [...this.drones.drones.values()].filter((e) => e.target.o === this.network.id);
     const idx = mine.findIndex((e) => e.target.id === this.local.droneId) + 1;
     const hp = mine.find((e) => e.target.id === this.local.droneId)?.target.hp ?? 0;
-    return `Drone ${idx}/${mine.length} · integrity ${Math.round((hp / DRONE.hp) * 100)}% · WASD drive · Shift fast · Click: ping enemy${mine.length > 1 ? ' · X switch drone' : ''}`;
+    return `Drone ${idx}/${mine.length} · integrity ${Math.round((hp / DRONE.hp) * 100)}% · ${keyFor('forward')}${keyFor('left')}${keyFor('back')}${keyFor('right')} drive · ${keyFor('sprint')} fast · ${keyFor('jump')} hop · ${keyFor('fire')}: ping enemy${mine.length > 1 ? ` · ${keyFor('droneNext')} switch drone` : ''}`;
   }
 
   updateRoundHud() {
@@ -763,7 +778,7 @@ export class Game {
     this.gadgets.update(dt);
     this.ui.setDroneHud(
       inDrone || watching,
-      watching ? `Camera ${this.camView.index + 1}/${this.gadgets.cameras().length} · C next camera · mouse pans · you can't move while watching` : (inDrone ? this.droneInfo() : ''),
+      watching ? `Camera ${this.camView.index + 1}/${this.gadgets.cameras().length} · ${keyFor('camView')} next camera · mouse pans · you can't move while watching` : (inDrone ? this.droneInfo() : ''),
       watching ? '● CAMERA' : '● DRONE CAM',
       inDrone && this.droneJammed,
     );
@@ -776,7 +791,7 @@ export class Game {
     this.viewModel.update(dt, {
       speed: Math.hypot(s.vx, s.vz),
       sprinting: local.sprinting,
-      crouch: s.crouch,
+      crouch: Math.max(s.crouch, s.prone || 0),
       lean: s.lean,
       reloadFrac: local.weapon.reload > 0 ? 1 - local.weapon.reload / w.reloadTime : -1,
     });

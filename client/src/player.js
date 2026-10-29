@@ -11,23 +11,19 @@ import {
   WEAPONS, createWeaponState, copyWeaponState, stepWeapon, currentSpread, shotDirections,
 } from '../../shared/weapons.js';
 
-const KEY_BINDINGS = {
-  KeyW: KEY.FORWARD, ArrowUp: KEY.FORWARD,
-  KeyS: KEY.BACK, ArrowDown: KEY.BACK,
-  KeyA: KEY.LEFT, ArrowLeft: KEY.LEFT,
-  KeyD: KEY.RIGHT, ArrowRight: KEY.RIGHT,
-  ShiftLeft: KEY.SPRINT, ShiftRight: KEY.SPRINT,
-  ControlLeft: KEY.CROUCH, ControlRight: KEY.CROUCH, KeyZ: KEY.CROUCH,
-  KeyQ: KEY.LEAN_LEFT,
-  KeyE: KEY.LEAN_RIGHT,
-  KeyR: KEY.RELOAD,
-};
-// Keys 1-3 choose the attacker entry point during prep (weapons come from the operator now)
-const DIGIT_KEYS = { Digit1: 1, Digit2: 2, Digit3: 3 };
-// One-shot actions sent as events: breach charge (attack), reinforce (defense)
-const ACTION_KEYS = { KeyG: 'breach', KeyV: 'reinforce', KeyX: 'droneNext', KeyF: 'ability', KeyC: 'camView', KeyB: 'barricade' };
-
 import { settings } from './settings.js';
+import { actionFor, mouseCode } from './controls.js';
+
+// Held actions become input bits, simulated on both sides (keybinds map keys to actions)
+const HOLD_BITS = {
+  forward: KEY.FORWARD, back: KEY.BACK, left: KEY.LEFT, right: KEY.RIGHT,
+  sprint: KEY.SPRINT, jump: KEY.JUMP, crouch: KEY.CROUCH,
+  leanLeft: KEY.LEAN_LEFT, leanRight: KEY.LEAN_RIGHT, fire: KEY.FIRE, reload: KEY.RELOAD,
+};
+// One-shot actions sent to the server as events
+const EVENT_ACTIONS = new Set(['breach', 'reinforce', 'droneNext', 'ability', 'camView', 'barricade']);
+// Keys 1-3 choose the attacker entry point during prep (fixed: not rebindable)
+const DIGIT_KEYS = { Digit1: 1, Digit2: 2, Digit3: 3 };
 
 const MOUSE_SENSITIVITY = 0.0022;
 const TWO_PI = Math.PI * 2;
@@ -65,6 +61,7 @@ export class LocalPlayer {
     this.recoil = { pitch: 0, yaw: 0 };
     this.keys = 0;
     this.tapped = 0;     // keys pressed since the last frame, so quick taps aren't lost
+    this.proneOn = false; // prone is a toggle: the PRONE bit is sent while it's on
     this.meleeReady = 0;
     this.viewLocked = null;  // while watching a camera: the body keeps this facing
     this.seq = 0;
@@ -107,41 +104,46 @@ export class LocalPlayer {
   handleKey(e, down) {
     if (down && e.target instanceof HTMLInputElement) return;
     if (down && DIGIT_KEYS[e.code]) { this.onDigit?.(DIGIT_KEYS[e.code]); return; }
-    if (ACTION_KEYS[e.code]) {
-      if (down && !e.repeat && this.alive) this.sendAction(ACTION_KEYS[e.code]);
-      return;
-    }
-    const bit = KEY_BINDINGS[e.code];
-    if (!bit) return;
-    e.preventDefault();
-    if (down) { this.keys |= bit; this.tapped |= bit; } else this.keys &= ~bit;
+    const action = actionFor(e.code);
+    if (!action) return;
+    if (HOLD_BITS[action] || action === 'prone' || EVENT_ACTIONS.has(action) || action === 'melee') e.preventDefault();
+    this.applyAction(action, down, e.repeat);
   }
 
   handleButton(e, down) {
-    if (e.button === 2) {
-      // Right click: melee
-      if (down && e.target === this.canvas && this.alive && !this.droneState && !this.viewLocked && performance.now() >= this.meleeReady
-        && (this.pointerLocked || this.canFireUnlocked())) {
-        this.meleeReady = performance.now() + 800;
-        this.sendAction('melee');
-      }
-      return;
-    }
-    if (e.button !== 0) return;
     if (!down) {
-      this.keys &= ~KEY.FIRE;
       this.dragging = false;
+      const action = actionFor(mouseCode(e.button));
+      if (action) this.applyAction(action, false, false);
       return;
     }
-    if (e.target !== this.canvas) return;
-    if (this.droneState) {
-      // Piloting a drone: left click pings the enemy under the crosshair instead of firing.
-      if (this.pointerLocked || this.canFireUnlocked()) this.sendAction('ping');
-      if (!this.pointerLocked) this.dragging = true;
-      return;
-    }
-    if (this.pointerLocked || this.canFireUnlocked()) { this.keys |= KEY.FIRE; this.tapped |= KEY.FIRE; }
+    if (e.target !== this.canvas) return;   // clicks on menus and overlays aren't game input
+    const action = actionFor(mouseCode(e.button));
+    if (action && (this.pointerLocked || this.canFireUnlocked())) this.applyAction(action, true, false);
     if (!this.pointerLocked) this.dragging = true;
+  }
+
+  /** A bound key or mouse button went down or up. */
+  applyAction(action, down, repeat) {
+    if (action === 'fire' && this.droneState) {
+      // Piloting a drone: fire pings the enemy under the crosshair instead.
+      if (down && !repeat) this.sendAction('ping');
+      return;
+    }
+    const bit = HOLD_BITS[action];
+    if (bit) {
+      if (!down) { this.keys &= ~bit; return; }
+      this.keys |= bit; this.tapped |= bit;
+      if (action === 'crouch' || action === 'jump') this.proneOn = false;   // get up from prone
+      return;
+    }
+    if (!down || repeat || !this.alive) return;
+    if (action === 'prone') this.proneOn = !this.proneOn;
+    else if (action === 'melee') {
+      if (this.droneState || this.viewLocked || performance.now() < this.meleeReady) return;
+      this.meleeReady = performance.now() + 800;
+      this.sendAction('melee');
+    } else if (EVENT_ACTIONS.has(action)) this.sendAction(action);
   }
 
   // Mouse look: free movement when the pointer is locked, click-and-drag otherwise.
@@ -165,7 +167,7 @@ export class LocalPlayer {
     if (this.alive) {
       const droneMode = !!this.droneState;
       if (droneMode) this.pitch = Math.max(-0.7, Math.min(0.7, this.pitch));
-      const raw = this.keys | this.tapped;
+      const raw = this.keys | this.tapped | (this.proneOn ? KEY.PRONE : 0);
       const keys = droneMode ? raw & DRONE_KEYS : this.mask(raw);
       // Long frames are split so each simulated step stays within server limits.
       let remaining = Math.min(frameDt, 0.25);
@@ -276,8 +278,9 @@ export class LocalPlayer {
     while (this.pending.length && this.pending[0].seq <= serverState.seq) this.pending.shift();
 
     const s = this.state;
-    for (const key of ['x', 'y', 'z', 'vx', 'vy', 'vz', 'crouch', 'lean', 'onGround', 'slow']) s[key] = serverState[key];
+    for (const key of ['x', 'y', 'z', 'vx', 'vy', 'vz', 'crouch', 'prone', 'lean', 'onGround', 'slow']) s[key] = serverState[key];
     s.fireDelay = serverState.fd || 0;
+    s.jumpCd = serverState.jc || 0;
     s.sprinting = !!serverState.spr;
     if (serverState.w) Object.assign(this.weapon, serverState.w);
     if (serverState.sm) s.speedMul = serverState.sm;   // operator speed rating can change during select
@@ -302,6 +305,7 @@ export class LocalPlayer {
   die() {
     this.alive = false;
     this.keys = 0;
+    this.proneOn = false;
     this.pending.length = 0;
     this.outbox.length = 0;
   }
@@ -309,6 +313,7 @@ export class LocalPlayer {
   /** Moved by the server (attackers appear at their chosen entry point). */
   teleport(state) {
     this.state = copyPlayerState(state);
+    this.proneOn = false;
     this.yaw = state.yaw;
     this.pitch = 0;
     this.recoil = { pitch: 0, yaw: 0 };
@@ -333,6 +338,7 @@ export class LocalPlayer {
     this.outbox.length = 0;
     this.smoothing = { x: 0, y: 0, z: 0 };
     this.alive = true;
+    this.proneOn = false;
   }
 
   updateCamera() {

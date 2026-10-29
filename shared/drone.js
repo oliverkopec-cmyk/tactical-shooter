@@ -12,6 +12,7 @@ export const DRONE = {
   fastSpeed: 5.2,
   accel: 40,
   gravity: 22,
+  jumpSpeed: 4.4,       // a small hop, about 0.44 m: onto low ledges and over debris
   stepHeight: 0.22,     // climbs stairs, but not full ledges
   maxPitch: 0.7,
   hp: 40,
@@ -22,7 +23,7 @@ export const DRONE = {
 };
 
 const EPS = 1e-4;
-export const DRONE_KEYS = KEY.FORWARD | KEY.BACK | KEY.LEFT | KEY.RIGHT | KEY.SPRINT;
+export const DRONE_KEYS = KEY.FORWARD | KEY.BACK | KEY.LEFT | KEY.RIGHT | KEY.SPRINT | KEY.JUMP;
 
 export function createDroneState(x, y, z, yaw) {
   return { x, y, z, vx: 0, vy: 0, vz: 0, yaw, pitch: 0, onGround: true };
@@ -69,10 +70,18 @@ export function stepDrone(s, input, dt, world) {
     } else { s.x = ax; s.z = az; }
   } else { s.x = ax; s.z = az; }
 
-  // Gravity; stick to stairs when rolling down them
+  if ((keys & KEY.JUMP) && s.onGround) { s.vy = D.jumpSpeed; s.onGround = false; }
+
+  // Gravity, ceilings; stick to stairs when rolling down them
   const wasOnGround = s.onGround;
   s.vy -= D.gravity * dt;
   const dy = s.vy * dt;
+  if (dy > 0) {
+    const uy = sweepUp(world, s.x, s.y, s.z, h, dy, r);
+    if (uy < s.y + dy - EPS) s.vy = 0;
+    s.y = uy; s.onGround = false;
+    return;
+  }
   const ny = sweepDown(world, s.x, s.y, s.z, h, -dy, r);
   if (ny > s.y + dy + EPS) { s.y = ny; s.vy = 0; s.onGround = true; }
   else {

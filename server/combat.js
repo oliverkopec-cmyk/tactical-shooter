@@ -21,7 +21,7 @@ export class PoseHistory {
     for (const [id, p] of players) {
       if (!p.alive || p.spawned === false) continue;
       const s = p.state;
-      poses.set(id, { x: s.x, y: s.y, z: s.z, yaw: s.yaw, crouch: s.crouch, lean: s.lean });
+      poses.set(id, { x: s.x, y: s.y, z: s.z, yaw: s.yaw, crouch: s.crouch, prone: s.prone || 0, lean: s.lean });
     }
     this.frames.push({ t, poses });
     while (this.frames.length > 2 && this.frames[0].t < t - HISTORY_MS) this.frames.shift();
@@ -45,6 +45,7 @@ export class PoseHistory {
           x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k, z: a.z + (b.z - a.z) * k,
           yaw: a.yaw + dyaw * k,
           crouch: a.crouch + (b.crouch - a.crouch) * k,
+          prone: a.prone + (b.prone - a.prone) * k,
           lean: a.lean + (b.lean - a.lean) * k,
         };
       }

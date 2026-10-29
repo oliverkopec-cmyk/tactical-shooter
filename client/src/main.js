@@ -134,7 +134,7 @@ getSession().then((res) => {
   }
 });
 
-// Guard against Ctrl+W (crouch + forward on Windows) closing the tab mid-match.
+// Guard against Ctrl+W (if Ctrl is bound to an action) closing the tab mid-match.
 window.addEventListener('beforeunload', (e) => {
   if (game.running) e.preventDefault();
 });

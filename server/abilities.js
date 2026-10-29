@@ -10,7 +10,7 @@ import {
 } from '../shared/constants.js';
 import { MAP, findOpening } from '../shared/map.js';
 import { OPERATORS } from '../shared/operators.js';
-import { getEyePosition, forwardVec } from '../shared/movement.js';
+import { getEyePosition, forwardVec, eyeHeight } from '../shared/movement.js';
 import { aimDirection } from '../shared/weapons.js';
 import { raycastWorld } from '../shared/raycast.js';
 
@@ -143,7 +143,7 @@ export class Gadgets {
     const ownerTeam = owner?.member.team;
     for (const [pid, q] of this.game.players) {
       if (!q.alive || q.spawned === false || q.member.team === ownerTeam) continue;
-      const eye = [q.state.x, q.state.y + 1.4, q.state.z];
+      const eye = [q.state.x, q.state.y + eyeHeight(q.state.crouch, q.state.prone) - 0.2, q.state.z];
       const v = [eye[0] - g.pos[0], eye[1] - g.pos[1], eye[2] - g.pos[2]];
       const dist = Math.hypot(...v);
       if (dist > STUN.radius) continue;
