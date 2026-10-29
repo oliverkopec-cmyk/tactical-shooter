@@ -80,7 +80,7 @@ export class Social {
   /** Players whose username starts with q, and how each relates to you. */
   async search(id, q) {
     const text = String(q || '').trim().toLowerCase();
-    if (text.length < 2) return [];
+    if (text.length < 1) return [];
     const { rows } = await this.db.query(
       `SELECT id, username FROM accounts WHERE username_lower LIKE $1 ESCAPE '\\' AND id <> $2 ORDER BY username_lower LIMIT 8`, [`${escapeLike(text)}%`, id]);
     if (!rows.length) return [];

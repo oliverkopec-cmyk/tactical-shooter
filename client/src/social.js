@@ -124,7 +124,7 @@ export class Social {
   async search() {
     this.query = $('friend-q')?.value.trim() || '';
     this.message = '';
-    if (this.query.length < 2) { this.results = null; this.message = 'Type at least 2 letters.'; this.messageIsError = true; this.renderMain(); return; }
+    if (this.query.length < 1) { this.results = null; this.message = 'Type a username (or the start of one).'; this.messageIsError = true; this.renderMain(); return; }
     const res = await searchPlayers(this.query);
     this.messageIsError = !!res.error;
     this.message = res.error || '';
