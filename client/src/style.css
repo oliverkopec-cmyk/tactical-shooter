@@ -550,7 +550,22 @@ button.small { font-size: 12px; padding: 4px 10px; margin-top: 6px; }
   align-items: center;
   justify-content: center;
   background: rgba(8, 10, 14, 0.75);
+  padding: 16px;
 }
+#settings .panel { max-width: 440px; max-height: 100%; overflow-y: auto; }
+#settings-close { position: sticky; bottom: 0; flex-shrink: 0; box-shadow: 0 -10px 20px rgba(20, 24, 30, 0.9); }
+
+.keybinds { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line); padding-top: 14px; }
+.keybinds-head { display: flex; justify-content: space-between; align-items: center; }
+.keybinds-head h2 { margin: 0; }
+.keybinds-head button.small { margin-top: 0; }
+.keybinds p { margin: 0; }
+#keybind-list { display: flex; flex-direction: column; gap: 4px; }
+.kb-group { margin: 8px 0 2px; font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); }
+.kb-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 14px; }
+.kb-row button { min-width: 112px; padding: 5px 10px; font-size: 13px; font-weight: 600; }
+.kb-row button.unbound { color: var(--muted); font-style: italic; }
+.kb-row button.listening { border-color: var(--accent); color: var(--accent); }
 
 #controls-hint { transition: opacity 0.4s; opacity: 0.85; }
 #controls-hint.off { opacity: 0; }

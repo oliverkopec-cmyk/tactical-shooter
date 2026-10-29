@@ -4,7 +4,9 @@ import { MAX_PER_TEAM, MAX_HEALTH } from '../../shared/constants.js';
 import { WEAPONS } from '../../shared/weapons.js';
 import { MAP } from '../../shared/map.js';
 import { operatorsFor, OPERATORS } from '../../shared/operators.js';
-import { settings, setSetting, onSettingsChange } from './settings.js';
+import { settings, setSetting, setKeybinds, onSettingsChange } from './settings.js';
+import { fillKeys } from './controls.js';
+import { BIND_ACTIONS, DEFAULT_KEYBINDS, keyLabel, isBindableCode, RESERVED_CODES } from '../../shared/keybinds.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -33,10 +35,12 @@ export class UI {
     }
     // Settings can also change from outside (loaded from the account after login).
     onSettingsChange((name, value) => {
+      if (name === 'keybinds') return this.renderKeybinds();
       if (!fmt[name]) return;
       $(`set-${name}`).value = value;
       $(`val-${name}`).textContent = fmt[name](value);
     });
+    this.bindKeybinds();
     for (const btn of document.querySelectorAll('.settings-open')) btn.addEventListener('click', () => this.openSettings(false));
     $('settings-close').addEventListener('click', () => { this.closeSettings(); this.onSettingsClosed?.(); });
   }
@@ -50,8 +54,96 @@ export class UI {
   }
 
   closeSettings() {
+    this.stopListening();
     $('settings').classList.add('hidden');
     this.settingsInGame = false;
+  }
+
+  // ---------------------------------------------------------------- keybinds
+
+  bindKeybinds() {
+    this.listeningFor = null;
+    this.capture = null;
+    this.swallowUntil = 0;   // the click/context menu that follows a captured mouse button
+    for (const ev of ['click', 'contextmenu']) {
+      window.addEventListener(ev, (e) => {
+        if (performance.now() < this.swallowUntil) { e.preventDefault(); e.stopImmediatePropagation(); }
+      }, true);
+    }
+    $('keybind-list').addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-action]');
+      if (btn) this.startListening(btn.dataset.action);
+    });
+    $('keybinds-reset').addEventListener('click', () => {
+      this.stopListening();
+      setKeybinds(DEFAULT_KEYBINDS);
+      this.keybindMsg('All keybinds are back to their defaults.');
+    });
+    this.renderKeybinds();
+  }
+
+  renderKeybinds() {
+    let group = '';
+    const html = [];
+    for (const a of BIND_ACTIONS) {
+      if (a.group !== group) { group = a.group; html.push(`<div class="kb-group">${group}</div>`); }
+      const code = settings.keybinds[a.id];
+      const listening = this.listeningFor === a.id;
+      const cls = listening ? 'listening' : code ? '' : 'unbound';
+      html.push(`<div class="kb-row"><span>${a.label}</span><button type="button" data-action="${a.id}" class="${cls}">${listening ? 'Press a key…' : escapeHtml(keyLabel(code))}</button></div>`);
+    }
+    $('keybind-list').innerHTML = html.join('');
+  }
+
+  keybindMsg(text) { $('keybind-msg').textContent = text || ''; }
+
+  /** Wait for the next key or mouse button and bind it to `action`. Nothing else sees that input. */
+  startListening(action) {
+    this.stopListening();
+    this.listeningFor = action;
+    this.keybindMsg('');
+    const swallow = (e) => { e.preventDefault(); e.stopImmediatePropagation(); };
+    this.capture = {
+      keydown: (e) => {
+        swallow(e);
+        if (e.repeat) return;
+        if (e.code === 'Escape') this.stopListening();
+        else if (e.code === 'Backspace' || e.code === 'Delete') this.assignKey(action, '');
+        else this.assignKey(action, e.code);
+      },
+      keyup: swallow,
+      mousedown: (e) => {
+        swallow(e);
+        this.swallowUntil = performance.now() + 500;
+        this.assignKey(action, `Mouse${e.button}`);
+      },
+    };
+    for (const [ev, fn] of Object.entries(this.capture)) window.addEventListener(ev, fn, true);
+    this.renderKeybinds();
+  }
+
+  stopListening() {
+    if (!this.capture) return;
+    for (const [ev, fn] of Object.entries(this.capture)) window.removeEventListener(ev, fn, true);
+    this.capture = null;
+    this.listeningFor = null;
+    this.renderKeybinds();
+  }
+
+  /** Bind `code` to `action`. If another action had it, the two swap keys. */
+  assignKey(action, code) {
+    if (code && !isBindableCode(code)) {
+      this.keybindMsg(RESERVED_CODES.has(code) ? `${keyLabel(code)} is reserved. Pick another key.` : 'That key can\'t be bound. Pick another key.');
+      return;
+    }
+    const binds = { ...settings.keybinds };
+    const prev = binds[action];
+    const other = code && BIND_ACTIONS.find((a) => a.id !== action && binds[a.id] === code);
+    if (other) binds[other.id] = prev;
+    binds[action] = code;
+    this.stopListening();
+    setKeybinds(binds);
+    this.keybindMsg(other ? `${other.label} ${prev ? `is now on ${keyLabel(prev)}` : 'is now unbound'}.` : '');
   }
 
   get settingsOpen() {
@@ -364,7 +456,7 @@ export class UI {
         <div class="op-name">${op.name}</div>
         <div class="op-weapon">${w.kind} · ${w.name}</div>
         <div class="op-stats"><span>SPEED ${pips(op.speed)}</span><span>ARMOR ${pips(op.armor)}</span></div>
-        <div class="op-ab">${op.ability ? `<b>${op.ability.name}</b><br>${op.ability.desc}` : '<i>No special ability</i>'}</div>
+        <div class="op-ab">${op.ability ? `<b>${op.ability.name}</b><br>${fillKeys(op.ability.desc)}` : '<i>No special ability</i>'}</div>
         <div class="op-who">${taken ? `Taken by ${names[holderId] || 'a teammate'}` : (op.id === myOp ? 'Your pick' : (op.unique ? '' : 'Unlimited'))}</div>`;
       card.addEventListener('click', () => onPick(op.id));
       cards.appendChild(card);

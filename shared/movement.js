@@ -2,9 +2,9 @@
 // Given the same state, input and world, both sides produce the same result.
 
 import {
-  PLAYER_RADIUS, STAND_HEIGHT, CROUCH_HEIGHT, STAND_EYE, CROUCH_EYE, STEP_HEIGHT,
-  WALK_SPEED, SPRINT_SPEED, CROUCH_SPEED, ACCEL_GROUND, GRAVITY,
-  CROUCH_TRANSITION, LEAN_SPEED, LEAN_OFFSET, KEY, SPRINT_FIRE_DELAY,
+  PLAYER_RADIUS, STAND_HEIGHT, CROUCH_HEIGHT, PRONE_HEIGHT, STAND_EYE, CROUCH_EYE, PRONE_EYE, PRONE_EYE_FORWARD,
+  STEP_HEIGHT, WALK_SPEED, SPRINT_SPEED, CROUCH_SPEED, PRONE_SPEED, JUMP_SPEED, JUMP_COOLDOWN, ACCEL_GROUND, GRAVITY,
+  CROUCH_TRANSITION, PRONE_TRANSITION, LEAN_SPEED, LEAN_OFFSET, KEY, SPRINT_FIRE_DELAY,
 } from './constants.js';
 
 const EPS = 1e-4;
@@ -17,6 +17,8 @@ export function createPlayerState(spawn) {
     vx: 0, vy: 0, vz: 0,
     yaw: spawn.yaw || 0, pitch: 0,
     crouch: 0, lean: 0,
+    prone: 0,      // 0 standing/crouching ... 1 lying down
+    jumpCd: 0,     // seconds until the next jump is allowed
     onGround: true,
     sprinting: false,
     fireDelay: 0,  // > 0 while recovering from a sprint: no shooting yet
@@ -29,8 +31,9 @@ export function copyPlayerState(s) {
   return { ...s };
 }
 
-export const bodyHeight = (crouch) => STAND_HEIGHT + (CROUCH_HEIGHT - STAND_HEIGHT) * crouch;
-export const eyeHeight = (crouch) => STAND_EYE + (CROUCH_EYE - STAND_EYE) * crouch;
+const lerp = (a, b, k) => a + (b - a) * k;
+export const bodyHeight = (crouch, prone = 0) => lerp(lerp(STAND_HEIGHT, CROUCH_HEIGHT, crouch), PRONE_HEIGHT, prone);
+export const eyeHeight = (crouch, prone = 0) => lerp(lerp(STAND_EYE, CROUCH_EYE, crouch), PRONE_EYE, prone);
 
 // yaw 0 looks down -z (Three.js camera convention)
 export const forwardVec = (yaw) => [-Math.sin(yaw), -Math.cos(yaw)];
@@ -138,14 +141,25 @@ export function stepPlayer(s, input, dt, world) {
   s.yaw = input.yaw;
   s.pitch = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, input.pitch));
 
-  // Crouch: going down is always allowed, standing up needs head room.
+  // Crouch and prone: going down is always allowed (prone only on the ground),
+  // getting up needs head room. Getting up from prone where standing doesn't
+  // fit ends in a crouch.
+  s.prone = s.prone || 0;
   if (keys & KEY.CROUCH) {
     s.crouch = Math.min(1, s.crouch + CROUCH_TRANSITION * dt);
-  } else if (s.crouch > 0) {
+  } else if (s.crouch > 0 && s.prone === 0) {
     const next = Math.max(0, s.crouch - CROUCH_TRANSITION * dt);
-    if (isSpaceFree(world, s.x, s.y, s.z, bodyHeight(next))) s.crouch = next;
+    if (isSpaceFree(world, s.x, s.y, s.z, bodyHeight(next, s.prone))) s.crouch = next;
   }
-  const h = bodyHeight(s.crouch);
+  if ((keys & KEY.PRONE) && (s.onGround || s.prone > 0)) {
+    s.prone = Math.min(1, s.prone + PRONE_TRANSITION * dt);
+  } else if (!(keys & KEY.PRONE) && s.prone > 0) {
+    const next = Math.max(0, s.prone - PRONE_TRANSITION * dt);
+    if (isSpaceFree(world, s.x, s.y, s.z, bodyHeight(s.crouch, next))) s.prone = next;
+    else if (isSpaceFree(world, s.x, s.y, s.z, bodyHeight(1, next))) { s.crouch = 1; s.prone = next; }
+  }
+  const lying = s.prone > 0.05;
+  const h = bodyHeight(s.crouch, s.prone);
 
   // Movement intent
   const fwd = ((keys & KEY.FORWARD) ? 1 : 0) - ((keys & KEY.BACK) ? 1 : 0);
@@ -162,14 +176,14 @@ export function stepPlayer(s, input, dt, world) {
   const firing = (keys & KEY.FIRE) !== 0;
   if (firing && s.sprinting) s.fireDelay = SPRINT_FIRE_DELAY;
   s.fireDelay = Math.max(0, (s.fireDelay || 0) - dt);
-  const sprinting = !!(keys & KEY.SPRINT) && fwd > 0 && s.crouch < 0.5 && !leaning && !firing && s.fireDelay <= 0;
+  const sprinting = !!(keys & KEY.SPRINT) && fwd > 0 && s.crouch < 0.5 && !lying && !leaning && !firing && s.fireDelay <= 0;
   s.sprinting = sprinting;
   const baseSpeed = sprinting ? SPRINT_SPEED : WALK_SPEED;
-  const speed = (baseSpeed + (CROUCH_SPEED - baseSpeed) * s.crouch) * (s.speedMul ?? 1) * (s.slow ?? 1);
+  const speed = lerp(lerp(baseSpeed, CROUCH_SPEED, s.crouch), PRONE_SPEED, s.prone) * (s.speedMul ?? 1) * (s.slow ?? 1);
 
-  // Lean (not while sprinting)
+  // Lean (not while sprinting or lying down)
   let leanTarget = 0;
-  if (!sprinting) leanTarget = ((keys & KEY.LEAN_RIGHT) ? 1 : 0) - ((keys & KEY.LEAN_LEFT) ? 1 : 0);
+  if (!sprinting && !lying) leanTarget = ((keys & KEY.LEAN_RIGHT) ? 1 : 0) - ((keys & KEY.LEAN_LEFT) ? 1 : 0);
   const dl = leanTarget - s.lean;
   const maxDl = LEAN_SPEED * dt;
   s.lean += Math.max(-maxDl, Math.min(maxDl, dl));
@@ -182,10 +196,24 @@ export function stepPlayer(s, input, dt, world) {
 
   moveHorizontal(s, s.vx * dt, s.vz * dt, h, world);
 
-  // Gravity, landing, and sticking to stairs when walking down them
+  // Jump: only from the ground, not while lying down, with a short cooldown
+  s.jumpCd = Math.max(0, (s.jumpCd || 0) - dt);
+  if ((keys & KEY.JUMP) && s.onGround && !lying && s.jumpCd <= 0) {
+    s.vy = JUMP_SPEED;
+    s.onGround = false;
+    s.jumpCd = JUMP_COOLDOWN;
+  }
+
+  // Gravity, ceilings, landing, and sticking to stairs when walking down them
   const wasOnGround = s.onGround;
   s.vy -= GRAVITY * dt;
   const dy = s.vy * dt;
+  if (dy > 0) {
+    const uy = sweepUp(world, s.x, s.y, s.z, h, dy);
+    if (uy < s.y + dy - EPS) s.vy = 0;   // bumped the ceiling
+    s.y = uy; s.onGround = false;
+    return;
+  }
   const ny = sweepDown(world, s.x, s.y, s.z, h, -dy);
   if (ny > s.y + dy + EPS) {
     s.y = ny; s.vy = 0; s.onGround = true;
@@ -206,8 +234,11 @@ export function stepPlayer(s, input, dt, world) {
  * Used by the camera now and by server hit detection later.
  */
 export function getEyePosition(s, world) {
-  const ey = s.y + eyeHeight(s.crouch);
+  const prone = s.prone || 0;
+  const ey = s.y + eyeHeight(s.crouch, prone);
   const [rx, rz] = rightVec(s.yaw);
+  const [fx, fz] = forwardVec(s.yaw);
+  const ahead = PRONE_EYE_FORWARD * prone;   // lying down, the head is in front of the body's centre
   let lean = s.lean;
   if (lean !== 0) {
     const head = 0.14;
@@ -218,14 +249,14 @@ export function getEyePosition(s, world) {
     }
   }
   return {
-    x: s.x + rx * lean * LEAN_OFFSET,
+    x: s.x + rx * lean * LEAN_OFFSET + fx * ahead,
     y: ey,
-    z: s.z + rz * lean * LEAN_OFFSET,
+    z: s.z + rz * lean * LEAN_OFFSET + fz * ahead,
     lean,
   };
 }
 
-/** The input the weapon should see: no trigger while recovering from a sprint. */
+/** The input the weapon should see: no trigger while recovering from a sprint or in the air. */
 export function weaponInput(s, input) {
-  return s.fireDelay > 0 ? { ...input, keys: input.keys & ~KEY.FIRE } : input;
+  return s.fireDelay > 0 || !s.onGround ? { ...input, keys: input.keys & ~KEY.FIRE } : input;
 }

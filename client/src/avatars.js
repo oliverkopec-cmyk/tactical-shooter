@@ -1,7 +1,8 @@
 // Other players: simple blocky bodies, interpolated between server snapshots.
 
 import * as THREE from 'three';
-import { TEAM_COLORS, LEAN_OFFSET, STAND_EYE } from '../../shared/constants.js';
+import { TEAM_COLORS, LEAN_OFFSET, STAND_EYE, STAND_HEIGHT } from '../../shared/constants.js';
+import { PRONE_BODY } from '../../shared/raycast.js';
 import { bodyHeight } from '../../shared/movement.js';
 import { makeGunModel } from './weapons.js';
 import { OPERATORS } from '../../shared/operators.js';
@@ -65,7 +66,7 @@ export class RemotePlayer {
     this.scene = scene;
     this.alive = true;
     this.hiddenForSpectate = false;
-    this.pose = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, crouch: 0, lean: 0 };
+    this.pose = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, crouch: 0, prone: 0, lean: 0 };
     this.flashTime = 0;
 
     const color = TEAM_COLORS[team] ?? 0xffffff;
@@ -160,7 +161,7 @@ export class RemotePlayer {
       this.label.material.depthTest = false;
       this.label.renderOrder = 10;
     }
-    this.lean.add(this.label);
+    this.root.add(this.label);   // on the root so it stays upright when the body leans or lies down
 
     scene.add(this.root);
   }
@@ -237,15 +238,22 @@ export class RemotePlayer {
     const L = (k) => a.s[k] + (b.s[k] - a.s[k]) * t;
 
     const crouch = L('crouch');
-    const h = bodyHeight(crouch);
+    const prone = (a.s.prone || 0) + ((b.s.prone || 0) - (a.s.prone || 0)) * t;
     const p = this.pose;
     p.x = L('x'); p.y = L('y'); p.z = L('z');
     p.yaw = lerpAngle(a.s.yaw, b.s.yaw, t);
     p.pitch = lerpAngle(a.s.pitch, b.s.pitch, t);
-    p.crouch = crouch; p.lean = L('lean');
+    p.crouch = crouch; p.prone = prone; p.lean = L('lean');
     this.root.position.set(p.x, p.y, p.z);
     this.root.rotation.y = p.yaw;
     this.lean.rotation.z = -p.lean * LEAN_ANGLE;
+    // Prone: the whole body tips forward around the feet to lie flat, feet behind,
+    // head in front (the server's prone hitbox in shared/raycast.js matches this).
+    this.lean.rotation.x = -Math.PI / 2 * prone;
+    this.lean.position.set(0, 0.17 * prone, PRONE_BODY.max[2] * prone);
+    // Body pose height: crouch height upright, straightening out as the body lies down
+    const upright = bodyHeight(crouch);
+    const h = upright + (STAND_HEIGHT - upright) * prone;
 
     // Pose the body from the snapshot: height from crouch, legs from speed, arms from aim
     const speed = Math.hypot(L('vx'), L('vz'));
@@ -268,7 +276,6 @@ export class RemotePlayer {
     this.upper.position.y = hipY;
     this.upper.rotation.x = sprinting ? -0.18 : 0;
     this.head.position.y = h - 0.18;
-    this.head.rotation.x = p.pitch;
 
     // Melee: both arms chop forward and up, then settle
     let strike = 0;
@@ -276,14 +283,18 @@ export class RemotePlayer {
       this.swingT += dt / 0.3;
       if (this.swingT >= 1) this.swingT = 0; else strike = Math.sin(this.swingT * Math.PI);
     }
-    const armBase = sprinting ? 0.55 : Math.PI / 2 + p.pitch;        // sprinting carries the gun low
+    // Lying down, "forward" for arms, gun and head is along the body (towards the head)
+    const lie = Math.PI / 2 * prone;
+    this.head.rotation.x = p.pitch + lie;
+    const armBase = sprinting ? 0.55 : Math.PI / 2 + p.pitch + lie;   // sprinting carries the gun low
     this.arms[0].rotation.set(armBase + strike * 0.9, 0.25 - strike * 0.3, 0);
     this.arms[1].rotation.set(armBase + strike * 0.9, -0.5 + strike * 0.3, 0);
-    this.gunMount.position.set(0.1, shoulderY - 0.1 - (sprinting ? 0.12 : 0), -0.3 - strike * 0.25);
-    this.gunMount.rotation.x = sprinting ? -0.2 : p.pitch + strike * 0.5;
-    this.label.position.y = h + 0.35;
+    this.gunMount.position.set(0.1, shoulderY - 0.1 - (sprinting ? 0.12 : 0) + 0.3 * prone, -0.3 - strike * 0.25 + 0.41 * prone);
+    this.gunMount.rotation.x = sprinting ? -0.2 : p.pitch + lie + strike * 0.5;
+    const top = bodyHeight(crouch, prone);   // real height above the floor, for the name tag and marker
+    this.label.position.y = top + 0.35;
     this.markerPhase = (this.markerPhase || 0) + dt * 5;
-    this.marker.position.y = h + 0.75 + Math.sin(this.markerPhase) * 0.05;
+    this.marker.position.y = top + 0.75 + Math.sin(this.markerPhase) * 0.05;
   }
 
   dispose() {

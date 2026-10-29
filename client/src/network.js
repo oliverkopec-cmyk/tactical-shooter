@@ -6,7 +6,7 @@ import { INTERP_DELAY_MS } from '../../shared/constants.js';
 export class Network {
   constructor() {
     // Connects only once logged in: the server checks the login cookie on connect.
-    this.socket = io({ transports: ['websocket', 'polling'], autoConnect: false });
+    this.socket = io({ transports: ['websocket', 'polling'], autoConnect: false, auth: { version: __SHARED_VERSION__ } });
     this.serverOffset = null; // estimate of (server clock - local clock) in ms
     this.ping = 0;
 

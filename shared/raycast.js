@@ -10,6 +10,10 @@ export const TORSO_HALF_WIDTH = 0.31;
 export const TORSO_HALF_DEPTH = 0.19;
 export const HEAD_RADIUS = 0.2;
 export const HEAD_DROP = 0.18;   // head centre sits this far below the top of the body
+// Lying down (prone >= 0.5): the body lies along the facing direction, head in
+// front. Local frame: forward is -z. Matches the prone avatar in client/src/avatars.js.
+export const PRONE_BODY = { min: [-0.3, 0, -0.32], max: [0.3, 0.36, 1.15] };
+export const PRONE_HEAD = [0, 0.2, -0.47];
 
 /** Slab test. Returns { t, axis, sign } for the entry point, or null. */
 export function rayBox(o, d, min, max, maxT) {
@@ -50,7 +54,7 @@ export function raycastWorld(world, o, d, maxT) {
 }
 
 /**
- * Ray against one player's pose { x, y, z, yaw, crouch, lean }.
+ * Ray against one player's pose { x, y, z, yaw, crouch, prone, lean }.
  * Returns { t, head } for the nearest part hit, or null.
  */
 export function rayPlayer(o, d, pose, maxT) {
@@ -65,15 +69,18 @@ export function rayPlayer(o, d, pose, maxT) {
   const ddx = dx * cz - d[1] * sz, ddy = dx * sz + d[1] * cz;
   const lo = [ox, oy, lz], ld = [ddx, ddy, dz];
 
-  const h = bodyHeight(pose.crouch);
+  const prone = pose.prone || 0;
+  const lying = prone >= 0.5;
+  const h = bodyHeight(pose.crouch, prone);
   let best = null;
 
-  const torsoH = h - 0.36;
-  const torso = rayBox(lo, ld, [-TORSO_HALF_WIDTH, 0, -TORSO_HALF_DEPTH], [TORSO_HALF_WIDTH, torsoH, TORSO_HALF_DEPTH], maxT);
+  const torso = lying
+    ? rayBox(lo, ld, PRONE_BODY.min, PRONE_BODY.max, maxT)
+    : rayBox(lo, ld, [-TORSO_HALF_WIDTH, 0, -TORSO_HALF_DEPTH], [TORSO_HALF_WIDTH, h - 0.36, TORSO_HALF_DEPTH], maxT);
   if (torso) best = { t: torso.t, head: false };
 
   // Head sphere
-  const hc = [0, h - HEAD_DROP, 0];
+  const hc = lying ? PRONE_HEAD : [0, h - HEAD_DROP, 0];
   const ocx = lo[0] - hc[0], ocy = lo[1] - hc[1], ocz = lo[2] - hc[2];
   const bq = ocx * ld[0] + ocy * ld[1] + ocz * ld[2];
   const cq = ocx * ocx + ocy * ocy + ocz * ocz - HEAD_RADIUS * HEAD_RADIUS;

@@ -14,6 +14,7 @@ const game = new Game(document.getElementById('game'), network, ui);
 let room = null;
 let account = null;   // profile from the server, null when logged out
 let replaced = false; // this tab was kicked because the account logged in elsewhere
+let outdated = '';    // set when the server runs different game code than this page
 ui.bindCopyCode();
 syncSettingsToAccount(() => !!account);
 
@@ -57,14 +58,14 @@ ui.bindAuth({
 ui.bindHome({
   onCreate: async () => {
     ui.homeError('');
-    if (!(await network.ensureConnected())) return ui.homeError('Could not connect to the server.');
+    if (!(await network.ensureConnected())) return ui.homeError(outdated || 'Could not connect to the server.');
     const res = await network.request('createRoom');
     if (!res.ok) return ui.homeError(res.error || 'Could not create room.');
   },
   onJoin: async () => {
     ui.homeError('');
     if (ui.code.length !== 4) return ui.homeError('Enter a 4-letter room code.');
-    if (!(await network.ensureConnected())) return ui.homeError('Could not connect to the server.');
+    if (!(await network.ensureConnected())) return ui.homeError(outdated || 'Could not connect to the server.');
     const res = await network.request('joinRoom', { code: ui.code });
     if (!res.ok) return ui.homeError(res.error || 'Could not join room.');
   },
@@ -109,8 +110,24 @@ network.on('sessionReplaced', () => { replaced = true; });
 
 // The server refuses the connection when the login has expired or was logged out elsewhere.
 network.on('connect_error', (err) => {
-  if (err.message === 'unauthorized' && account) leaveAccount('You were logged out. Log in again.');
+  if (err.message === 'outdated') onOutdated();
+  else if (err.message === 'unauthorized' && account) leaveAccount('You were logged out. Log in again.');
 });
+
+// The server was updated (or restarted with other code): reload once to get the
+// matching page. If that didn't help, say so instead of reloading forever.
+function onOutdated() {
+  network.disconnect();
+  let last = 0;
+  try { last = Number(sessionStorage.getItem('breachline:reloaded')) || 0; } catch { /* storage unavailable */ }
+  if (Date.now() - last > 60000) {
+    try { sessionStorage.setItem('breachline:reloaded', String(Date.now())); } catch { /* storage unavailable */ }
+    location.reload();
+    return;
+  }
+  outdated = 'This page doesn\'t match the game server. Reload the page. If you run the server yourself: npm run build, then restart it.';
+  ui.homeError(outdated);
+}
 
 network.on('disconnect', (reason) => {
   if (!account || reason === 'io client disconnect') return;
@@ -134,7 +151,7 @@ getSession().then((res) => {
   }
 });
 
-// Guard against Ctrl+W (crouch + forward on Windows) closing the tab mid-match.
+// Guard against Ctrl+W (if Ctrl is bound to an action) closing the tab mid-match.
 window.addEventListener('beforeunload', (e) => {
   if (game.running) e.preventDefault();
 });

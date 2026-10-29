@@ -12,6 +12,9 @@ export const DRONE = {
   fastSpeed: 5.2,
   accel: 40,
   gravity: 22,
+  jumpSpeed: 5,         // hop about 0.57 m high, about 0.45 s in the air: onto low ledges and over debris
+  jumpBoost: 3.3,       // forward push on a hop: about 1.5 m further than rolling would go
+  jumpCooldown: 1,      // seconds between hops, so hopping can't be chained to zoom around
   stepHeight: 0.22,     // climbs stairs, but not full ledges
   maxPitch: 0.7,
   hp: 40,
@@ -22,10 +25,10 @@ export const DRONE = {
 };
 
 const EPS = 1e-4;
-export const DRONE_KEYS = KEY.FORWARD | KEY.BACK | KEY.LEFT | KEY.RIGHT | KEY.SPRINT;
+export const DRONE_KEYS = KEY.FORWARD | KEY.BACK | KEY.LEFT | KEY.RIGHT | KEY.SPRINT | KEY.JUMP;
 
 export function createDroneState(x, y, z, yaw) {
-  return { x, y, z, vx: 0, vy: 0, vz: 0, yaw, pitch: 0, onGround: true };
+  return { x, y, z, vx: 0, vy: 0, vz: 0, yaw, pitch: 0, onGround: true, jumpCd: 0 };
 }
 
 export function copyDroneState(s) {
@@ -47,7 +50,8 @@ export function stepDrone(s, input, dt, world) {
   if (len > 0) { wx /= len; wz /= len; }
   const speed = (keys & KEY.SPRINT) ? D.fastSpeed : D.walkSpeed;
 
-  const accel = (s.onGround ? D.accel : D.accel * 0.15) * dt;
+  // No steering in the air: hops and falls follow a smooth arc
+  const accel = (s.onGround ? D.accel : 0) * dt;
   const tvx = wx * speed - s.vx, tvz = wz * speed - s.vz;
   const tlen = Math.hypot(tvx, tvz);
   if (tlen <= accel) { s.vx += tvx; s.vz += tvz; } else { s.vx += tvx / tlen * accel; s.vz += tvz / tlen * accel; }
@@ -69,10 +73,25 @@ export function stepDrone(s, input, dt, world) {
     } else { s.x = ax; s.z = az; }
   } else { s.x = ax; s.z = az; }
 
-  // Gravity; stick to stairs when rolling down them
+  // Hop: up, plus a push the way the drone faces
+  s.jumpCd = Math.max(0, (s.jumpCd || 0) - dt);
+  if ((keys & KEY.JUMP) && s.onGround && s.jumpCd <= 0) {
+    s.vy = D.jumpSpeed;
+    s.vx += fx * D.jumpBoost; s.vz += fz * D.jumpBoost;
+    s.onGround = false;
+    s.jumpCd = D.jumpCooldown;
+  }
+
+  // Gravity, ceilings; stick to stairs when rolling down them
   const wasOnGround = s.onGround;
   s.vy -= D.gravity * dt;
   const dy = s.vy * dt;
+  if (dy > 0) {
+    const uy = sweepUp(world, s.x, s.y, s.z, h, dy, r);
+    if (uy < s.y + dy - EPS) s.vy = 0;
+    s.y = uy; s.onGround = false;
+    return;
+  }
   const ny = sweepDown(world, s.x, s.y, s.z, h, -dy, r);
   if (ny > s.y + dy + EPS) { s.y = ny; s.vy = 0; s.onGround = true; }
   else {

@@ -86,7 +86,7 @@ export class Soundscape {
     const active = l.alive && !l.droneState && !this.game.camView;
     const speed = Math.hypot(s.vx, s.vz);
     if (active && s.onGround) {
-      const cls = this.stepClass(speed, s.crouch, s.sprinting);
+      const cls = this.stepClass(speed, Math.max(s.crouch, s.prone || 0), s.sprinting);
       if (cls) {
         o.stride += speed * dt;
         if (o.stride >= cls.stride) {
@@ -116,7 +116,7 @@ export class Soundscape {
       let st = this.remote.get(id);
       if (!st) { st = { stride: 0, wasGround: true, vy: 0, wasReloading: false }; this.remote.set(id, st); }
       const p = r.pose, pos = [p.x, p.y + 0.1, p.z];
-      const cls = this.stepClass(r.speed, p.crouch, r.speed > 5);
+      const cls = this.stepClass(r.speed, Math.max(p.crouch, p.prone || 0), r.speed > 5);
       if (cls && r.onGround) {
         st.stride += r.speed * dt;
         if (st.stride >= cls.stride) { st.stride = 0; this.at(this.stepSound(p.x, p.y, p.z), pos, cls.range, cls.gain); }
