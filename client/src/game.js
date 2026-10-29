@@ -60,6 +60,7 @@ export class Game {
     this.barricadesLeft = BARRICADE.pool;
     this.abilityCdEnd = 0;
     this.stunUntil = 0;
+    this.mySkins = {};
     this.stunMs = 0;
     this.camView = null;      // { rec, index } while a defender watches a camera
     this.wasSelecting = false;
@@ -259,6 +260,7 @@ export class Game {
     if (!me) return;
 
     this.myTeam = me.team;
+    this.mySkins = me.skins || {};   // my equipped gun skins, drawn on my own gun
     this.members.clear();
     for (const p of payload.players) this.members.set(p.id, { name: p.name, team: p.team });
 
@@ -808,7 +810,7 @@ export class Game {
     this.ui.setHint(this.hintText(watching, inDrone));
     this.ui.renderBoard(this.boardOn, this.boardRows(), this.round.scores);
 
-    this.viewModel.setWeapon(local.weapon.id);
+    this.viewModel.setWeapon(local.weapon.id, this.mySkins[local.weapon.id]);
     const w = local.weaponDef;
     this.viewModel.update(dt, {
       speed: Math.hypot(s.vx, s.vz),

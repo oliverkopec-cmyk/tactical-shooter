@@ -76,7 +76,7 @@ export class GameState {
       deaths: 0,
       // What the rewards and daily quests count; the server tallies these itself
       stats: { rounds: 0, headshots: 0, plants: 0, reinforced: 0, barricades: 0, utilities: 0, objSecs: 0 },
-      operator: defaultOperator(member.team),
+      operator: this.startingOperator(member),
       opConfirmed: false,     // picked on the select screen this round
       ability: null,          // { charges, cdUntil, shieldId } for the current operator
       utilityChoice: null,    // the utility picked on the select screen (kept between rounds)
@@ -95,6 +95,12 @@ export class GameState {
       timeBudget: 0,
     });
     this.applyOperator(this.players.get(member.id));
+  }
+
+  /** The operator a player starts select with: the one their account equipped for this side, else the Recruit. */
+  startingOperator(member) {
+    const pick = member.preferred?.[member.team];
+    return OPERATORS[pick]?.team === member.team ? pick : defaultOperator(member.team);
   }
 
   removePlayer(id) {
@@ -432,7 +438,7 @@ export class GameState {
       p.stunUntil = 0;
       p.camView = -1;
       p.opConfirmed = false;
-      if (OPERATORS[p.operator]?.team !== team) p.operator = defaultOperator(team);   // sides swapped
+      if (OPERATORS[p.operator]?.team !== team) p.operator = this.startingOperator(p.member);   // sides swapped
       this.applyOperator(p);
     }
     this.gadgets.reset();
@@ -785,7 +791,7 @@ export class GameState {
       picks: this.picksFor(team),
       mapName: MAP.name,
       players: [...this.players.entries()].map(([id, p]) => ({
-        id, name: p.member.name, team: p.member.team, state: p.state,
+        id, name: p.member.name, team: p.member.team, skins: p.member.skins || {}, state: p.state,
         weapon: p.weapon, health: p.health, alive: p.alive,
         charges: p.charges, placed: !!p.placedCharge, spawnChoice: p.spawnChoice, operator: p.operator,
       })),

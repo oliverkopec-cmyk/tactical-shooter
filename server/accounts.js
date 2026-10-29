@@ -10,7 +10,11 @@ import bcrypt from 'bcrypt';
 import express from 'express';
 import { usernameError, passwordError } from '../shared/account.js';
 import { sanitizeSettings } from '../shared/settings.js';
-import { profileOf } from './profile.js';
+import { profileOf, configureProfile, ownedSkinsOf, equippedSkinsOf, equippedOperatorsOf } from './profile.js';
+import { SKINS } from '../shared/skins.js';
+import { WEAPONS } from '../shared/weapons.js';
+import { OPERATORS } from '../shared/operators.js';
+import { ownedOperatorIds } from '../shared/account.js';
 import { Progression } from './progression.js';
 
 const COOKIE = 'bl_session';
@@ -29,12 +33,16 @@ function readCookie(header, name) {
   return null;
 }
 
+/** What a match needs to know about a player's equipped skins and operators. */
+const loadoutOf = (row) => ({ skins: equippedSkinsOf(row), operators: equippedOperatorsOf(row) });
+
 export class Accounts {
   constructor(db) {
     this.db = db;
     this.online = new Map();   // accountId -> socket (one connection per account)
     this.attempts = new Map(); // ip -> { count, resetAt }
     this.progression = new Progression(this);   // money, xp, rank points and daily quests
+    configureProfile({ unlockAll: process.env.UNLOCK_ALL_SKINS === '1' || db.kind === 'local' });
     // Compared against when the username doesn't exist, so a wrong username
     // takes as long to reject as a wrong password.
     this.dummyHash = bcrypt.hash(crypto.randomBytes(16).toString('hex'), BCRYPT_ROUNDS);
@@ -153,6 +161,33 @@ export class Accounts {
       res.json({ settings: clean });
     });
 
+    // Equip a skin on a gun (skin: null puts the gun back to its default look)
+    r.put('/equip/skin', async (req, res) => {
+      const found = await this.fromCookie(req.headers.cookie);
+      if (!found) return res.status(401).json({ error: 'Not logged in.' });
+      const { weapon, skin } = req.body || {};
+      if (!WEAPONS[weapon]) return res.status(400).json({ error: 'Unknown gun.' });
+      if (skin !== null && !(SKINS[skin] && ownedSkinsOf(found.row).includes(skin))) return res.status(403).json({ error: 'You don\'t own that skin.' });
+      const equipped = { ...equippedSkinsOf(found.row) };
+      if (skin === null) delete equipped[weapon]; else equipped[weapon] = skin;
+      const { rows } = await this.db.query('UPDATE accounts SET equipped_skins = $2 WHERE id = $1 RETURNING *', [found.row.id, JSON.stringify(equipped)]);
+      this.refreshSocketLoadout(rows[0]);
+      res.json({ account: profileOf(rows[0]) });
+    });
+
+    // Equip an operator for their side; it is also the one shown in the main menu
+    r.put('/equip/operator', async (req, res) => {
+      const found = await this.fromCookie(req.headers.cookie);
+      if (!found) return res.status(401).json({ error: 'Not logged in.' });
+      const op = OPERATORS[req.body?.operator];
+      if (!op) return res.status(400).json({ error: 'Unknown operator.' });
+      if (!ownedOperatorIds(found.row.owned_operators).includes(op.id)) return res.status(403).json({ error: 'You don\'t own that operator.' });
+      const equipped = { ...equippedOperatorsOf(found.row), [op.team]: op.id, menu: op.id };
+      const { rows } = await this.db.query('UPDATE accounts SET equipped_operators = $2 WHERE id = $1 RETURNING *', [found.row.id, JSON.stringify(equipped)]);
+      this.refreshSocketLoadout(rows[0]);
+      res.json({ account: profileOf(rows[0]) });
+    });
+
     r.use((err, _req, res, _next) => {
       console.error('Account API error:', err);
       res.status(500).json({ error: 'Something went wrong on the server. Try again.' });
@@ -168,7 +203,7 @@ export class Accounts {
       try {
         const found = await this.fromCookie(socket.request.headers.cookie);
         if (!found) return next(new Error('unauthorized'));
-        socket.data.account = { id: found.row.id, username: found.row.username };
+        socket.data.account = { id: found.row.id, username: found.row.username, ...loadoutOf(found.row) };
         socket.data.tokenHash = found.tokenHash;
         next();
       } catch (err) {
@@ -176,6 +211,12 @@ export class Accounts {
         next(new Error('server error'));
       }
     };
+  }
+
+  /** After an equip: the open connection carries the new look into the next match. */
+  refreshSocketLoadout(row) {
+    const sock = this.online.get(row.id);
+    if (sock) Object.assign(sock.data.account, loadoutOf(row));
   }
 
   /** One live connection per account: a newer tab or device takes over from the old one. */

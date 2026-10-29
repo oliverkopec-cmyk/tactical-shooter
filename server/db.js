@@ -36,6 +36,7 @@ const SCHEMA = `
   CREATE INDEX IF NOT EXISTS sessions_account_idx ON sessions (account_id);
   ALTER TABLE accounts ADD COLUMN IF NOT EXISTS quests JSONB NOT NULL DEFAULT '{}';
   ALTER TABLE accounts ADD COLUMN IF NOT EXISTS stats JSONB NOT NULL DEFAULT '{}';
+  ALTER TABLE accounts ADD COLUMN IF NOT EXISTS equipped_operators JSONB NOT NULL DEFAULT '{}';
 `;
 
 /** Create or update the tables (safe to run every start). */

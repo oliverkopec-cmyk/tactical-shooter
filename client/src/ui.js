@@ -210,6 +210,7 @@ export class UI {
   show(screen) {
     for (const [key, el] of Object.entries(this.screens)) el.classList.toggle('hidden', key !== screen);
     this.hud.classList.toggle('hidden', screen !== 'game');
+    this.onShow?.(screen);   // the main menu starts and stops its 3D scene
   }
 
   // ---------------------------------------------------------------- account
@@ -243,10 +244,9 @@ export class UI {
 
   renderProfile(p) {
     $('profile-name').textContent = p.username;
-    $('profile-level').textContent = `Level ${p.level}`;
+    $('profile-level').textContent = `· Level ${p.level} (${(p.xp - xpForLevel(p.level)).toLocaleString()} / ${(xpForLevel(p.level + 1) - xpForLevel(p.level)).toLocaleString()} XP)`;
     $('profile-money').textContent = p.money.toLocaleString();
     $('profile-polish').textContent = p.polishMoney.toLocaleString();
-    $('profile-xp').textContent = `${(p.xp - xpForLevel(p.level)).toLocaleString()} / ${(xpForLevel(p.level + 1) - xpForLevel(p.level)).toLocaleString()}`;
     const rank = rankInfo(p.rankPoints);
     $('profile-rank-icon').innerHTML = rankIcon(rank, 44);
     $('profile-rank-label').textContent = rank.label;

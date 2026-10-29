@@ -35,6 +35,12 @@ export class RoomManager {
   }
 }
 
+/** The skins and preferred operators the player's account has equipped right now. */
+function loadoutFrom(socket) {
+  const a = socket?.data?.account;
+  return { skins: a?.skins || {}, preferred: a?.operators || {} };
+}
+
 export function cleanName(name) {
   const cleaned = String(name || '').replace(/[^\p{L}\p{N} _\-.]/gu, '').trim().slice(0, MAX_NAME_LENGTH);
   return cleaned || 'Player';
@@ -67,7 +73,7 @@ class Room {
     // Fill the smaller team first
     const team = this.teamCount(TEAMS.ATTACK) <= this.teamCount(TEAMS.DEFENSE) ? TEAMS.ATTACK : TEAMS.DEFENSE;
     const { id: accountId, username } = socket.data.account;
-    const member = { id: socket.id, accountId, name: cleanName(username), team };
+    const member = { id: socket.id, accountId, name: cleanName(username), team, ...loadoutFrom(socket) };
     this.members.set(socket.id, member);
     if (!this.hostId) this.hostId = socket.id;
     socket.join(this.channel);
@@ -119,6 +125,8 @@ class Room {
       return { error: 'Both teams need at least one player.' };
     }
     this.phase = 'match';
+    // Pick up any skin or operator changes made since each player joined the room
+    for (const m of this.members.values()) Object.assign(m, loadoutFrom(this.io.sockets.sockets.get(m.id)));
     this.game = new GameState(this);
     for (const m of this.members.values()) this.game.addPlayer(m);
     this.game.start();
@@ -140,7 +148,7 @@ class Room {
       code: this.code,
       hostId: this.hostId,
       phase: this.phase,
-      players: [...this.members.values()].map(({ id, name, team }) => ({ id, name, team })),
+      players: [...this.members.values()].map(({ id, name, team, skins }) => ({ id, name, team, skins })),
     };
   }
 

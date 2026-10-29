@@ -2,7 +2,16 @@
 
 A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite on the client, Node.js + Socket.IO on an authoritative server. One Node process serves both the game client and the realtime server, so the whole thing deploys as a single Render web service.
 
-## Status: Stage 12 (rewards, quests and ranks)
+## Status: Stage 13 (main menu, operators tab and skins)
+
+- **Main menu:** after logging in you land on a full-screen menu with a 3D scene: your equipped operator stands on a lit platform holding their primary gun (with its skin). Drag to turn them. The top bar shows your username, rank (icon, tier and progress), level and XP, Money and Polish Money (always 0, display only).
+- **Tabs:** Play (create or join a room, daily quests), Operators, Shop and Friends (placeholders for now) and Settings (opens the settings panel).
+- **Operators tab:** choose Attack or Defense, click an operator to see their guns (hover for stat bars), ability and both utilities. **Equip operator** makes them your pick for that side (they start the operator select already chosen) and the one shown in the menu. The operator steps to the side and a big copy of the selected gun turns beside them so you can see its skin.
+- **Gun skins with rarities:** Common (grey), Rare (blue), Epic (purple) and Legendary (gold). 13 skins; each recolours the gun, changes how shiny or glowing it is, and draws a pattern in code (stripes, camo, neon circuit, flames, void). Any skin fits any gun and each gun has its own equipped skin. No image files.
+- **Equipped skins show in matches for everyone:** your own gun in first person and every other player's gun in third person.
+- **Ownership:** every account owns the Common skins. The server checks that you own what you equip. Rare, Epic and Legendary skins will be sold in the shop (next stage). On a local development database (no `DATABASE_URL`) every skin is unlocked so you can try them all; set `UNLOCK_ALL_SKINS=1` to get that with a hosted database too. Never set it on Render.
+
+### Earlier: Stage 12 (rewards, quests and ranks)
 
 - **Money after every match**, worked out by the server: 100 for playing, +150 for winning, +25 per round your side won, +10 per kill (+5 more for a headshot kill), +2 per second on the objective (up to +80) and +5 per breach charge planted. A typical loss pays about 150, a typical win 350-550.
 - **XP and levels:** the match Money is also XP. Level 2 needs 250 XP in total, level 3 750, level 4 1500 (`125 × n × (n−1)`).
@@ -133,6 +142,7 @@ shared/            Code used by BOTH client and server
   settings.js      setting defaults and limits (the server cleans saved settings with these)
   keybinds.js      rebindable actions, default keys, key names, keybind cleaning
   progression.js   rank ladder, level maths, daily quest definitions
+  skins.js         gun skin catalog: rarities, colours, patterns
 server/
   index.js         Express static hosting + Socket.IO events
   db.js            Postgres connection (DATABASE_URL) or local PGlite fallback, table setup
@@ -150,6 +160,8 @@ client/
   src/main.js      wires login, UI, network, game
   src/account.js   calls the account API (session, sign-up, log-in, settings)
   src/controls.js  current keybinds: action for a key, key name for an action
+  src/menu.js      main menu tabs and the Operators tab
+  src/menuScene.js 3D scene behind the main menu
   src/network.js   Socket.IO wrapper, server clock estimate
   src/game.js      Three.js scene and frame loop
   src/player.js    local player: input, prediction, reconciliation, camera
@@ -208,6 +220,14 @@ Other players' sounds are derived on each client from the snapshots (speed, stan
 ## Barricades, melee and props
 
 `MAP.openings` lists every door and window gap (generated in `shared/map.js`; `findOpening()` finds the one a ray passes through). A barricade is a set of dynamic boxes added to the shared `World` (`kind: 'barricade'`), so movement and bullets on both sides treat the planks as solid. The server owns plank health and sends `barricadeBroken` events; clients remove the same planks. Props live in the same `MAP.boxes` list as walls (`prop()` in `shared/map.js`), with `MAP.details` for visual-only decoration. Run the reachability check idea from the commit when you move props: every room, both staircases and all spawn points must stay open.
+
+## Main menu, operators and skins
+
+- `client/src/menu.js` runs the tabs and the Operators tab; `client/src/menuScene.js` is the 3D scene (it reuses the in-game avatar and gun models, so the menu always matches the game). The scene only renders while the menu is showing.
+- `shared/skins.js` is the skin catalog (rarities, colours, patterns). `makeGunModel(id, skinId)` in `client/src/weapons.js` applies a skin; the first-person gun, other players' guns and the menu all go through it.
+- Equipping is `PUT /api/equip/skin` and `PUT /api/equip/operator`. The server only accepts skins in the account's owned list (`ownedSkinsOf` in `server/profile.js`: the common ones, what it bought, or everything in dev mode) and operators it owns on the right side. What is stored is re-checked every time it is read.
+- Skins reach the match from the account: the socket carries the account's equipped skins and operators, `Room.start` refreshes them when a match begins, and every player entry in the room state and start payload includes `skins`.
+- `equipped_operators` (a new column, added automatically) holds `{ attack, defense, menu }`.
 
 ## Rewards, quests and ranks
 
