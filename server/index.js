@@ -6,13 +6,23 @@ import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { Server } from 'socket.io';
 import { RoomManager } from './rooms.js';
+import { openDatabase } from './db.js';
+import { Accounts } from './accounts.js';
+
+// Local secrets (e.g. DATABASE_URL) can live in a .env file, which git ignores.
+try { process.loadEnvFile(); } catch { /* no .env file */ }
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.resolve(__dirname, '../dist');
 const PORT = Number(process.env.PORT) || 3000;
 
+const db = await openDatabase();
+const accounts = new Accounts(db);
+
 const app = express();
+app.set('trust proxy', 1); // Render sits behind one proxy: lets req.ip / req.secure see the real client
 app.get('/healthz', (_req, res) => res.send('ok'));
+app.use('/api', accounts.router());
 app.use(express.static(DIST));
 
 const server = http.createServer(app);
@@ -23,23 +33,25 @@ const io = new Server(server, {
 });
 
 const rooms = new RoomManager(io);
+io.use(accounts.socketAuth());
 
 io.on('connection', (socket) => {
   const reply = (ack, payload) => { if (typeof ack === 'function') ack(payload); };
+  accounts.trackOnline(socket);
 
-  socket.on('createRoom', ({ name } = {}, ack) => {
+  socket.on('createRoom', (ack) => {
     if (socket.data.room) socket.data.room.remove(socket);
     const room = rooms.createRoom();
-    room.add(socket, name);
+    room.add(socket);
     reply(ack, { ok: true, code: room.code, id: socket.id });
   });
 
-  socket.on('joinRoom', ({ name, code } = {}, ack) => {
+  socket.on('joinRoom', ({ code } = {}, ack) => {
     const room = rooms.get(code);
     if (!room) return reply(ack, { ok: false, error: 'No room with that code.' });
     if (room.isFull()) return reply(ack, { ok: false, error: 'That room is full.' });
     if (socket.data.room) socket.data.room.remove(socket);
-    room.add(socket, name);
+    room.add(socket);
     reply(ack, { ok: true, code: room.code, id: socket.id });
   });
 

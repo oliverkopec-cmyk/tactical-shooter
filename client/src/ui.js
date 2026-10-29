@@ -4,19 +4,17 @@ import { MAX_PER_TEAM, MAX_HEALTH } from '../../shared/constants.js';
 import { WEAPONS } from '../../shared/weapons.js';
 import { MAP } from '../../shared/map.js';
 import { operatorsFor, OPERATORS } from '../../shared/operators.js';
-import { settings, setSetting } from './settings.js';
+import { settings, setSetting, onSettingsChange } from './settings.js';
 
 const $ = (id) => document.getElementById(id);
 
 export class UI {
   constructor() {
-    this.screens = { home: $('screen-home'), lobby: $('screen-lobby') };
+    this.screens = { auth: $('screen-auth'), home: $('screen-home'), lobby: $('screen-lobby') };
     this.hud = $('hud');
     this.fpsAvg = 60;
     this.statsTimer = 0;
-
-    const saved = localStorageGet('breachline:name');
-    if (saved) $('name-input').value = saved;
+    this.authMode = 'login';
     this.bindSettings();
   }
 
@@ -33,6 +31,12 @@ export class UI {
         $(`val-${name}`).textContent = fmt[name](settings[name]);
       });
     }
+    // Settings can also change from outside (loaded from the account after login).
+    onSettingsChange((name, value) => {
+      if (!fmt[name]) return;
+      $(`set-${name}`).value = value;
+      $(`val-${name}`).textContent = fmt[name](value);
+    });
     for (const btn of document.querySelectorAll('.settings-open')) btn.addEventListener('click', () => this.openSettings(false));
     $('settings-close').addEventListener('click', () => { this.closeSettings(); this.onSettingsClosed?.(); });
   }
@@ -111,10 +115,41 @@ export class UI {
     this.hud.classList.toggle('hidden', screen !== 'game');
   }
 
-  get name() {
-    const name = $('name-input').value.trim();
-    localStorageSet('breachline:name', name);
-    return name;
+  // ---------------------------------------------------------------- account
+
+  /** onSubmit(mode, username, password), mode 'login' | 'signup'. */
+  bindAuth({ onSubmit, onLogout }) {
+    for (const tab of document.querySelectorAll('.auth-tab')) {
+      tab.addEventListener('click', () => this.setAuthMode(tab.dataset.mode));
+    }
+    $('auth-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      onSubmit(this.authMode, $('auth-username').value.trim(), $('auth-password').value);
+    });
+    $('logout-btn').addEventListener('click', onLogout);
+  }
+
+  setAuthMode(mode) {
+    this.authMode = mode;
+    for (const tab of document.querySelectorAll('.auth-tab')) tab.classList.toggle('active', tab.dataset.mode === mode);
+    const signup = mode === 'signup';
+    $('auth-submit').textContent = signup ? 'Create account' : 'Log in';
+    $('auth-password').autocomplete = signup ? 'new-password' : 'current-password';
+    $('auth-rules').classList.toggle('hidden', !signup);
+    this.authError('');
+  }
+
+  authBusy(busy) { $('auth-submit').disabled = busy; }
+  authError(msg) { $('auth-error').textContent = msg || ''; }
+  showStorageWarning(on) { $('auth-storage').classList.toggle('hidden', !on); }
+  clearPassword() { $('auth-password').value = ''; }
+
+  renderProfile(p) {
+    $('profile-name').textContent = p.username;
+    $('profile-level').textContent = `Level ${p.level}`;
+    $('profile-money').textContent = p.money.toLocaleString();
+    $('profile-polish').textContent = p.polishMoney.toLocaleString();
+    $('profile-rank').textContent = p.rankPoints.toLocaleString();
   }
 
   get code() {
@@ -455,13 +490,6 @@ export class UI {
     this.statsTimer = 0;
     $('net-stats').textContent = `${Math.round(this.fpsAvg)} fps · ${ping} ms · ${local?.pending.length ?? 0} unacked`;
   }
-}
-
-function localStorageGet(key) {
-  try { return localStorage.getItem(key); } catch { return null; }
-}
-function localStorageSet(key, value) {
-  try { localStorage.setItem(key, value); } catch { /* storage unavailable */ }
 }
 
 function escapeHtml(str) {

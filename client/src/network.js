@@ -5,7 +5,8 @@ import { INTERP_DELAY_MS } from '../../shared/constants.js';
 
 export class Network {
   constructor() {
-    this.socket = io({ transports: ['websocket', 'polling'] });
+    // Connects only once logged in: the server checks the login cookie on connect.
+    this.socket = io({ transports: ['websocket', 'polling'], autoConnect: false });
     this.serverOffset = null; // estimate of (server clock - local clock) in ms
     this.ping = 0;
 
@@ -15,6 +16,33 @@ export class Network {
 
   get id() {
     return this.socket.id;
+  }
+
+  connect() {
+    if (!this.socket.connected) this.socket.connect();
+  }
+
+  disconnect() {
+    this.socket.disconnect();
+  }
+
+  /** Resolves true once connected (reconnecting if needed), false on failure or timeout. */
+  ensureConnected(timeoutMs = 5000) {
+    if (this.socket.connected) return Promise.resolve(true);
+    return new Promise((resolve) => {
+      const finish = (ok) => {
+        clearTimeout(timer);
+        this.socket.off('connect', onOk);
+        this.socket.off('connect_error', onFail);
+        resolve(ok);
+      };
+      const onOk = () => finish(true);
+      const onFail = () => finish(false);
+      const timer = setTimeout(() => finish(false), timeoutMs);
+      this.socket.once('connect', onOk);
+      this.socket.once('connect_error', onFail);
+      this.socket.connect();
+    });
   }
 
   on(event, fn) {

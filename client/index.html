@@ -9,14 +9,46 @@
 <body>
   <canvas id="game"></canvas>
 
-  <!-- Name + create/join -->
-  <div id="screen-home" class="screen">
-    <div class="panel">
+  <!-- Log in / sign up -->
+  <div id="screen-auth" class="screen hidden">
+    <form id="auth-form" class="panel" novalidate>
       <h1>BREACHLINE</h1>
       <p class="tagline">Attack. Defend. Break through.</p>
-      <label>Your name
-        <input id="name-input" maxlength="16" placeholder="Enter a name" autocomplete="off" />
+      <div class="auth-tabs">
+        <button type="button" data-mode="login" class="auth-tab active">Log in</button>
+        <button type="button" data-mode="signup" class="auth-tab">Create account</button>
+      </div>
+      <label>Username
+        <input id="auth-username" name="username" maxlength="16" autocomplete="username" autocapitalize="off" spellcheck="false" />
       </label>
+      <label>Password
+        <input id="auth-password" name="password" type="password" maxlength="72" autocomplete="current-password" />
+      </label>
+      <p id="auth-rules" class="muted hidden">3-16 characters: letters, numbers, _ . -. Password at least 6 characters.</p>
+      <button id="auth-submit" type="submit" class="primary">Log in</button>
+      <p id="auth-error" class="error"></p>
+      <p id="auth-storage" class="warning hidden">Dev mode: DATABASE_URL isn't set, so accounts are saved to a local file database only.</p>
+    </form>
+  </div>
+
+  <!-- Profile + create/join -->
+  <div id="screen-home" class="screen hidden">
+    <div class="panel">
+      <h1>BREACHLINE</h1>
+      <div class="profile-card">
+        <div class="profile-top">
+          <div>
+            <div id="profile-name" class="profile-name"></div>
+            <div id="profile-level" class="muted"></div>
+          </div>
+          <button id="logout-btn" class="ghost small">Log out</button>
+        </div>
+        <div class="profile-stats">
+          <div><span class="muted">Money</span><b id="profile-money">0</b></div>
+          <div><span class="muted">Polish Money</span><b id="profile-polish">0</b></div>
+          <div><span class="muted">Rank points</span><b id="profile-rank">0</b></div>
+        </div>
+      </div>
       <button id="create-btn" class="primary">Create room</button>
       <div class="join-row">
         <input id="code-input" maxlength="4" placeholder="CODE" autocomplete="off" />

@@ -45,7 +45,7 @@ class Room {
     this.code = code;
     this.onEmpty = onEmpty;
     this.channel = `room:${code}`;
-    this.members = new Map(); // socketId -> { id, name, team }
+    this.members = new Map(); // socketId -> { id, accountId, name, team }
     this.hostId = null;
     this.phase = 'lobby';     // 'lobby' | 'match'
     this.game = null;
@@ -61,10 +61,11 @@ class Room {
     return this.members.size >= MAX_PER_TEAM * 2;
   }
 
-  add(socket, name) {
+  add(socket) {
     // Fill the smaller team first
     const team = this.teamCount(TEAMS.ATTACK) <= this.teamCount(TEAMS.DEFENSE) ? TEAMS.ATTACK : TEAMS.DEFENSE;
-    const member = { id: socket.id, name: cleanName(name), team };
+    const { id: accountId, username } = socket.data.account;
+    const member = { id: socket.id, accountId, name: cleanName(username), team };
     this.members.set(socket.id, member);
     if (!this.hostId) this.hostId = socket.id;
     socket.join(this.channel);
