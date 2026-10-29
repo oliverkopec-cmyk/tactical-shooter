@@ -11,6 +11,7 @@ import express from 'express';
 import { usernameError, passwordError } from '../shared/account.js';
 import { sanitizeSettings } from '../shared/settings.js';
 import { profileOf, configureProfile, ownedSkinsOf, equippedSkinsOf, equippedOperatorsOf, devToolsEnabled } from './profile.js';
+import { OPERATORS as OPERATOR_DEFS } from '../shared/operators.js';
 import { SKINS, priceOf, featuredSkins, dayIndex, DAY_MS } from '../shared/skins.js';
 import { WEAPONS } from '../shared/weapons.js';
 import { OPERATORS } from '../shared/operators.js';
@@ -34,7 +35,7 @@ function readCookie(header, name) {
 }
 
 /** What a match needs to know about a player's equipped skins and operators. */
-const loadoutOf = (row) => ({ skins: equippedSkinsOf(row), operators: equippedOperatorsOf(row) });
+const loadoutOf = (row) => ({ skins: equippedSkinsOf(row), operators: equippedOperatorsOf(row), owned: ownedOperatorIds(row.owned_operators) });
 
 export class Accounts {
   constructor(db) {
@@ -224,6 +225,30 @@ export class Accounts {
       }
       this.refreshSocketLoadout(rows[0]);
       res.json({ account: profileOf(rows[0]), bought: skin, price });
+    });
+
+    // Buy an operator. Same one-statement check as skins: price, Money and ownership together.
+    r.post('/operators/buy', async (req, res) => {
+      const found = await this.fromCookie(req.headers.cookie);
+      if (!found) return res.status(401).json({ error: 'Not logged in.' });
+      const op = OPERATOR_DEFS[req.body?.operator];
+      if (!op) return res.status(400).json({ error: 'Unknown operator.' });
+      if (!op.price) return res.status(400).json({ error: `${op.name} is free: you already own them.` });
+      const { rows } = await this.db.query(
+        `UPDATE accounts SET money = money - $2, owned_operators = owned_operators || to_jsonb($3::text)
+         WHERE id = $1 AND money >= $2 AND NOT (owned_operators @> to_jsonb($3::text)) RETURNING *`,
+        [found.row.id, op.price, op.id],
+      );
+      if (!rows[0]) {
+        const current = (await this.db.query('SELECT * FROM accounts WHERE id = $1', [found.row.id])).rows[0];
+        const owned = current && ownedOperatorIds(current.owned_operators).includes(op.id);
+        return res.status(owned ? 409 : 402).json({
+          error: owned ? `You already own ${op.name}.` : `Not enough Money: ${op.name} costs ${op.price.toLocaleString()}.`,
+          account: current ? profileOf(current) : undefined,
+        });
+      }
+      this.refreshSocketLoadout(rows[0]);
+      res.json({ account: profileOf(rows[0]), bought: op.id, price: op.price });
     });
 
     // Developer tool: top up Money to test the shop. Only exists on a local test database.

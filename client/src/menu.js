@@ -6,7 +6,7 @@ import { OPERATORS, operatorsFor } from '../../shared/operators.js';
 import { WEAPONS } from '../../shared/weapons.js';
 import { UTILITIES } from '../../shared/utilities.js';
 import { SKINS, RARITIES, skinList, hexColor, priceOf, shopSkins } from '../../shared/skins.js';
-import { equipSkin, equipOperator, getShop, buySkin, devMoney } from './account.js';
+import { equipSkin, equipOperator, getShop, buySkin, devMoney, buyOperator } from './account.js';
 import { fillKeys } from './controls.js';
 import { MenuScene } from './menuScene.js';
 
@@ -109,7 +109,7 @@ export class Menu {
       return `<button type="button" class="op-row${op.id === this.selectedOp ? ' selected' : ''}${owned ? '' : ' locked'}" data-op="${op.id}">
         <span class="swatch" style="background:${hexColor(op.color)}"></span>
         <span class="op-row-name">${esc(op.name)}</span>
-        ${op.id === equippedId ? '<span class="tag">Equipped</span>' : owned ? '' : '<span class="tag lock">Locked</span>'}
+        ${op.id === equippedId ? '<span class="tag">Equipped</span>' : owned ? '' : `<span class="tag lock">${op.price.toLocaleString()}</span>`}
       </button>`;
     }).join('');
 
@@ -141,7 +141,9 @@ export class Menu {
     $('op-detail').innerHTML = `
       <div class="detail-head">
         <div><div class="detail-name" style="color:${hexColor(op.color)}">${esc(op.name)}</div><div class="muted">${op.team === 'attack' ? 'Attacker' : 'Defender'} · Speed ${pips(op.speed)} · Armor ${pips(op.armor)}</div></div>
-        <button type="button" class="${equipped ? '' : 'primary'}" data-equip-op="${op.id}" ${equipped || !owned ? 'disabled' : ''}>${equipped ? 'Equipped' : owned ? 'Equip operator' : 'Locked'}</button>
+        ${owned
+          ? `<button type="button" class="${equipped ? '' : 'primary'}" data-equip-op="${op.id}" ${equipped ? 'disabled' : ''}>${equipped ? 'Equipped' : 'Equip operator'}</button>`
+          : `<button type="button" class="primary" data-buy-op="${op.id}" ${a.money < op.price ? 'disabled' : ''}>${a.money < op.price ? `Need ${(op.price - a.money).toLocaleString()} more` : `Buy for ${op.price.toLocaleString()}`}</button>`}
       </div>
       <div class="detail-sub">Ability</div>
       <div class="detail-text">${op.ability ? `<b>${esc(op.ability.name)}</b><br>${esc(fillKeys(op.ability.desc))}` : '<i class="muted">No special ability</i>'}</div>
@@ -159,6 +161,14 @@ export class Menu {
   }
 
   async onDetailClick(e) {
+    const buyBtn = e.target.closest('[data-buy-op]');
+    if (buyBtn && !buyBtn.disabled) {
+      buyBtn.disabled = true;
+      const res = await buyOperator(buyBtn.dataset.buyOp);
+      this.error = res.bought ? '' : res.error || 'Could not buy that.';
+      if (res.account) this.setAccount(res.account); else this.renderOperators();
+      return;
+    }
     const equipBtn = e.target.closest('[data-equip-op]');
     if (equipBtn && !equipBtn.disabled) { await this.apply(equipOperator(equipBtn.dataset.equipOp)); return; }
     const gun = e.target.closest('[data-slot]');

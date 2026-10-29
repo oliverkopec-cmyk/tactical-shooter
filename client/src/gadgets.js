@@ -102,6 +102,28 @@ function makeClaymore() {
   return g;
 }
 
+/** A shock trap: a dark pad with a glowing cyan ring. */
+function makeShockPad() {
+  const g = new THREE.Group();
+  const pad = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.45, 0.05, 20), darkMat);
+  const ringMat = new THREE.MeshBasicMaterial({ color: 0x39f0ff });
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.34, 0.018, 6, 24).rotateX(Math.PI / 2), ringMat);
+  ring.position.y = 0.04;
+  g.add(pad, ring);
+  g.userData.led = ring;
+  return g;
+}
+
+/** A healing field: a soft green disc and ring on the floor. */
+function makeHealField(radius) {
+  const g = new THREE.Group();
+  const disc = new THREE.Mesh(new THREE.CircleGeometry(radius, 40).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x6fdc7a, transparent: true, opacity: 0.16, depthWrite: false }));
+  const ring = new THREE.Mesh(new THREE.RingGeometry(radius - 0.1, radius, 48).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x6fdc7a, transparent: true, opacity: 0.6, depthWrite: false }));
+  disc.position.y = ring.position.y = 0.05;
+  g.add(disc, ring);
+  return g;
+}
+
 export class GadgetView {
   constructor(scene, world) {
     this.scene = scene;
@@ -109,6 +131,7 @@ export class GadgetView {
     this.items = new Map();      // "kind:id" -> { kind, group, rec }
     this.grenades = new Map();   // id -> { mesh, target }
     this.smokes = [];            // { group, age, life, size }
+    this.fires = [];             // Cinder's fire patches: { group, age, life, flames }
     this.t = 0;
   }
 
@@ -144,6 +167,17 @@ export class GadgetView {
       group = makeClaymore();
       group.position.set(...rec.pos);
       group.lookAt(rec.pos[0] + rec.dir[0], rec.pos[1], rec.pos[2] + rec.dir[2]);
+    } else if (rec.kind === 'shock') {
+      group = makeShockPad();
+      group.position.set(...rec.pos);
+    } else if (rec.kind === 'heal') {
+      group = makeHealField(3);
+      group.position.set(...rec.pos);
+    } else if (rec.kind === 'sensor') {
+      group = makeClaymore();
+      group.scale.setScalar(0.7);
+      group.position.set(...rec.pos);
+      group.lookAt(rec.pos[0] + rec.dir[0], rec.pos[1], rec.pos[2] + rec.dir[2]);
     } else if (rec.kind === 'camera') {
       group = makeCamera();
       group.position.set(...rec.pos);
@@ -152,11 +186,12 @@ export class GadgetView {
     group.traverse((o) => { if (o.isMesh) o.castShadow = rec.kind !== 'shield'; });
     this.scene.add(group);
     const item = { kind: rec.kind, group, rec };
-    if (rec.kind === 'claymore') {
-      // Three faint laser tripwires, shown once it is armed. Each one is cut short by the first thing in its way.
+    if (rec.kind === 'claymore' || rec.kind === 'sensor') {
+      // Three faint laser tripwires, shown once it is armed (alarm sensors: at once, in green). Each one is cut short by the first thing in its way.
       item.born = performance.now();
+      item.armMs = rec.kind === 'claymore' ? UTIL_STATS.claymore.arm * 1000 : 0;
       item.lines = [0, 1, 2].map(() => {
-        const m = new THREE.Mesh(wireGeo, new THREE.MeshBasicMaterial({ color: 0xff3030, transparent: true, opacity: 0.4, depthWrite: false }));
+        const m = new THREE.Mesh(wireGeo, new THREE.MeshBasicMaterial({ color: rec.kind === 'sensor' ? 0x4dff88 : 0xff3030, transparent: true, opacity: 0.4, depthWrite: false }));
         m.visible = false;
         this.scene.add(m);
         return m;
@@ -216,6 +251,31 @@ export class GadgetView {
     this.grenades.clear();
     for (const s of this.smokes) this.scene.remove(s.group);
     this.smokes = [];
+    for (const f of this.fires) this.scene.remove(f.group);
+    this.fires = [];
+  }
+
+  /** Cinder's fire canister landed: flickering flames over the burning area for `ms`. */
+  addFire({ id, pos, ms, radius }) {
+    const group = new THREE.Group();
+    group.position.set(pos[0], pos[1], pos[2]);
+    const flames = [];
+    let seed = id * 7919 + 13;
+    const rand = () => ((seed = (seed * 9301 + 49297) % 233280) / 233280);
+    for (let i = 0; i < 16; i++) {
+      const mat = new THREE.MeshBasicMaterial({ color: i % 3 === 0 ? 0xffd24a : 0xff6a1a, transparent: true, opacity: 0.85 });
+      const f = new THREE.Mesh(wireGeo, mat);
+      const a = rand() * Math.PI * 2, d = Math.sqrt(rand()) * radius * 0.9;
+      f.position.set(Math.cos(a) * d, 0.2, Math.sin(a) * d);
+      f.userData = { phase: rand() * 6.28, base: 0.4 + rand() * 0.5 };
+      group.add(f);
+      flames.push(f);
+    }
+    const light = new THREE.PointLight(0xff7a1a, 6, radius * 3, 1.6);
+    light.position.y = 0.8;
+    group.add(light);
+    this.scene.add(group);
+    this.fires.push({ group, age: 0, life: ms / 1000, flames, light });
   }
 
   /** A smoke grenade went off: a cloud of overlapping soft balls that grows, hangs, then thins out. */
@@ -265,6 +325,18 @@ export class GadgetView {
       e.mesh.position.y += (e.target.y - e.mesh.position.y) * k;
       e.mesh.position.z += (e.target.z - e.mesh.position.z) * k;
     }
+    for (let i = this.fires.length - 1; i >= 0; i--) {
+      const f = this.fires[i];
+      f.age += dt;
+      if (f.age >= f.life) { this.scene.remove(f.group); this.fires.splice(i, 1); continue; }
+      const fade = Math.min(1, (f.life - f.age) / 1.5);
+      for (const fl of f.flames) {
+        const h = fl.userData.base * (0.7 + 0.5 * Math.sin(this.t * 9 + fl.userData.phase)) * fade;
+        fl.scale.set(0.3, Math.max(0.05, h), 0.3);
+        fl.position.y = h / 2;
+      }
+      f.light.intensity = 6 * fade * (0.8 + 0.2 * Math.sin(this.t * 12));
+    }
     for (let i = this.smokes.length - 1; i >= 0; i--) {
       const s = this.smokes[i];
       s.age += dt;
@@ -276,7 +348,7 @@ export class GadgetView {
     // Claymore tripwires: recomputed every frame so they stop where walls, props, shields or barricades are
     for (const it of this.items.values()) {
       if (!it.lines) continue;
-      const armed = performance.now() - it.born >= UTIL_STATS.claymore.arm * 1000;
+      const armed = performance.now() - it.born >= it.armMs;
       const lines = armed ? claymoreLines(this.world, it.rec.pos, it.rec.dir) : null;
       const pulse = 0.32 + 0.1 * Math.sin(this.t * 6);
       it.lines.forEach((mesh, i) => {

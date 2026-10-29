@@ -51,6 +51,16 @@ export class Effects {
     this.add(mesh, PUFF_LIFE, 'puff');
   }
 
+  /** A flat ring that spreads out to `radius` on the floor (seismic pulse, EMP). */
+  ring(center, radius, color, life = 0.7) {
+    const mesh = new THREE.Mesh(new THREE.RingGeometry(0.9, 1, 48), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.8, depthWrite: false, side: THREE.DoubleSide }));
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.position.set(center[0], center[1] + 0.08, center[2]);
+    mesh.userData.size = radius;
+    mesh.scale.setScalar(0.2);
+    this.add(mesh, life, 'ring');
+  }
+
   removeDecalsOnPanels(ids) {
     const gone = new Set(ids);
     this.decals = this.decals.filter((d) => {
@@ -138,6 +148,7 @@ export class Effects {
       } else {
         e.mesh.material.opacity = (e.kind === 'tracer' ? 0.9 : 0.8) * k;
         if (e.kind === 'puff') e.mesh.scale.setScalar(e.mesh.userData.size * (1 + (1 - k) * 1.5));
+        else if (e.kind === 'ring') e.mesh.scale.setScalar(0.2 + e.mesh.userData.size * (1 - k));
       }
       if (e.life <= 0) {
         this.scene.remove(e.mesh);

@@ -101,7 +101,13 @@ export class GameState {
   /** The operator a player starts select with: the one their account equipped for this side, else the Recruit. */
   startingOperator(member) {
     const pick = member.preferred?.[member.team];
-    return OPERATORS[pick]?.team === member.team ? pick : defaultOperator(member.team);
+    return OPERATORS[pick]?.team === member.team && this.owns(member, pick) ? pick : defaultOperator(member.team);
+  }
+
+  /** Does this player own the operator? (Free operators are owned by everyone.) Without account data, only the free ones. */
+  owns(member, opId) {
+    const op = OPERATORS[opId];
+    return !!op && (!op.price || (member.owned || []).includes(opId));
   }
 
   removePlayer(id) {
@@ -268,6 +274,7 @@ export class GameState {
     const op = OPERATORS[opId];
     if (!p || !op || this.rounds.phase !== PHASE.INTRO) return;
     if (op.team !== p.member.team) return this.gadgets.error(id, 'That operator is on the other team.');
+    if (!this.owns(p.member, opId)) return this.gadgets.error(id, `You don't own ${op.name} yet. Buy them in the Operators tab.`);
     if (op.unique) {
       const holder = [...this.players.values()].find((q) => q !== p && q.operator === opId && q.opConfirmed && q.member.team === p.member.team);
       if (holder) return this.gadgets.error(id, `${op.name} is already taken by ${holder.member.name}.`);
@@ -437,6 +444,7 @@ export class GameState {
       p.placedHeavy = null;
       p.spottedUntil = 0;
       p.stunUntil = 0;
+      p.shockUntil = 0;
       p.camView = -1;
       p.opConfirmed = false;
       if (OPERATORS[p.operator]?.team !== team) p.operator = this.startingOperator(p.member);   // sides swapped
@@ -792,7 +800,7 @@ export class GameState {
       picks: this.picksFor(team),
       mapId: this.map.id, mapName: this.map.name,
       players: [...this.players.entries()].map(([id, p]) => ({
-        id, name: p.member.name, team: p.member.team, skins: p.member.skins || {}, state: p.state,
+        id, name: p.member.name, team: p.member.team, skins: p.member.skins || {}, owned: p.member.owned || [], state: p.state,
         weapon: p.weapon, health: p.health, alive: p.alive,
         charges: p.charges, placed: !!p.placedCharge, spawnChoice: p.spawnChoice, operator: p.operator,
       })),

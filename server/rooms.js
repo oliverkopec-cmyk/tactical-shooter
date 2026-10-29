@@ -39,7 +39,7 @@ export class RoomManager {
 /** The skins and preferred operators the player's account has equipped right now. */
 function loadoutFrom(socket) {
   const a = socket?.data?.account;
-  return { skins: a?.skins || {}, preferred: a?.operators || {} };
+  return { skins: a?.skins || {}, preferred: a?.operators || {}, owned: a?.owned || [] };
 }
 
 export function cleanName(name) {

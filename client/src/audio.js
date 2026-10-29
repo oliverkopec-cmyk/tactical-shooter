@@ -23,6 +23,18 @@ const SHOT_TONE = {
   sidewinder: { freq: 900, decay: 0.24, gain: 0.6 },
   trowel: { freq: 950, decay: 0.22, gain: 0.55 },
   gavel: { freq: 700, decay: 0.3, gain: 0.72 },
+  rift: { freq: 1200, decay: 0.17, gain: 0.52 },
+  tick: { freq: 2500, decay: 0.07, gain: 0.3 },
+  kiln: { freq: 750, decay: 0.26, gain: 0.66 },
+  pyre: { freq: 900, decay: 0.24, gain: 0.58 },
+  arc: { freq: 2100, decay: 0.1, gain: 0.38 },
+  jolt: { freq: 2400, decay: 0.08, gain: 0.28 },
+  livewire: { freq: 1700, decay: 0.13, gain: 0.45 },
+  static: { freq: 2200, decay: 0.09, gain: 0.3 },
+  syringe: { freq: 2200, decay: 0.09, gain: 0.34 },
+  dose: { freq: 2300, decay: 0.08, gain: 0.28 },
+  watchman: { freq: 1000, decay: 0.22, gain: 0.6 },
+  chirp: { freq: 2300, decay: 0.08, gain: 0.28 },
 };
 
 export class Audio {

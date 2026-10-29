@@ -2,7 +2,24 @@
 
 A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite on the client, Node.js + Socket.IO on an authoritative server. One Node process serves both the game client and the realtime server, so the whole thing deploys as a single Render web service.
 
-## Status: Stage 15 (bigger map)
+## Status: Stage 16 (new operators)
+
+Six new operators, bought with Money in the Operators tab (the original eight and both Recruits stay free). Each has a unique primary and secondary gun, two utilities and an ability on F:
+
+| Operator | Price | Ability | Primary / Secondary | Utilities |
+| --- | --- | --- | --- | --- |
+| Tremor (A) | 2,500 | **Seismic pulse** (3): reveals every moving enemy within 12 m through walls for 3 s, as markers for your team | Rift AR / Tick | Flash, Claymore |
+| Cinder (A) | 3,000 | **Fire canister** (2): thrown; leaves a fire patch for 8 s that burns enemies standing in it (7 damage every half second) | Kiln / Pyre | Frag, Smoke |
+| Surge (A) | 3,000 | **EMP burst** (2): destroys defender cameras and signal jammers within 10 m of where you aim | Arc SMG / Jolt | Flash, Impact |
+| Volt (D) | 2,500 | **Shock trap** (3): a floor trap; an attacker who steps on it takes 30 damage, is slowed for 2 s and marked for 4 s | Livewire / Static | Claymore, Smoke |
+| Tonic (D) | 3,000 | **Healing field** (2): heals teammates inside it about 5 HP a second for 10 s | Syringe PDW / Dose | Smoke, Flash |
+| Picket (D) | 2,000 | **Alarm sensor** (3): three faint green lines (like a claymore's); an attacker touching one is marked for 3 s. It never goes off | Watchman BR / Chirp | Claymore, Frag |
+
+- **Buying:** the Operators tab shows locked operators with their price and a Buy button. The server checks the price, your Money and that you don't own them in one statement, so double clicks can't spend Money twice. Only owned operators can be picked in operator select (the server refuses others and locked cards are greyed out), and an equipped operator you don't own is never your starting pick.
+- Enemy markers now show for whichever team spotted them, so defenders' marks (Volt, Picket) show on attackers just like attackers' marks show on defenders.
+- Unlike the idea in the proposal, EMP does not affect drones (drones belong to the attackers, so it only hits defender gadgets).
+
+### Earlier: Stage 15 (bigger map)
 
 - **New map: Meridian Hotel.** A 40 x 28 m, three-floor hotel in a large 150 x 150 m grounds: 9 rooms on the ground floor, 13 on the first floor, 3 on the second (west wing), two interior staircases, a third staircase to the top floor, two balconies with outside stairs, 81 doors and windows (all barricade spots), about 3,200 destructible wall panels, furniture, rugs and pictures, and cover all around the outside (crates, containers, vehicles, barriers, a fountain, a back garden).
 - **Three objective sites on three floors:** Kitchen (ground), Gallery (first floor), Penthouse suite (second floor). Defenders vote as before and start next to the winning site.

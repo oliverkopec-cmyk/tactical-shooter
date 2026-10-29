@@ -69,3 +69,13 @@ export function claymoreLines(world, pos, dir) {
   }
   return out;
 }
+
+// ---------------------------------------------------------------- operator abilities (Stage 16)
+export const ABILITY_STATS = {
+  seismic: { radius: 12, markMs: 3000, moving: 0.6 },                 // Tremor: reveal moving enemies
+  fire: { speed: 12, fuse: 0.8, radius: 2.2, durationMs: 8000, tickMs: 500, tickDamage: 7 },   // Cinder: fire patch
+  emp: { range: 25, radius: 10 },                                     // Surge: kill cameras and jammers
+  shock: { reach: 3.5, touch: 0.8, damage: 30, slowMs: 2000, slow: 0.4, markMs: 4000 },        // Volt: floor trap
+  heal: { reach: 3.5, radius: 3, hps: 5, durationMs: 10000 },         // Tonic: healing field
+  sensor: { reach: 3, markMs: 3000, cooldownMs: 3000 },               // Picket: alarm lines
+};
