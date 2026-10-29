@@ -130,6 +130,7 @@
     <div id="ammo-box" class="hud-panel">
       <div id="weapon-name" class="hud-label">Vanguard AR</div>
       <div><span id="ammo-mag">30</span><span id="ammo-reserve"> / 150</span></div>
+      <div id="weapon-other" class="hud-label"></div>
       <div id="reload-text" class="hidden">Reloading…</div>
     </div>
 
@@ -178,7 +179,7 @@
           <h2>Keybinds</h2>
           <button id="keybinds-reset" class="ghost small">Reset to default</button>
         </div>
-        <p class="muted">Click a binding, then press a key or mouse button. Esc cancels, Delete unbinds. 1-3 always pick the entry point.</p>
+        <p class="muted">Click a binding, then press a key or mouse button. Esc cancels, Delete unbinds. Keys 1-3 also pick your entry point while you're an attacker in prep.</p>
         <div id="keybind-list"></div>
         <p id="keybind-msg" class="muted"></p>
       </div>
@@ -186,6 +187,9 @@
       <p id="settings-hint" class="muted center hidden">Press Esc or click Close to go back to the game.</p>
     </div>
   </div>
+
+  <!-- Hover card with a gun's stats (any element with data-gun) -->
+  <div id="gun-tip" class="hidden"></div>
 
   <script type="module" src="./src/main.js"></script>
 </body>

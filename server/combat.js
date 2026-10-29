@@ -6,6 +6,7 @@
 import { LAG_COMP_MAX_MS, MAX_SHOT_RANGE } from '../shared/constants.js';
 import { raycastWorld, rayPlayer, rayBox } from '../shared/raycast.js';
 import { DRONE } from '../shared/drone.js';
+import { UTIL_STATS } from '../shared/utilities.js';
 import { WEAPONS, damageAtDistance, shotDirections, currentSpread } from '../shared/weapons.js';
 import { getEyePosition } from '../shared/movement.js';
 
@@ -60,7 +61,7 @@ export class PoseHistory {
  */
 export const CAMERA_HIT_HALF = 0.22;
 
-export function resolveShot({ shooterId, shooter, input, world, players, history, now, drones = [], cameras = [] }) {
+export function resolveShot({ shooterId, shooter, input, world, players, history, now, drones = [], cameras = [], claymores = [] }) {
   const w = WEAPONS[shooter.weapon.id];
   const eye = getEyePosition(shooter.state, world);
   const origin = [eye.x, eye.y, eye.z];
@@ -106,18 +107,29 @@ export function resolveShot({ shooterId, shooter, input, world, players, history
         if (h) { camera = { id: c.id, t: h.t }; maxT = h.t; }
       }
     }
+    // Anyone can shoot an enemy team's claymore to disarm it
+    let claymore = null;
+    if (!hit && !drone && !camera) {
+      const [hx, hy, hz] = UTIL_STATS.claymore.hitHalf;
+      for (const c of claymores) {
+        if (c.team === shooter.member.team) continue;
+        const h = rayBox(origin, d, [c.pos[0] - hx, c.pos[1] - 0.02, c.pos[2] - hz], [c.pos[0] + hx, c.pos[1] + 2 * hy, c.pos[2] + hz], maxT);
+        if (h) { claymore = { id: c.id, t: h.t }; maxT = h.t; }
+      }
+    }
     const end = [origin[0] + d[0] * maxT, origin[1] + d[1] * maxT, origin[2] + d[2] * maxT];
     pellets.push({
+      claymoreId: claymore ? claymore.id : null,
       end,
       hitId: hit ? hit.id : null,
       head: hit ? hit.head : false,
       damage: hit ? damageAtDistance(w, hit.t, hit.head) : 0,
-      wall: !hit && !drone && !camera && !!wallHit,
+      wall: !hit && !drone && !camera && !claymore && !!wallHit,
       cameraId: camera ? camera.id : null,
-      barricade: !hit && !drone && !camera && wallHit?.box.kind === 'barricade' ? { id: wallHit.box.barricadeId, index: wallHit.box.panelIndex } : null,
+      barricade: !hit && !drone && !camera && !claymore && wallHit?.box.kind === 'barricade' ? { id: wallHit.box.barricadeId, index: wallHit.box.panelIndex } : null,
       droneId: drone ? drone.id : null,
       droneDamage: drone ? damageAtDistance(w, drone.t, false) : 0,
-      panelId: !hit && !drone && !camera && wallHit?.box.kind === 'panel' ? wallHit.box.id : null,
+      panelId: !hit && !drone && !camera && !claymore && wallHit?.box.kind === 'panel' ? wallHit.box.id : null,
       panelDamage: w.damage,
     });
   }

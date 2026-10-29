@@ -1,11 +1,12 @@
 // DOM screens: home (name + create/join), room lobby, and the in-game HUD.
 
 import { MAX_PER_TEAM, MAX_HEALTH } from '../../shared/constants.js';
-import { WEAPONS } from '../../shared/weapons.js';
+import { WEAPONS, weaponStats } from '../../shared/weapons.js';
+import { UTILITIES } from '../../shared/utilities.js';
 import { MAP } from '../../shared/map.js';
 import { operatorsFor, OPERATORS } from '../../shared/operators.js';
 import { settings, setSetting, setKeybinds, onSettingsChange } from './settings.js';
-import { fillKeys } from './controls.js';
+import { fillKeys, keyFor } from './controls.js';
 import { BIND_ACTIONS, DEFAULT_KEYBINDS, keyLabel, isBindableCode, RESERVED_CODES } from '../../shared/keybinds.js';
 
 const $ = (id) => document.getElementById(id);
@@ -18,6 +19,7 @@ export class UI {
     this.statsTimer = 0;
     this.authMode = 'login';
     this.bindSettings();
+    this.bindGunTips();
   }
 
   // ---------------------------------------------------------------- settings
@@ -306,7 +308,7 @@ export class UI {
 
   // ---------------------------------------------------------------- combat HUD
 
-  updateCombat({ health, weapon, alive }) {
+  updateCombat({ health, weapon, alive, slotKeys = ['1', '2'] }) {
     if (health !== this.lastHealth) {
       this.lastHealth = health;
       $('health-value').textContent = Math.ceil(health);
@@ -315,10 +317,13 @@ export class UI {
     }
     if (weapon) {
       const w = WEAPONS[weapon.id];
-      const key = `${weapon.id}|${weapon.ammo}|${weapon.reserve}|${weapon.reload > 0}`;
+      const other = weapon.other;
+      const key = `${weapon.id}|${weapon.ammo}|${weapon.reserve}|${weapon.reload > 0}|${other?.id}|${other?.ammo}|${other?.reserve}|${slotKeys}`;
       if (key !== this.lastAmmoKey) {
         this.lastAmmoKey = key;
         $('weapon-name').textContent = `${w.name} · ${w.kind}`;
+        const o = other && WEAPONS[other.id];
+        $('weapon-other').textContent = o ? `${slotKeys[weapon.slot === 0 ? 1 : 0]} ${o.name} ${other.ammo} / ${other.reserve}` : '';
         $('ammo-mag').textContent = weapon.ammo;
         $('ammo-reserve').textContent = ` / ${weapon.reserve}`;
         $('reload-text').classList.toggle('hidden', !(weapon.reload > 0));
@@ -364,7 +369,7 @@ export class UI {
     const k = document.createElement('span');
     k.className = killer.team; k.textContent = killer.name;
     const w = document.createElement('span');
-    w.className = 'weapon'; w.textContent = `${WEAPONS[weapon]?.kind || weapon}${head ? ' · head' : ''}`;
+    w.className = 'weapon'; w.textContent = `${WEAPONS[weapon]?.name || UTILITIES[weapon]?.name || weapon}${head ? ' · head' : ''}`;
     const v = document.createElement('span');
     v.className = victim.team; v.textContent = victim.name;
     li.append(k, w, v);
@@ -432,35 +437,89 @@ export class UI {
 
   // ---------------------------------------------------------------- operator select
 
-  showOperatorSelect(on, { team, picks, names, myId, myOp, timeText, onPick } = {}) {
+  showOperatorSelect(on, { team, picks, names, myId, myOp, myUtility, timeText, onPick, onUtility } = {}) {
     const el = $('op-select');
     el.classList.toggle('hidden', !on);
     this.hud.classList.toggle('selecting', on);
     if (!on) { this.lastSelect = null; return; }
     $('op-timer').textContent = timeText;
-    const sig = JSON.stringify([team, picks, myOp]);
+    const sig = JSON.stringify([team, picks, myOp, myUtility]);
     if (sig === this.lastSelect) return;
     this.lastSelect = sig;
     const cards = $('op-cards');
     cards.innerHTML = '';
+    this.hideGunTip();   // the card under the pointer is about to be replaced
     const pips = (n) => '●'.repeat(n) + '○'.repeat(3 - n);
+    const gunRow = (id, slot) => {
+      const g = WEAPONS[id];
+      return `<div class="op-gun" data-gun="${id}"><span class="slot">${slot}</span><b>${escapeHtml(g.name)}</b><i>${escapeHtml(g.kind)}</i></div>`;
+    };
     for (const op of operatorsFor(team)) {
       const holderId = Object.keys(picks || {}).find((id) => picks[id].op === op.id && picks[id].confirmed && id !== myId);
       const taken = op.unique && !!holderId;
-      const card = document.createElement('button');
-      card.className = `op-card${op.id === myOp ? ' selected' : ''}${taken ? ' taken' : ''}`;
-      card.disabled = taken;
-      const w = WEAPONS[op.weapon];
+      const mine = op.id === myOp;
+      const card = document.createElement('div');
+      card.className = `op-card${mine ? ' selected' : ''}${taken ? ' taken' : ''}`;
+      const utilities = op.utilities.map((id) => {
+        const u = UTILITIES[id];
+        const chosen = mine && id === myUtility;
+        return `<button type="button" class="op-util${chosen ? ' chosen' : ''}" data-util="${id}" title="${escapeHtml(u.desc)}"${mine ? '' : ' tabindex="-1"'}>${escapeHtml(u.name)}<span>×${u.charges}</span></button>`;
+      }).join('');
       card.innerHTML = `
         <div class="op-color" style="background:#${op.color.toString(16).padStart(6, '0')}"></div>
         <div class="op-name">${op.name}</div>
-        <div class="op-weapon">${w.kind} · ${w.name}</div>
+        <div class="op-guns">${gunRow(op.weapons.primary, 1)}${gunRow(op.weapons.secondary, 2)}</div>
         <div class="op-stats"><span>SPEED ${pips(op.speed)}</span><span>ARMOR ${pips(op.armor)}</span></div>
         <div class="op-ab">${op.ability ? `<b>${op.ability.name}</b><br>${fillKeys(op.ability.desc)}` : '<i>No special ability</i>'}</div>
-        <div class="op-who">${taken ? `Taken by ${names[holderId] || 'a teammate'}` : (op.id === myOp ? 'Your pick' : (op.unique ? '' : 'Unlimited'))}</div>`;
-      card.addEventListener('click', () => onPick(op.id));
+        <div class="op-utils-label">Utility${mine ? ' (pick one)' : ''}</div>
+        <div class="op-utils${mine ? '' : ' inactive'}">${utilities}</div>
+        <div class="op-who">${taken ? `Taken by ${names[holderId] || 'a teammate'}` : (mine ? 'Your pick' : (op.unique ? '' : 'Unlimited'))}</div>`;
+      card.addEventListener('click', (e) => {
+        const util = e.target.closest('[data-util]');
+        if (util && mine) { onUtility?.(util.dataset.util); return; }
+        if (!taken && !mine) onPick(op.id);
+      });
       cards.appendChild(card);
     }
+  }
+
+  // ---------------------------------------------------------------- gun hover cards
+  // Any element with data-gun="<weapon id>" shows that gun's stats while hovered.
+  // Works on every menu, so later screens only need to add the attribute.
+
+  bindGunTips() {
+    this.gunTip = $('gun-tip');
+    document.addEventListener('mousemove', (e) => {
+      const target = e.target instanceof Element ? e.target.closest('[data-gun]') : null;
+      if (!target) return this.hideGunTip();
+      this.showGunTip(target.dataset.gun, e.clientX, e.clientY);
+    });
+    document.addEventListener('mouseleave', () => this.hideGunTip());
+    window.addEventListener('blur', () => this.hideGunTip());
+  }
+
+  showGunTip(id, x, y) {
+    const w = WEAPONS[id];
+    const tip = this.gunTip;
+    if (!w || !tip) return;
+    if (this.tipGun !== id) {
+      this.tipGun = id;
+      const rows = weaponStats(w).map((s) => `
+        <div class="tip-row"><span>${s.label}</span><div class="tip-bar"><i style="width:${Math.round(s.frac * 100)}%"></i></div><b>${s.text}</b></div>`).join('');
+      tip.innerHTML = `
+        <div class="tip-head"><b>${escapeHtml(w.name)}</b><span>${escapeHtml(w.kind)}${w.auto ? ' · auto' : ' · semi-auto'}</span></div>
+        <div class="tip-desc">${escapeHtml(w.desc)}</div>${rows}`;
+    }
+    tip.classList.remove('hidden');
+    const pad = 16, r = tip.getBoundingClientRect();
+    const left = x + pad + r.width > window.innerWidth ? x - pad - r.width : x + pad;
+    const top = Math.min(window.innerHeight - r.height - 8, y + pad);
+    tip.style.transform = `translate(${Math.max(8, left)}px, ${Math.max(8, top)}px)`;
+  }
+
+  hideGunTip() {
+    this.tipGun = null;
+    this.gunTip?.classList.add('hidden');
   }
 
   setPrompt(text) {

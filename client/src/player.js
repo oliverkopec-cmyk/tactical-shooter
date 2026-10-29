@@ -8,7 +8,7 @@ import {
 import { stepDrone, copyDroneState, droneEye, DRONE_KEYS } from '../../shared/drone.js';
 import { createPlayerState, copyPlayerState, stepPlayer, getEyePosition, weaponInput } from '../../shared/movement.js';
 import {
-  WEAPONS, createWeaponState, copyWeaponState, stepWeapon, currentSpread, shotDirections,
+  WEAPONS, createWeaponState, copyWeaponState, stepWeapon, currentSpread, shotDirections, gunMobility,
 } from '../../shared/weapons.js';
 
 import { settings } from './settings.js';
@@ -21,7 +21,7 @@ const HOLD_BITS = {
   leanLeft: KEY.LEAN_LEFT, leanRight: KEY.LEAN_RIGHT, fire: KEY.FIRE, reload: KEY.RELOAD,
 };
 // One-shot actions sent to the server as events
-const EVENT_ACTIONS = new Set(['breach', 'reinforce', 'droneNext', 'ability', 'camView', 'barricade']);
+const EVENT_ACTIONS = new Set(['breach', 'reinforce', 'droneNext', 'ability', 'utility', 'camView', 'barricade']);
 // Keys 1-3 choose the attacker entry point during prep (fixed: not rebindable)
 const DIGIT_KEYS = { Digit1: 1, Digit2: 2, Digit3: 3 };
 
@@ -62,6 +62,7 @@ export class LocalPlayer {
     this.keys = 0;
     this.tapped = 0;     // keys pressed since the last frame, so quick taps aren't lost
     this.proneOn = false; // prone is a toggle: the PRONE bit is sent while it's on
+    this.wantSlot = 1;    // which gun is drawn: 1 primary, 2 secondary (sent with every input)
     this.meleeReady = 0;
     this.viewLocked = null;  // while watching a camera: the body keeps this facing
     this.seq = 0;
@@ -104,10 +105,11 @@ export class LocalPlayer {
   // browsers or embedded views where pointer lock is unavailable.
   handleKey(e, down) {
     if (down && e.target instanceof HTMLInputElement) return;
-    if (down && DIGIT_KEYS[e.code]) { this.onDigit?.(DIGIT_KEYS[e.code]); return; }
+    // 1-3 choose the entry point while attackers wait in prep; otherwise they're ordinary keys
+    if (down && DIGIT_KEYS[e.code] && this.onDigit?.(DIGIT_KEYS[e.code])) return;
     const action = actionFor(e.code);
     if (!action) return;
-    if (HOLD_BITS[action] || action === 'prone' || EVENT_ACTIONS.has(action) || action === 'melee') e.preventDefault();
+    if (HOLD_BITS[action] || action === 'prone' || action === 'primary' || action === 'secondary' || EVENT_ACTIONS.has(action) || action === 'melee') e.preventDefault();
     this.applyAction(action, down, e.repeat);
   }
 
@@ -140,6 +142,9 @@ export class LocalPlayer {
     }
     if (!down || repeat || !this.alive) return;
     if (action === 'prone') this.proneOn = !this.proneOn;
+    else if (action === 'primary' || action === 'secondary') {
+      if (!this.droneState && !this.viewLocked) this.wantSlot = action === 'primary' ? 1 : 2;
+    }
     else if (action === 'melee') {
       if (this.droneState || this.viewLocked || performance.now() < this.meleeReady) return;
       this.meleeReady = performance.now() + 800;
@@ -177,7 +182,7 @@ export class LocalPlayer {
         remaining -= dt;
         const lock = this.viewLocked;
         const input = {
-          seq: this.seq++, dt, keys,
+          seq: this.seq++, dt, keys, wsel: this.wantSlot,
           yaw: lock ? lock.yaw : droneMode ? this.yaw : this.aimYaw,
           pitch: lock ? lock.pitch : droneMode ? this.pitch : this.aimPitch,
           drone: droneMode,
@@ -232,6 +237,7 @@ export class LocalPlayer {
       if (this.droneState && !this.droneJammed) stepDrone(this.droneState, input, input.dt, this.world);
       return;
     }
+    this.state.gunMul = gunMobility(this.weapon);
     stepPlayer(this.state, input, input.dt, this.collisionWorld());
     const fired = stepWeapon(this.weapon, weaponInput(this.state, input), input.dt);
     if (!live) return;
@@ -326,6 +332,7 @@ export class LocalPlayer {
   teleport(state) {
     this.state = copyPlayerState(state);
     this.proneOn = false;
+    this.wantSlot = 1;
     this.yaw = state.yaw;
     this.pitch = 0;
     this.recoil = { pitch: 0, yaw: 0 };
@@ -351,6 +358,7 @@ export class LocalPlayer {
     this.smoothing = { x: 0, y: 0, z: 0 };
     this.alive = true;
     this.proneOn = false;
+    this.wantSlot = 1;
   }
 
   updateCamera() {

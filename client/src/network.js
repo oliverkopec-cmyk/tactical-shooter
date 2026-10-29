@@ -65,6 +65,10 @@ export class Network {
     this.socket.emit('voteSite', index);
   }
 
+  pickUtility(id) {
+    this.socket.emit('pickUtility', id);
+  }
+
   pickOperator(opId) {
     this.socket.emit('pickOperator', opId);
   }

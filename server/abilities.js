@@ -10,9 +10,10 @@ import {
 } from '../shared/constants.js';
 import { MAP, findOpening } from '../shared/map.js';
 import { OPERATORS } from '../shared/operators.js';
-import { getEyePosition, forwardVec, eyeHeight } from '../shared/movement.js';
+import { getEyePosition, forwardVec, eyeHeight, bodyHeight } from '../shared/movement.js';
 import { aimDirection } from '../shared/weapons.js';
 import { raycastWorld } from '../shared/raycast.js';
+import { UTILITIES, UTIL_STATS, claymoreLines } from '../shared/utilities.js';
 
 export class Gadgets {
   constructor(game) {
@@ -27,6 +28,7 @@ export class Gadgets {
     this.jammers = new Map();
     this.cameras = new Map();
     this.grenades = new Map();
+    this.claymores = new Map();        // id -> { id, owner, team, pos, dir, armedAt }
     this.barricades = new Map();       // id -> { id, openingId, panels: [{ i, min, max, hp, alive }] }
     this.barricading = new Map();      // playerId -> { openingId, doneAt, x, z }
     this.barricadesLeft = BARRICADE.pool;
@@ -47,6 +49,7 @@ export class Gadgets {
     for (const w of this.wires.values()) out.push({ kind: 'wire', ...w });
     for (const j of this.jammers.values()) out.push({ kind: 'jammer', ...j });
     for (const c of this.cameras.values()) out.push({ kind: 'camera', ...c });
+    for (const c of this.claymores.values()) out.push({ kind: 'claymore', id: c.id, owner: c.owner, team: c.team, pos: c.pos, dir: c.dir });
     for (const b of this.barricades.values()) out.push(this.barricadeRecord(b));
     return out;
   }
@@ -86,6 +89,7 @@ export class Gadgets {
 
   update(dt, now) {
     this.stepGrenades(dt, now);
+    this.checkClaymores(now);
     this.updateBarricading(now);
     for (const p of this.game.players.values()) {
       let slow = 1;
@@ -104,15 +108,17 @@ export class Gadgets {
     }
   }
 
-  // ---------------------------------------------------------------- stun grenades
+  // ---------------------------------------------------------------- grenades
+  // Thrown by Flash's stun ability (F) and by the utilities (flash, impact, smoke, frag).
 
-  throwGrenade(p, id) {
+  throwGrenade(p, id, type = 'stun') {
+    const cfg = type === 'stun' ? STUN : UTIL_STATS[type];
     const eye = getEyePosition(p.state, this.world);
     const dir = aimDirection(p.state.yaw, p.state.pitch);
     const g = {
-      id: this.nextId++, owner: id, t: STUN.fuse,
+      id: this.nextId++, owner: id, type, t: cfg.fuse,
       pos: [eye.x + dir[0] * 0.5, eye.y + dir[1] * 0.5, eye.z + dir[2] * 0.5],
-      vel: [dir[0] * STUN.speed, dir[1] * STUN.speed + 2.5, dir[2] * STUN.speed],
+      vel: [dir[0] * cfg.speed, dir[1] * cfg.speed + 2.5, dir[2] * cfg.speed],
     };
     this.grenades.set(g.id, g);
   }
@@ -126,37 +132,206 @@ export class Gadgets {
       const hit = len > 1e-6 ? raycastWorld(this.world, g.pos, move.map((v) => v / len), len + 0.06) : null;
       if (hit) {
         const n = hit.normal;
+        g.pos = [hit.point[0] + n[0] * 0.07, hit.point[1] + n[1] * 0.07, hit.point[2] + n[2] * 0.07];
+        if (g.type === 'impact') { this.explodeGrenade(g, now); continue; }
         const vn = g.vel[0] * n[0] + g.vel[1] * n[1] + g.vel[2] * n[2];
         for (let i = 0; i < 3; i++) g.vel[i] -= 1.45 * vn * n[i];
         if (n[1] > 0.5) { g.vel[0] *= 0.7; g.vel[2] *= 0.7; if (Math.hypot(...g.vel) < 0.8) g.vel = [0, 0, 0]; }
-        g.pos = [hit.point[0] + n[0] * 0.07, hit.point[1] + n[1] * 0.07, hit.point[2] + n[2] * 0.07];
       } else {
         g.pos = [g.pos[0] + move[0], g.pos[1] + move[1], g.pos[2] + move[2]];
+        if (g.type === 'impact' && this.touchesEnemy(g)) { this.explodeGrenade(g, now); continue; }
       }
       if (g.t <= 0) this.explodeGrenade(g, now);
     }
   }
 
-  explodeGrenade(g, now) {
-    this.grenades.delete(g.id);
-    const owner = this.game.players.get(g.owner);
-    const ownerTeam = owner?.member.team;
+  /** An impact grenade also goes off when it hits an enemy's body. */
+  touchesEnemy(g) {
+    const ownerTeam = this.game.players.get(g.owner)?.member.team;
+    for (const q of this.game.players.values()) {
+      if (!q.alive || q.spawned === false || q.member.team === ownerTeam) continue;
+      for (const h of [1.45, 0.95, 0.45]) {
+        if (Math.hypot(g.pos[0] - q.state.x, g.pos[1] - (q.state.y + h), g.pos[2] - q.state.z) < 0.5) return true;
+      }
+    }
+    return false;
+  }
+
+  /** Enemies of the thrower within `radius` with a clear line from the blast, nearest first. */
+  enemiesNear(g, radius) {
+    const ownerTeam = this.game.players.get(g.owner)?.member.team;
+    const out = [];
     for (const [pid, q] of this.game.players) {
       if (!q.alive || q.spawned === false || q.member.team === ownerTeam) continue;
       const eye = [q.state.x, q.state.y + eyeHeight(q.state.crouch, q.state.prone) - 0.2, q.state.z];
       const v = [eye[0] - g.pos[0], eye[1] - g.pos[1], eye[2] - g.pos[2]];
       const dist = Math.hypot(...v);
-      if (dist > STUN.radius) continue;
+      if (dist > radius) continue;
       const wall = dist > 0.05 ? raycastWorld(this.world, g.pos, v.map((c) => c / dist), dist) : null;
-      if (wall && wall.t < dist - 0.2) continue;       // walls shield you from the flash
-      q.stunUntil = now + STUN.duration * 1000;
-      this.game.io.to(pid).emit('stunned', { ms: STUN.duration * 1000 });
+      if (wall && wall.t < dist - 0.2) continue;       // walls shield you from the blast
+      out.push({ pid, q, dist, eye });
     }
-    this.game.emitAll('grenadeExploded', { id: g.id, pos: g.pos.map((v) => Math.round(v * 100) / 100) });
+    return out.sort((a, b) => a.dist - b.dist);
+  }
+
+  explodeGrenade(g, now) {
+    this.grenades.delete(g.id);
+    const round = (v) => Math.round(v * 100) / 100;
+    const pos = g.pos.map(round);
+    if (g.type === 'smoke') {
+      const ms = UTIL_STATS.smoke.duration * 1000;
+      this.game.emitAll('smokeStart', { id: g.id, pos, ms, radius: UTIL_STATS.smoke.radius });
+      return;
+    }
+    if (g.type === 'stun') {
+      for (const { pid, q } of this.enemiesNear(g, STUN.radius)) {
+        q.stunUntil = now + STUN.duration * 1000;
+        this.game.io.to(pid).emit('stunned', { ms: STUN.duration * 1000 });
+      }
+    } else if (g.type === 'flash') {
+      const F = UTIL_STATS.flash;
+      for (const { pid, q, eye } of this.enemiesNear(g, F.radius)) {
+        // Blinds the most when you're looking at it; looking away cuts the time
+        const look = aimDirection(q.state.yaw, q.state.pitch);
+        const to = [g.pos[0] - eye[0], g.pos[1] - eye[1], g.pos[2] - eye[2]];
+        const d = Math.hypot(...to) || 1;
+        const facing = (look[0] * to[0] + look[1] * to[1] + look[2] * to[2]) / d;
+        this.game.io.to(pid).emit('stunned', { ms: F.duration * 1000 * (facing > 0 ? 1 : F.awayScale) });
+      }
+    } else {
+      // frag and impact: damage that fades with distance, plus barricades in reach
+      const B = UTIL_STATS[g.type];
+      for (const { pid, dist } of this.enemiesNear(g, B.radius)) {
+        const amount = B.damage * (1 - (1 - B.minDamage) * (dist / B.radius));
+        this.game.applyDamage(pid, g.owner, amount, { weapon: g.type, from: [g.pos[0], g.pos[2]] });
+      }
+      this.blastBarricades(g.pos, B.barricade);
+      // Soft walls near the blast: a bigger hole for a frag than for an impact grenade
+      const owner = this.game.players.get(g.owner);
+      if (owner && this.game.canBreakWalls(owner)) {
+        const ids = this.world.panelsNear(g.pos, B.panels).filter((pid) => !this.world.isReinforcedPanel(pid));
+        if (ids.length) this.game.destruction.destroy(ids);
+      }
+    }
+    this.game.emitAll('grenadeExploded', { id: g.id, pos, type: g.type });
   }
 
   snapshotGrenades() {
-    return [...this.grenades.values()].map((g) => ({ id: g.id, x: g.pos[0], y: g.pos[1], z: g.pos[2] }));
+    return [...this.grenades.values()].map((g) => ({ id: g.id, x: g.pos[0], y: g.pos[1], z: g.pos[2], k: g.type }));
+  }
+
+  // ---------------------------------------------------------------- utilities (4)
+
+  /** The utility key: throw the grenade or stick the claymore the player picked this round. */
+  useUtility(id, p) {
+    const u = p.utility, def = u && UTILITIES[u.id];
+    if (!def || !p.alive) return;
+    const phase = this.game.rounds.phase;
+    if (phase !== PHASE.PREP && phase !== PHASE.ACTION) return this.error(id, 'Utilities work once the round is under way.');
+    if (p.spawned === false) return this.error(id, 'Your operator is not on the field yet.');
+    if (p.camView >= 0) return;
+    const now = Date.now();
+    if (now < (p.utilityReadyAt || 0)) return;
+    if (u.charges <= 0) return this.error(id, `No ${def.name.toLowerCase()}s left.`);
+    if (def.kind === 'placed') {
+      if (!this.placeClaymore(id, p)) return;
+    } else {
+      this.throwGrenade(p, id, u.id);
+    }
+    u.charges--;
+    p.utilityReadyAt = now + UTIL_STATS.cooldown * 1000;
+    this.game.sendLoadout(id, p);
+  }
+
+  // ---------------------------------------------------------------- claymores
+
+  placeClaymore(id, p) {
+    const aim = this.aimedSurface(p, UTIL_STATS.claymore.reach);
+    if (!aim) return this.error(id, 'Aim at a floor or wall within 3 m.');
+    const { point, normal } = aim.hit;
+    if (normal[1] < -0.5) return this.error(id, 'Claymores go on floors and walls.');
+    let dir;
+    if (normal[1] > 0.5) {
+      const [fx, fz] = forwardVec(p.state.yaw);            // on the floor it points the way you face
+      dir = [fx, 0, fz];
+    } else {
+      const len = Math.hypot(normal[0], normal[2]) || 1;
+      dir = [normal[0] / len, 0, normal[2] / len];
+    }
+    const rec = {
+      id: this.nextId++, owner: id, team: p.member.team,
+      pos: point.map((v, i) => Math.round((v + normal[i] * 0.06) * 100) / 100), dir: dir.map((v) => Math.round(v * 100) / 100),
+      armedAt: Date.now() + UTIL_STATS.claymore.arm * 1000,
+    };
+    this.claymores.set(rec.id, rec);
+    this.broadcast('gadgetAdd', 'claymore', { id: rec.id, owner: id, team: rec.team, pos: rec.pos, dir: rec.dir });
+    return true;
+  }
+
+  /** Does an enemy's body touch one of the claymore's tripwires? */
+  tripped(c) {
+    const touch = UTIL_STATS.claymore.touch;
+    for (const line of claymoreLines(this.world, c.pos, c.dir)) {
+      const [ax, , az] = line.from, [bx, , bz] = line.to;
+      const abx = bx - ax, abz = bz - az, len2 = abx * abx + abz * abz || 1;
+      for (const [pid, q] of this.game.players) {
+        if (!q.alive || q.spawned === false || q.member.team === c.team) continue;
+        const s = q.state;
+        const y = line.from[1];
+        if (y < s.y - 0.05 || y > s.y + bodyHeight(s.crouch, s.prone || 0)) continue;   // the line passes over or under them
+        const t = Math.max(0, Math.min(1, ((s.x - ax) * abx + (s.z - az) * abz) / len2));
+        if (Math.hypot(s.x - (ax + abx * t), s.z - (az + abz * t)) <= touch) return pid;
+      }
+    }
+    return null;
+  }
+
+  /** Enemies in front of the claymore, close enough and in the clear, caught by the blast. */
+  claymoreTargets(c) {
+    const C = UTIL_STATS.claymore;
+    const out = [];
+    for (const [pid, q] of this.game.players) {
+      if (!q.alive || q.spawned === false || q.member.team === c.team) continue;
+      const vx = q.state.x - c.pos[0], vy = q.state.y + 0.9 - c.pos[1], vz = q.state.z - c.pos[2];
+      const flat = Math.hypot(vx, vz);
+      if (flat > C.blastRange || Math.abs(vy) > 1.5) continue;
+      if (flat > 0.3 && vx * c.dir[0] + vz * c.dir[2] < 0) continue;           // behind it: safe
+      const dist = Math.hypot(vx, vy, vz);
+      const wall = raycastWorld(this.world, c.pos, [vx / dist, vy / dist, vz / dist], dist);
+      if (wall && wall.t < dist - 0.3) continue;
+      out.push({ pid, dist });
+    }
+    return out;
+  }
+
+  checkClaymores(now) {
+    const C = UTIL_STATS.claymore;
+    for (const c of [...this.claymores.values()]) {
+      if (now < c.armedAt) continue;
+      const toucher = this.tripped(c);
+      if (toucher === null) continue;
+      const victims = this.claymoreTargets(c);
+      if (!victims.some((v) => v.pid === toucher)) victims.push({ pid: toucher, dist: C.touch });   // whoever tripped it is always caught
+      this.removeClaymore(c.id);
+      this.game.emitAll('claymoreBlast', { id: c.id, pos: c.pos, dir: c.dir });
+      for (const { pid, dist } of victims) {
+        const amount = C.damage * (1 - (1 - C.minDamage) * Math.min(1, dist / C.blastRange));
+        this.game.applyDamage(pid, c.owner, amount, { weapon: 'claymore', from: [c.pos[0], c.pos[2]] });
+      }
+    }
+  }
+
+  removeClaymore(id) {
+    if (!this.claymores.delete(id)) return false;
+    this.broadcast('gadgetRemove', 'claymore', { id });
+    return true;
+  }
+
+  /** Shot or hit by an enemy: the claymore is destroyed without going off. */
+  destroyClaymore(id) {
+    const c = this.claymores.get(id);
+    if (!c || !this.removeClaymore(id)) return;
+    this.game.emitAll('claymoreDestroyed', { id, pos: c.pos });
   }
 
   // ---------------------------------------------------------------- barricades (B)

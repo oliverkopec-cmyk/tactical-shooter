@@ -23,6 +23,7 @@ export function createPlayerState(spawn) {
     sprinting: false,
     fireDelay: 0,  // > 0 while recovering from a sprint: no shooting yet
     speedMul: 1,   // operator speed rating
+    gunMul: 1,     // mobility of the gun that is drawn (set from the weapon before each step)
     slow: 1,       // temporary slow (barbed wire, stun), set by the server
   };
 }
@@ -179,7 +180,7 @@ export function stepPlayer(s, input, dt, world) {
   const sprinting = !!(keys & KEY.SPRINT) && fwd > 0 && s.crouch < 0.5 && !lying && !leaning && !firing && s.fireDelay <= 0;
   s.sprinting = sprinting;
   const baseSpeed = sprinting ? SPRINT_SPEED : WALK_SPEED;
-  const speed = lerp(lerp(baseSpeed, CROUCH_SPEED, s.crouch), PRONE_SPEED, s.prone) * (s.speedMul ?? 1) * (s.slow ?? 1);
+  const speed = lerp(lerp(baseSpeed, CROUCH_SPEED, s.crouch), PRONE_SPEED, s.prone) * (s.speedMul ?? 1) * (s.gunMul ?? 1) * (s.slow ?? 1);
 
   // Lean (not while sprinting or lying down)
   let leanTarget = 0;

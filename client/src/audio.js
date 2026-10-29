@@ -5,6 +5,24 @@ const SHOT_TONE = {
   rifle: { freq: 1400, decay: 0.16, gain: 0.5 },
   smg: { freq: 2000, decay: 0.11, gain: 0.4 },
   shotgun: { freq: 700, decay: 0.3, gain: 0.7 },
+  ember: { freq: 1100, decay: 0.19, gain: 0.55 },
+  gale: { freq: 1700, decay: 0.13, gain: 0.45 },
+  bastion: { freq: 900, decay: 0.2, gain: 0.6 },
+  pulse: { freq: 2300, decay: 0.09, gain: 0.35 },
+  longview: { freq: 800, decay: 0.34, gain: 0.7 },
+  keystone: { freq: 1000, decay: 0.24, gain: 0.6 },
+  garrison: { freq: 1300, decay: 0.16, gain: 0.5 },
+  // secondaries: lighter and snappier
+  sidekick: { freq: 2200, decay: 0.09, gain: 0.3 },
+  needle: { freq: 2600, decay: 0.07, gain: 0.26 },
+  holdout: { freq: 2100, decay: 0.09, gain: 0.3 },
+  zap: { freq: 2800, decay: 0.07, gain: 0.28 },
+  peep: { freq: 2400, decay: 0.08, gain: 0.28 },
+  anvil: { freq: 1300, decay: 0.15, gain: 0.45 },
+  sting: { freq: 2500, decay: 0.07, gain: 0.3 },
+  sidewinder: { freq: 900, decay: 0.24, gain: 0.6 },
+  trowel: { freq: 950, decay: 0.22, gain: 0.55 },
+  gavel: { freq: 700, decay: 0.3, gain: 0.72 },
 };
 
 export class Audio {

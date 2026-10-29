@@ -509,7 +509,7 @@ button.ghost { background: transparent; }
 #op-timer { font-size: 24px; font-weight: 800; font-variant-numeric: tabular-nums; }
 #op-cards { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; max-width: 1100px; }
 .op-card {
-  width: 190px;
+  width: 216px;
   text-align: left;
   display: flex;
   flex-direction: column;
@@ -521,13 +521,28 @@ button.ghost { background: transparent; }
   font-weight: 400;
   overflow: hidden;
 }
-.op-card:hover:not(:disabled) { border-color: rgba(255, 255, 255, 0.5); }
+.op-card { cursor: pointer; }
+.op-card.taken { cursor: not-allowed; }
+.op-card:hover:not(.taken) { border-color: rgba(255, 255, 255, 0.5); }
 .op-card.selected { border-color: var(--accent); background: rgba(240, 180, 60, 0.12); }
 .op-card.taken { opacity: 0.4; }
 .op-card > :not(.op-color) { padding: 0 12px; }
 .op-color { height: 8px; }
 .op-name { font-size: 20px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; margin-top: 4px; }
-.op-weapon { font-size: 12px; color: var(--muted); }
+.op-guns { display: flex; flex-direction: column; gap: 3px; }
+.op-gun { display: flex; align-items: baseline; gap: 6px; font-size: 12px; padding: 3px 6px !important; margin: 0 6px; border-radius: 6px; background: rgba(255, 255, 255, 0.06); cursor: help; }
+.op-gun:hover { background: rgba(240, 180, 60, 0.2); }
+.op-gun .slot { color: var(--accent); font-weight: 800; }
+.op-gun b { font-weight: 700; white-space: nowrap; }
+.op-gun i { color: var(--muted); font-style: normal; font-size: 10px; margin-left: auto; white-space: nowrap; }
+.op-utils-label { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.op-utils { display: flex; flex-direction: column; gap: 4px; }
+.op-util { display: flex; justify-content: space-between; font-size: 12px; font-weight: 600; padding: 4px 8px; text-align: left; }
+.op-util span { color: var(--muted); font-weight: 400; }
+.op-util.chosen { background: var(--accent); color: #1a1406; border-color: transparent; }
+.op-util.chosen span { color: #4a3a12; }
+.op-utils.inactive .op-util { pointer-events: none; opacity: 0.7; }
+.op-ab { min-height: 72px !important; }
 .op-stats { display: flex; flex-direction: column; font-size: 11px; letter-spacing: 0.08em; color: var(--muted); }
 .op-stats span { display: flex; justify-content: space-between; }
 .op-ab { font-size: 12px; line-height: 1.35; min-height: 84px; }
@@ -628,3 +643,31 @@ button.small { font-size: 12px; padding: 4px 10px; margin-top: 6px; }
 .site-option .votes { color: var(--accent); }
 .site-option.selected { border-color: var(--accent); background: rgba(240, 180, 60, 0.12); }
 .site-note { color: var(--accent); font-size: 14px; max-width: 520px; margin: 0 auto; }
+
+/* ---------------------------------------------------------------- stage 11: loadouts */
+#weapon-other { margin-top: 2px; letter-spacing: 0.04em; text-transform: none; }
+#weapon-other:empty { display: none; }
+
+#gun-tip {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 60;
+  width: 260px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: rgba(14, 17, 22, 0.97);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+  font-size: 13px;
+}
+#gun-tip .tip-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 4px; }
+#gun-tip .tip-head b { font-size: 15px; color: var(--accent); }
+#gun-tip .tip-head span { font-size: 11px; color: var(--muted); }
+#gun-tip .tip-desc { color: var(--muted); font-size: 12px; line-height: 1.35; margin-bottom: 8px; }
+#gun-tip .tip-row { display: grid; grid-template-columns: 62px 1fr 64px; align-items: center; gap: 8px; margin: 4px 0; font-size: 12px; }
+#gun-tip .tip-row span { color: var(--muted); }
+#gun-tip .tip-row b { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+#gun-tip .tip-bar { height: 7px; border-radius: 4px; background: rgba(255, 255, 255, 0.1); overflow: hidden; }
+#gun-tip .tip-bar i { display: block; height: 100%; border-radius: 4px; background: linear-gradient(90deg, #c98a1c, var(--accent)); }

@@ -19,29 +19,73 @@ export function makeGunModel(id) {
   const w = WEAPONS[id] || WEAPONS.rifle;
   const g = new THREE.Group();
   const muzzle = new THREE.Object3D();
-  if (id === 'smg') {
-    g.add(part(box(0.07, 0.1, 0.34), w.color, 0, 0, 0));
-    g.add(part(barrel(0.016, 0.14), 0x1b1d20, 0, 0.015, -0.24));
-    g.add(part(box(0.045, 0.2, 0.05), w.accent, 0, -0.14, -0.06));
-    g.add(part(box(0.05, 0.05, 0.16), w.accent, 0, 0.0, 0.24));
-    g.add(part(box(0.03, 0.03, 0.06), 0x111111, 0, 0.065, -0.05));
-    muzzle.position.set(0, 0.015, -0.32);
-  } else if (id === 'shotgun') {
-    g.add(part(box(0.075, 0.085, 0.42), w.color, 0, 0, 0));
-    g.add(part(barrel(0.024, 0.42), 0x1b1d20, 0, 0.02, -0.4));
-    g.add(part(box(0.06, 0.05, 0.2), w.accent, 0, -0.045, -0.34));
-    g.add(part(box(0.06, 0.1, 0.22), w.accent, 0, -0.03, 0.29));
-    muzzle.position.set(0, 0.02, -0.62);
-  } else {
-    g.add(part(box(0.07, 0.095, 0.5), w.color, 0, 0, 0));
-    g.add(part(barrel(0.014, 0.26), 0x1b1d20, 0, 0.015, -0.37));
-    g.add(part(box(0.05, 0.16, 0.07), w.accent, 0, -0.12, -0.08));
-    g.add(part(box(0.06, 0.08, 0.2), w.accent, 0, -0.01, 0.33));
-    g.add(part(box(0.035, 0.045, 0.12), 0x111111, 0, 0.07, -0.02));
-    muzzle.position.set(0, 0.015, -0.5);
+  const dark = 0x1b1d20;
+  switch (w.model) {
+    case 'smg':
+      g.add(part(box(0.07, 0.1, 0.34), w.color, 0, 0, 0));
+      g.add(part(barrel(0.016, 0.14), dark, 0, 0.015, -0.24));
+      g.add(part(box(0.045, 0.2, 0.05), w.accent, 0, -0.14, -0.06));
+      g.add(part(box(0.05, 0.05, 0.16), w.accent, 0, 0.0, 0.24));
+      g.add(part(box(0.03, 0.03, 0.06), 0x111111, 0, 0.065, -0.05));
+      muzzle.position.set(0, 0.015, -0.32);
+      break;
+    case 'shotgun':
+      g.add(part(box(0.075, 0.085, 0.42), w.color, 0, 0, 0));
+      g.add(part(barrel(0.024, 0.42), dark, 0, 0.02, -0.4));
+      g.add(part(box(0.06, 0.05, 0.2), w.accent, 0, -0.045, -0.34));
+      g.add(part(box(0.06, 0.1, 0.22), w.accent, 0, -0.03, 0.29));
+      muzzle.position.set(0, 0.02, -0.62);
+      break;
+    case 'lmg':
+      g.add(part(box(0.09, 0.11, 0.56), w.color, 0, 0, 0));
+      g.add(part(barrel(0.018, 0.3), dark, 0, 0.02, -0.42));
+      g.add(part(box(0.16, 0.14, 0.14), w.accent, 0, -0.13, 0.02));          // drum magazine
+      g.add(part(box(0.05, 0.1, 0.05), w.accent, 0, -0.1, -0.2));            // foregrip
+      g.add(part(box(0.06, 0.1, 0.22), w.color, 0, -0.01, 0.36));
+      g.add(part(box(0.1, 0.03, 0.05), 0x111111, 0, 0.075, -0.1));          // carry handle
+      muzzle.position.set(0, 0.02, -0.58);
+      break;
+    case 'dmr':
+      g.add(part(box(0.06, 0.09, 0.56), w.color, 0, 0, 0));
+      g.add(part(barrel(0.013, 0.36), dark, 0, 0.015, -0.44));
+      g.add(part(box(0.045, 0.15, 0.06), w.accent, 0, -0.11, -0.04));
+      g.add(part(box(0.055, 0.1, 0.24), w.accent, 0, -0.015, 0.36));
+      g.add(part(barrel(0.026, 0.2), 0x111111, 0, 0.1, -0.02));              // scope
+      muzzle.position.set(0, 0.015, -0.62);
+      break;
+    case 'pistol':
+      g.add(part(box(0.045, 0.06, 0.2), w.color, 0, 0.03, -0.02));           // slide
+      g.add(part(box(0.04, 0.11, 0.055), w.accent, 0, -0.045, 0.06));        // grip
+      g.add(part(box(0.035, 0.03, 0.1), dark, 0, -0.005, -0.02));
+      muzzle.position.set(0, 0.04, -0.12);
+      break;
+    case 'revolver':
+      g.add(part(box(0.045, 0.07, 0.16), w.color, 0, 0.03, 0.0));
+      g.add(part(barrel(0.035, 0.07), dark, 0, 0.03, 0.0));                  // cylinder
+      g.add(part(barrel(0.014, 0.2), w.color, 0, 0.05, -0.17));
+      g.add(part(box(0.04, 0.12, 0.06), w.accent, 0, -0.05, 0.08));
+      muzzle.position.set(0, 0.05, -0.28);
+      break;
+    case 'machinePistol':
+      g.add(part(box(0.05, 0.07, 0.24), w.color, 0, 0.03, -0.03));
+      g.add(part(box(0.04, 0.11, 0.055), w.accent, 0, -0.05, 0.06));
+      g.add(part(box(0.03, 0.16, 0.04), dark, 0, -0.09, -0.04));              // long magazine
+      g.add(part(barrel(0.013, 0.1), dark, 0, 0.04, -0.2));
+      muzzle.position.set(0, 0.04, -0.26);
+      break;
+    default:   // rifle
+      g.add(part(box(0.07, 0.095, 0.5), w.color, 0, 0, 0));
+      g.add(part(barrel(0.014, 0.26), dark, 0, 0.015, -0.37));
+      g.add(part(box(0.05, 0.16, 0.07), w.accent, 0, -0.12, -0.08));
+      g.add(part(box(0.06, 0.08, 0.2), w.accent, 0, -0.01, 0.33));
+      g.add(part(box(0.035, 0.045, 0.12), 0x111111, 0, 0.07, -0.02));
+      muzzle.position.set(0, 0.015, -0.5);
   }
   g.add(muzzle);
   g.userData.muzzle = muzzle;
+  if (w.scale !== 1) g.scale.setScalar(w.scale);
+  // Pistols are short: the view model moves them forward and up so they sit in view
+  g.userData.hold = ['pistol', 'revolver', 'machinePistol'].includes(w.model) ? [0, 0.03, -0.1] : [0, 0, 0];
   return g;
 }
 
@@ -75,6 +119,7 @@ export class ViewModel {
     this.weaponId = null;
     this.gun = null;
     this.kick = 0;
+    this.raise = 0;
     this.swingT = 0;
     this.flashTime = 0;
     this.bobPhase = 0;
@@ -83,9 +128,12 @@ export class ViewModel {
 
   setWeapon(id) {
     if (id === this.weaponId) return;
+    const previous = this.weaponId;
     this.weaponId = id;
     if (this.gun) this.holder.remove(this.gun);
+    if (previous) this.raise = 1;   // drawing a gun: lift it into view
     this.gun = makeGunModel(id);
+    this.gun.position.set(...this.gun.userData.hold);
     this.holder.add(this.gun);
     this.gun.userData.muzzle.add(this.flash);
   }
@@ -96,7 +144,8 @@ export class ViewModel {
   }
 
   fire(weaponId) {
-    this.kick = Math.min(1.5, this.kick + (weaponId === 'shotgun' ? 1.4 : 0.6));
+    const recoil = WEAPONS[weaponId]?.recoilPitch ?? 0.012;
+    this.kick = Math.min(1.5, this.kick + Math.max(0.35, recoil * 40));
     this.flashTime = 0.045;
     this.flash.rotation.z = Math.random() * Math.PI;
   }
@@ -109,6 +158,7 @@ export class ViewModel {
   /** ctx: { speed, sprinting, crouch, reloadFrac (0..1 or -1), lean } */
   update(dt, ctx) {
     this.kick = Math.max(0, this.kick - dt * 9);
+    this.raise = Math.max(0, this.raise - dt * 4.5);
     this.flashTime -= dt;
     this.flash.visible = this.flashTime > 0;
     this.flashLight.intensity = this.flashTime > 0 ? 3 : 0;
@@ -118,10 +168,10 @@ export class ViewModel {
     const bobX = Math.sin(this.bobPhase) * 0.012 * speed;
     const bobY = Math.abs(Math.cos(this.bobPhase)) * 0.014 * speed;
 
-    let dip = 0, tilt = 0;
+    let dip = this.raise * this.raise * 0.3, tilt = this.raise * 0.5;
     if (ctx.reloadFrac >= 0) {
       const s = Math.sin(Math.min(1, ctx.reloadFrac) * Math.PI);
-      dip = s * 0.16; tilt = s * 0.7;
+      dip += s * 0.16; tilt += s * 0.7;
     }
     const sprint = ctx.sprinting ? 1 : 0;
 
