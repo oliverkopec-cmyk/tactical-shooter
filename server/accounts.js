@@ -10,8 +10,8 @@ import bcrypt from 'bcrypt';
 import express from 'express';
 import { usernameError, passwordError } from '../shared/account.js';
 import { sanitizeSettings } from '../shared/settings.js';
-import { profileOf, configureProfile, ownedSkinsOf, equippedSkinsOf, equippedOperatorsOf } from './profile.js';
-import { SKINS } from '../shared/skins.js';
+import { profileOf, configureProfile, ownedSkinsOf, equippedSkinsOf, equippedOperatorsOf, devToolsEnabled } from './profile.js';
+import { SKINS, priceOf, featuredSkins, dayIndex, DAY_MS } from '../shared/skins.js';
 import { WEAPONS } from '../shared/weapons.js';
 import { OPERATORS } from '../shared/operators.js';
 import { ownedOperatorIds } from '../shared/account.js';
@@ -42,7 +42,12 @@ export class Accounts {
     this.online = new Map();   // accountId -> socket (one connection per account)
     this.attempts = new Map(); // ip -> { count, resetAt }
     this.progression = new Progression(this);   // money, xp, rank points and daily quests
-    configureProfile({ unlockAll: process.env.UNLOCK_ALL_SKINS === '1' || db.kind === 'local' });
+    // Skins are earned or bought. UNLOCK_ALL_SKINS=1 is a developer switch that unlocks them all.
+    configureProfile({
+      unlockAll: process.env.UNLOCK_ALL_SKINS === '1',
+      // Developer tools (a button that adds Money) only exist on a local test database, never on Render
+      devTools: db.kind === 'local' && !process.env.RENDER,
+    });
     // Compared against when the username doesn't exist, so a wrong username
     // takes as long to reject as a wrong password.
     this.dummyHash = bcrypt.hash(crypto.randomBytes(16).toString('hex'), BCRYPT_ROUNDS);
@@ -185,6 +190,48 @@ export class Accounts {
       const equipped = { ...equippedOperatorsOf(found.row), [op.team]: op.id, menu: op.id };
       const { rows } = await this.db.query('UPDATE accounts SET equipped_operators = $2 WHERE id = $1 RETURNING *', [found.row.id, JSON.stringify(equipped)]);
       this.refreshSocketLoadout(rows[0]);
+      res.json({ account: profileOf(rows[0]) });
+    });
+
+    // ---------------------------------------------------------------- shop
+
+    // Today's featured skins and when they change. Prices are fixed by rarity (shared/skins.js).
+    r.get('/shop', (_req, res) => {
+      const day = dayIndex();
+      res.json({ featured: featuredSkins(day), resetsAt: new Date((day + 1) * DAY_MS).toISOString() });
+    });
+
+    // Buy a skin. One statement checks the price and ownership and takes the Money, so two
+    // clicks at once can't spend the same Money twice or buy the same skin twice.
+    r.post('/shop/buy', async (req, res) => {
+      const found = await this.fromCookie(req.headers.cookie);
+      if (!found) return res.status(401).json({ error: 'Not logged in.' });
+      const skin = req.body?.skin;
+      const price = priceOf(skin);
+      if (price === null) return res.status(400).json({ error: SKINS[skin] ? 'That skin is free: you already own it.' : 'Unknown skin.' });
+      const { rows } = await this.db.query(
+        `UPDATE accounts SET money = money - $2, owned_skins = owned_skins || to_jsonb($3::text)
+         WHERE id = $1 AND money >= $2 AND NOT (owned_skins @> to_jsonb($3::text)) RETURNING *`,
+        [found.row.id, price, skin],
+      );
+      if (!rows[0]) {
+        const current = (await this.db.query('SELECT * FROM accounts WHERE id = $1', [found.row.id])).rows[0];
+        const owned = current && ownedSkinsOf(current).includes(skin);
+        return res.status(owned ? 409 : 402).json({
+          error: owned ? 'You already own that skin.' : `Not enough Money: ${SKINS[skin].name} costs ${price.toLocaleString()}.`,
+          account: current ? profileOf(current) : undefined,
+        });
+      }
+      this.refreshSocketLoadout(rows[0]);
+      res.json({ account: profileOf(rows[0]), bought: skin, price });
+    });
+
+    // Developer tool: top up Money to test the shop. Only exists on a local test database.
+    r.post('/dev/money', async (req, res) => {
+      if (!devToolsEnabled()) return res.status(404).json({ error: 'Not found.' });
+      const found = await this.fromCookie(req.headers.cookie);
+      if (!found) return res.status(401).json({ error: 'Not logged in.' });
+      const { rows } = await this.db.query('UPDATE accounts SET money = money + 10000 WHERE id = $1 RETURNING *', [found.row.id]);
       res.json({ account: profileOf(rows[0]) });
     });
 

@@ -2,14 +2,22 @@
 
 A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite on the client, Node.js + Socket.IO on an authoritative server. One Node process serves both the game client and the realtime server, so the whole thing deploys as a single Render web service.
 
-## Status: Stage 13 (main menu, operators tab and skins)
+## Status: Stage 14 (shop)
+
+- **Shop tab:** gun skins for Money, sorted by rarity, with prices that rise with rarity: **Rare 1,000**, **Epic 2,500**, **Legendary 6,000**. Common skins are free and every account already owns them, so they aren't sold.
+- **Featured today:** three skins, one of each rarity, picked from the date so everyone sees the same ones. They change at 00:00 UTC (the shop shows a countdown). Featured is a highlight, not a discount.
+- **Preview before you buy:** click any skin to see it on a big copy of your equipped operator's primary gun. Cards show Owned, the price, or how much more Money you need.
+- **Buying is done on the server** and saved to the account. One database statement checks the price, your Money and that you don't already own the skin, and takes the Money, so a double click or two tabs can't spend the same Money twice or buy a skin twice. The client only says which skin; it can't send a price. Bought skins can then be equipped in the Operators tab (locked skins there link to the shop).
+- **Developer tool:** on a local test database (no `DATABASE_URL`) the shop shows a "+10,000 Money" button so you can try buying. The server only allows it on a local database and never when `RENDER` is set, so it can't be used on the live site. `UNLOCK_ALL_SKINS=1` (unlock everything) still exists for testing.
+
+### Earlier: Stage 13 (main menu, operators tab and skins)
 
 - **Main menu:** after logging in you land on a full-screen menu with a 3D scene: your equipped operator stands on a lit platform holding their primary gun (with its skin). Drag to turn them. The top bar shows your username, rank (icon, tier and progress), level and XP, Money and Polish Money (always 0, display only).
 - **Tabs:** Play (create or join a room, daily quests), Operators, Shop and Friends (placeholders for now) and Settings (opens the settings panel).
 - **Operators tab:** choose Attack or Defense, click an operator to see their guns (hover for stat bars), ability and both utilities. **Equip operator** makes them your pick for that side (they start the operator select already chosen) and the one shown in the menu. The operator steps to the side and a big copy of the selected gun turns beside them so you can see its skin.
 - **Gun skins with rarities:** Common (grey), Rare (blue), Epic (purple) and Legendary (gold). 13 skins; each recolours the gun, changes how shiny or glowing it is, and draws a pattern in code (stripes, camo, neon circuit, flames, void). Any skin fits any gun and each gun has its own equipped skin. No image files.
 - **Equipped skins show in matches for everyone:** your own gun in first person and every other player's gun in third person.
-- **Ownership:** every account owns the Common skins. The server checks that you own what you equip. Rare, Epic and Legendary skins will be sold in the shop (next stage). On a local development database (no `DATABASE_URL`) every skin is unlocked so you can try them all; set `UNLOCK_ALL_SKINS=1` to get that with a hosted database too. Never set it on Render.
+- **Ownership:** every account owns the Common skins. The server checks that you own what you equip. Rare, Epic and Legendary skins are bought in the shop (Stage 14).
 
 ### Earlier: Stage 12 (rewards, quests and ranks)
 
@@ -220,6 +228,12 @@ Other players' sounds are derived on each client from the snapshots (speed, stan
 ## Barricades, melee and props
 
 `MAP.openings` lists every door and window gap (generated in `shared/map.js`; `findOpening()` finds the one a ray passes through). A barricade is a set of dynamic boxes added to the shared `World` (`kind: 'barricade'`), so movement and bullets on both sides treat the planks as solid. The server owns plank health and sends `barricadeBroken` events; clients remove the same planks. Props live in the same `MAP.boxes` list as walls (`prop()` in `shared/map.js`), with `MAP.details` for visual-only decoration. Run the reachability check idea from the commit when you move props: every room, both staircases and all spawn points must stay open.
+
+## Shop
+
+- Prices are in `SKIN_PRICES` in `shared/skins.js` (by rarity). The featured set comes from `featuredSkins(day)` there, seeded by the UTC day number, and the client asks `GET /api/shop` for it so the server's clock decides.
+- `POST /api/shop/buy` runs one `UPDATE ... WHERE money >= price AND NOT owned` that takes the Money and appends the skin to `owned_skins`; no row updated means refused (not enough Money, or already owned). Skin ownership is read through `ownedSkinsOf` in `server/profile.js`, so equipping only ever accepts owned skins.
+- `POST /api/dev/money` adds 10,000 Money and only exists when the database is local and `RENDER` is unset (`devTools` in `server/profile.js`).
 
 ## Main menu, operators and skins
 

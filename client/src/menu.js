@@ -5,8 +5,8 @@
 import { OPERATORS, operatorsFor } from '../../shared/operators.js';
 import { WEAPONS } from '../../shared/weapons.js';
 import { UTILITIES } from '../../shared/utilities.js';
-import { SKINS, RARITIES, skinList, hexColor } from '../../shared/skins.js';
-import { equipSkin, equipOperator } from './account.js';
+import { SKINS, RARITIES, skinList, hexColor, priceOf, shopSkins } from '../../shared/skins.js';
+import { equipSkin, equipOperator, getShop, buySkin, devMoney } from './account.js';
 import { fillKeys } from './controls.js';
 import { MenuScene } from './menuScene.js';
 
@@ -25,6 +25,9 @@ export class Menu {
     this.selectedOp = null;
     this.slot = 'primary';
     this.error = '';
+    this.shopData = null;      // { featured, resetsAt } from the server
+    this.shopSelected = null;  // skin shown in the preview and the detail card
+    this.shopMessage = '';
     this.scene = null;        // created the first time the menu is shown (needs WebGL)
     this.active = false;
 
@@ -39,6 +42,12 @@ export class Menu {
       if (card) { this.selectedOp = card.dataset.op; this.error = ''; this.renderOperators(); }
     });
     $('op-detail').addEventListener('click', (e) => this.onDetailClick(e));
+    $('shop-main').addEventListener('click', (e) => {
+      const card = e.target.closest('[data-shop-skin]');
+      if (card) { this.shopSelected = card.dataset.shopSkin; this.shopMessage = ''; this.renderShop(); }
+    });
+    $('shop-detail').addEventListener('click', (e) => this.onShopDetailClick(e));
+    setInterval(() => { if (this.active && this.tab === 'shop') this.updateShopTimer(); }, 30000);
   }
 
   /** Called when the main menu screen is shown or hidden. */
@@ -70,8 +79,9 @@ export class Menu {
   /** The account changed (login, equip, match payout): redraw whatever is showing. */
   refresh() {
     if (!this.active || !this.getAccount()) return;
-    this.scene?.setMode(this.tab === 'operators' ? 'operators' : 'play');
+    this.scene?.setMode(this.tab === 'operators' ? 'operators' : this.tab === 'shop' ? 'shop' : 'play');
     if (this.tab === 'operators') this.renderOperators();
+    else if (this.tab === 'shop') this.openShop();
     else this.showEquipped();
   }
 
@@ -123,7 +133,7 @@ export class Menu {
         <span class="skin-swatch" style="background:linear-gradient(135deg,${hexColor(w.color)},${hexColor(w.accent)})"></span><span class="skin-name">Default</span><span class="skin-rar" style="color:#8b95a3">Standard</span></button>`]
       .concat(skinList().map((s) => {
         const ok = owns.has(s.id);
-        return `<button type="button" class="skin-tile${current === s.id ? ' equipped' : ''}${ok ? '' : ' locked'}" data-skin="${s.id}" style="--rar:${s.rarityInfo.color}" title="${ok ? '' : 'You don\'t own this skin yet'}">
+        return `<button type="button" class="skin-tile${current === s.id ? ' equipped' : ''}${ok ? '' : ' locked'}" data-skin="${s.id}" style="--rar:${s.rarityInfo.color}" title="${ok ? '' : 'You don\'t own this skin yet: click to see it in the Shop'}">
           <span class="skin-swatch" style="background:linear-gradient(135deg,${hexColor(s.body)} 0%,${hexColor(s.body)} 45%,${hexColor(s.mark)} 46%,${hexColor(s.mark)} 54%,${hexColor(s.accent)} 55%)"></span>
           <span class="skin-name">${esc(s.name)}</span><span class="skin-rar" style="color:${s.rarityInfo.color}">${s.rarityInfo.name}${ok ? '' : ' · 🔒'}</span></button>`;
       })).join('');
@@ -154,10 +164,101 @@ export class Menu {
     const gun = e.target.closest('[data-slot]');
     if (gun) { this.slot = gun.dataset.slot; this.renderOperators(); return; }
     const tile = e.target.closest('[data-skin]');
-    if (tile && !tile.classList.contains('locked')) {
+    if (tile && tile.classList.contains('locked')) {
+      // Not owned yet: take them to the shop with that skin ready to look at
+      this.shopSelected = tile.dataset.skin;
+      this.shopMessage = '';
+      this.setTab('shop');
+    } else if (tile) {
       const weapon = OPERATORS[this.selectedOp].weapons[this.slot];
       await this.apply(equipSkin(weapon, tile.dataset.skin || null));
     }
+  }
+
+  // ---------------------------------------------------------------- shop tab
+
+  /** Load today's featured skins if we don't have them (or they've changed), then draw the shop. */
+  async openShop() {
+    const stale = !this.shopData || Date.parse(this.shopData.resetsAt) <= Date.now();
+    if (stale) {
+      const res = await getShop();
+      if (res.featured) this.shopData = res;
+    }
+    if (this.tab !== 'shop' || !this.active) return;
+    if (!this.shopSelected || !priceOf(this.shopSelected)) this.shopSelected = this.shopData?.featured?.[0] || shopSkins()[0].id;
+    this.renderShop();
+  }
+
+  shopCard(id, owns, featured = false) {
+    const s = SKINS[id], rar = RARITIES[s.rarity], price = priceOf(id), owned = owns.has(id);
+    const money = this.getAccount().money;
+    const state = owned ? '<span class="shop-owned">✔ Owned</span>' : `<span class="shop-price${money < price ? ' short' : ''}">${price.toLocaleString()}</span>`;
+    return `<button type="button" class="shop-card${this.shopSelected === id ? ' selected' : ''}${owned ? ' owned' : ''}${featured ? ' featured' : ''}" data-shop-skin="${id}" style="--rar:${rar.color}">
+      <span class="skin-swatch" style="background:linear-gradient(135deg,${hexColor(s.body)} 0%,${hexColor(s.body)} 45%,${hexColor(s.mark)} 46%,${hexColor(s.mark)} 54%,${hexColor(s.accent)} 55%)"></span>
+      <span class="skin-name">${esc(s.name)}</span>
+      <span class="shop-row"><span class="skin-rar" style="color:${rar.color}">${rar.name}</span>${state}</span>
+    </button>`;
+  }
+
+  renderShop() {
+    const a = this.getAccount();
+    if (!a || !this.shopSelected) return;
+    const owns = new Set(a.ownedSkins);
+    const featured = (this.shopData?.featured || []).map((id) => this.shopCard(id, owns, true)).join('');
+    const sections = Object.values(RARITIES).filter((r) => r.id !== 'common').map((r) => {
+      const cards = shopSkins().filter((s) => s.rarity === r.id).map((s) => this.shopCard(s.id, owns)).join('');
+      return `<div class="detail-sub" style="color:${r.color}">${r.name} · ${priceOf(shopSkins().find((s) => s.rarity === r.id).id).toLocaleString()} Money</div><div class="shop-grid">${cards}</div>`;
+    }).join('');
+    $('shop-main').innerHTML = `
+      <div class="shop-head"><h2>Featured today</h2><span id="shop-timer" class="muted"></span></div>
+      <div class="shop-grid">${featured}</div>
+      <h2 class="shop-all">All skins</h2>
+      <p class="muted small-note">Common skins are free and already yours. Sorted by rarity: the rarer the skin, the higher the price.</p>
+      ${sections}`;
+    this.updateShopTimer();
+
+    const id = this.shopSelected, s = SKINS[id], rar = RARITIES[s.rarity], price = priceOf(id), owned = owns.has(id);
+    const need = price - a.money;
+    $('shop-detail').innerHTML = `
+      <div class="detail-name" style="color:${rar.color}">${esc(s.name)}</div>
+      <div class="muted">${rar.name} skin · ${esc(s.pattern === 'solid' ? 'solid colour' : s.pattern)}</div>
+      <div class="shop-balance"><span class="muted">Your Money</span><b>${a.money.toLocaleString()}</b></div>
+      <button type="button" class="${owned ? '' : 'primary'} buy-btn" data-buy="${id}" ${owned || need > 0 ? 'disabled' : ''}>
+        ${owned ? '✔ You own this skin' : need > 0 ? `Need ${need.toLocaleString()} more Money` : `Buy for ${price.toLocaleString()} Money`}
+      </button>
+      <p class="${this.shopMessageIsError ? 'error' : 'shop-ok'}">${esc(this.shopMessage)}</p>
+      <p class="muted small-note">${owned ? 'Equip it in the Operators tab: pick an operator, click a gun, then the skin.' : 'Preview shown on your equipped operator\'s primary gun. Skins fit every gun.'}</p>
+      ${a.devTools ? `<div class="dev-box"><div class="detail-sub">Developer tools</div><div class="muted small-note">Local test database only. Never on the live site.</div><button type="button" data-dev-money>+10,000 Money</button></div>` : ''}`;
+
+    // Show the skin on the equipped operator's primary gun
+    const opId = a.equippedOperators?.menu && OPERATORS[a.equippedOperators.menu] ? a.equippedOperators.menu : 'recruit_atk';
+    const op = OPERATORS[opId];
+    this.scene?.setLook({ team: op.team, operatorId: opId, weaponId: op.weapons.primary, skinId: id });
+  }
+
+  updateShopTimer() {
+    const el = $('shop-timer');
+    if (!el || !this.shopData) return;
+    const left = Date.parse(this.shopData.resetsAt) - Date.now();
+    if (left <= 0) { el.textContent = 'Changing…'; this.shopData = null; this.openShop(); return; }
+    el.textContent = `Changes in ${Math.floor(left / 3600000)}h ${String(Math.floor((left % 3600000) / 60000)).padStart(2, '0')}m`;
+  }
+
+  async onShopDetailClick(e) {
+    if (e.target.closest('[data-dev-money]')) {
+      const res = await devMoney();
+      this.shopMessageIsError = !!res.error;
+      this.shopMessage = res.error || 'Added 10,000 Money.';
+      if (res.account) this.setAccount(res.account); else this.renderShop();
+      return;
+    }
+    const buy = e.target.closest('[data-buy]');
+    if (!buy || buy.disabled) return;
+    buy.disabled = true;
+    const res = await buySkin(buy.dataset.buy);
+    this.shopMessageIsError = !res.bought;
+    this.shopMessage = res.bought ? `Bought ${SKINS[res.bought].name}! Equip it in the Operators tab.` : res.error || 'Could not buy that.';
+    if (res.account) this.setAccount(res.account); else this.renderShop();
   }
 
   async apply(request) {
