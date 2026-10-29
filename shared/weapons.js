@@ -168,6 +168,92 @@ export const WEAPONS = {
     bloomPerShot: 0.004, bloomMax: 0.025, recoilPitch: 0.012, mobility: 1.1,
     desc: 'The defenders\' standard sidearm.',
   }),
+
+  // ---------------------------------------------------------------- Stage 16 operators
+  rift: gun({
+    id: 'rift', name: 'Rift AR', kind: 'Assault rifle', model: 'rifle', color: 0x2c3a4a, accent: 0x6fd0ff,
+    damage: 34, headMultiplier: 3, rpm: 560, magSize: 28, reserve: 140, reloadTime: 2.5,
+    falloffStart: 26, falloffEnd: 58, falloffMin: 0.72, baseSpread: 0.0045, moveSpread: 0.03,
+    bloomPerShot: 0.0045, bloomMax: 0.034, recoilPitch: 0.013, recoilYaw: 0.006, mobility: 0.98,
+    desc: 'A heavy-hitting rifle that kicks harder the longer you hold the trigger.',
+  }),
+  tick: gun({
+    id: 'tick', name: 'Tick', kind: 'Machine pistol', model: 'machinePistol', color: 0x2a3440, accent: 0x6fd0ff,
+    damage: 16, headMultiplier: 3, rpm: 880, magSize: 24, reserve: 96, reloadTime: 1.6,
+    falloffStart: 8, falloffEnd: 22, falloffMin: 0.45, baseSpread: 0.012, moveSpread: 0.015,
+    bloomPerShot: 0.004, bloomMax: 0.04, bloomRecover: 0.16, recoilPitch: 0.01, recoilYaw: 0.008, mobility: 1.1,
+    desc: 'Rattles through a magazine in under two seconds. Best at very close range.',
+  }),
+  kiln: gun({
+    id: 'kiln', name: 'Kiln', kind: 'Semi-auto shotgun', model: 'shotgun', color: 0x4a2c20, accent: 0xff7a1a,
+    auto: false, damage: 12, headMultiplier: 1.5, pellets: 8, rpm: 150, magSize: 8, reserve: 40, reloadTime: 3.0,
+    falloffStart: 7, falloffEnd: 22, falloffMin: 0.25, baseSpread: 0.06, moveSpread: 0.015,
+    bloomPerShot: 0, bloomMax: 0, bloomRecover: 1, recoilPitch: 0.045, recoilYaw: 0.012, mobility: 0.92,
+    desc: 'Fires as fast as you click. Weaker per shot than a pump shotgun, but it keeps the pressure on.',
+  }),
+  pyre: gun({
+    id: 'pyre', name: 'Pyre', kind: 'Revolver', model: 'revolver', color: 0x4a2c20, accent: 0xff7a1a,
+    auto: false, damage: 52, headMultiplier: 2.4, rpm: 145, magSize: 6, reserve: 30, reloadTime: 3.0,
+    falloffStart: 15, falloffEnd: 40, falloffMin: 0.6, baseSpread: 0.004, moveSpread: 0.025,
+    bloomPerShot: 0.008, bloomMax: 0.03, bloomRecover: 0.12, recoilPitch: 0.028, recoilYaw: 0.01, mobility: 1.02,
+    desc: 'Six rounds that hit hard up close.',
+  }),
+  arc: gun({
+    id: 'arc', name: 'Arc SMG', kind: 'SMG', model: 'smg', color: 0x1f2f3a, accent: 0xb06bff,
+    damage: 20, headMultiplier: 4, rpm: 900, magSize: 35, reserve: 175, reloadTime: 1.9,
+    falloffStart: 13, falloffEnd: 32, falloffMin: 0.5, baseSpread: 0.0085, moveSpread: 0.018,
+    bloomPerShot: 0.003, bloomMax: 0.034, bloomRecover: 0.16, recoilPitch: 0.008, recoilYaw: 0.007, mobility: 1.07,
+    desc: 'A light, fast SMG for moving through rooms quickly.',
+  }),
+  jolt: gun({
+    id: 'jolt', name: 'Jolt', kind: 'Pistol', model: 'pistol', color: 0x2a2f45, accent: 0xb06bff,
+    auto: false, damage: 23, headMultiplier: 3.3, rpm: 450, magSize: 16, reserve: 80, reloadTime: 1.5,
+    falloffStart: 11, falloffEnd: 30, falloffMin: 0.5, baseSpread: 0.005, moveSpread: 0.016,
+    bloomPerShot: 0.003, bloomMax: 0.022, recoilPitch: 0.009, mobility: 1.1,
+    desc: 'A snappy pistol with a quick reload.',
+  }),
+  livewire: gun({
+    id: 'livewire', name: 'Livewire', kind: 'Carbine', model: 'rifle', scale: 0.88, color: 0x2a3d4a, accent: 0x39f0ff,
+    damage: 28, headMultiplier: 3.3, rpm: 700, magSize: 30, reserve: 150, reloadTime: 2.1,
+    falloffStart: 20, falloffEnd: 46, falloffMin: 0.65, baseSpread: 0.0045, moveSpread: 0.022,
+    bloomPerShot: 0.0035, bloomRecover: 0.14, recoilPitch: 0.009, mobility: 1.05,
+    desc: 'A quick, controllable carbine for holding rooms and short corridors.',
+  }),
+  static: gun({
+    id: 'static', name: 'Static', kind: 'Pistol', model: 'pistol', color: 0x2a3d4a, accent: 0x39f0ff,
+    auto: false, damage: 27, headMultiplier: 3, rpm: 330, magSize: 13, reserve: 65, reloadTime: 1.7,
+    falloffStart: 13, falloffEnd: 32, falloffMin: 0.55, baseSpread: 0.005, moveSpread: 0.02,
+    bloomPerShot: 0.004, bloomMax: 0.025, recoilPitch: 0.012, mobility: 1.1,
+    desc: 'A dependable sidearm with a little more bite than the standard pistol.',
+  }),
+  syringe: gun({
+    id: 'syringe', name: 'Syringe PDW', kind: 'Personal defence weapon', model: 'smg', scale: 0.9, color: 0x2f4a3a, accent: 0x6fdc7a,
+    damage: 19, headMultiplier: 3.4, rpm: 880, magSize: 36, reserve: 180, reloadTime: 1.8,
+    falloffStart: 12, falloffEnd: 30, falloffMin: 0.5, baseSpread: 0.0085, moveSpread: 0.018,
+    bloomPerShot: 0.0028, bloomMax: 0.032, bloomRecover: 0.16, recoilPitch: 0.0075, recoilYaw: 0.006, mobility: 1.08,
+    desc: 'Light and fast, made for a medic who has to keep moving.',
+  }),
+  dose: gun({
+    id: 'dose', name: 'Dose', kind: 'Pistol', model: 'pistol', scale: 0.95, color: 0x2f4a3a, accent: 0x6fdc7a,
+    auto: false, damage: 22, headMultiplier: 3.2, rpm: 400, magSize: 16, reserve: 80, reloadTime: 1.5,
+    falloffStart: 12, falloffEnd: 30, falloffMin: 0.55, baseSpread: 0.0045, moveSpread: 0.016,
+    bloomPerShot: 0.003, bloomMax: 0.022, recoilPitch: 0.009, mobility: 1.1,
+    desc: 'A reliable backup with a big magazine.',
+  }),
+  watchman: gun({
+    id: 'watchman', name: 'Watchman BR', kind: 'Battle rifle', model: 'rifle', scale: 1.05, color: 0x3a3f2f, accent: 0xd8c84a,
+    auto: false, damage: 44, headMultiplier: 2.8, rpm: 360, magSize: 20, reserve: 100, reloadTime: 2.7,
+    falloffStart: 30, falloffEnd: 62, falloffMin: 0.75, baseSpread: 0.003, moveSpread: 0.033,
+    bloomPerShot: 0.0055, bloomMax: 0.028, bloomRecover: 0.11, recoilPitch: 0.02, recoilYaw: 0.006, mobility: 0.95,
+    desc: 'Steady semi-automatic fire with a large magazine. Great for watching a long sight line.',
+  }),
+  chirp: gun({
+    id: 'chirp', name: 'Chirp', kind: 'Pistol', model: 'pistol', scale: 0.92, color: 0x3a3f2f, accent: 0xd8c84a,
+    auto: false, damage: 24, headMultiplier: 3.2, rpm: 380, magSize: 15, reserve: 75, reloadTime: 1.5,
+    falloffStart: 12, falloffEnd: 32, falloffMin: 0.55, baseSpread: 0.0045, moveSpread: 0.016,
+    bloomPerShot: 0.0035, bloomMax: 0.022, recoilPitch: 0.009, mobility: 1.1,
+    desc: 'Light and quick to fire. Nothing fancy.',
+  }),
 };
 
 export const SWAP_TIME = 0.4;   // seconds before a newly drawn weapon can fire

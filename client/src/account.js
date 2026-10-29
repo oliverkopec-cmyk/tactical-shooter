@@ -44,3 +44,6 @@ export const getShop = () => call('GET', 'shop');
 export const buySkin = (skin) => call('POST', 'shop/buy', { skin });
 /** Local test database only: adds Money so the shop can be tried. */
 export const devMoney = () => call('POST', 'dev/money');
+
+/** Buy an operator with Money. The server checks the price, your Money and ownership. */
+export const buyOperator = (operator) => call('POST', 'operators/buy', { operator });

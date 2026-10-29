@@ -13,7 +13,7 @@ import { OPERATORS } from '../shared/operators.js';
 import { getEyePosition, forwardVec, eyeHeight, bodyHeight } from '../shared/movement.js';
 import { aimDirection } from '../shared/weapons.js';
 import { raycastWorld } from '../shared/raycast.js';
-import { UTILITIES, UTIL_STATS, claymoreLines } from '../shared/utilities.js';
+import { UTILITIES, UTIL_STATS, ABILITY_STATS, claymoreLines } from '../shared/utilities.js';
 
 export class Gadgets {
   constructor(game) {
@@ -29,6 +29,10 @@ export class Gadgets {
     this.cameras = new Map();
     this.grenades = new Map();
     this.claymores = new Map();        // id -> { id, owner, team, pos, dir, armedAt }
+    this.fires = new Map();            // Cinder: id -> { id, owner, pos, until, nextTick }
+    this.shocks = new Map();           // Volt: id -> { id, owner, team, pos }
+    this.heals = new Map();            // Tonic: id -> { id, owner, team, pos, until }
+    this.sensors = new Map();          // Picket: id -> { id, owner, team, pos, dir, seen }
     this.barricades = new Map();       // id -> { id, openingId, panels: [{ i, min, max, hp, alive }] }
     this.barricading = new Map();      // playerId -> { openingId, doneAt, x, z }
     this.barricadesLeft = BARRICADE.pool;
@@ -50,6 +54,9 @@ export class Gadgets {
     for (const j of this.jammers.values()) out.push({ kind: 'jammer', ...j });
     for (const c of this.cameras.values()) out.push({ kind: 'camera', ...c });
     for (const c of this.claymores.values()) out.push({ kind: 'claymore', id: c.id, owner: c.owner, team: c.team, pos: c.pos, dir: c.dir });
+    for (const s of this.shocks.values()) out.push({ kind: 'shock', id: s.id, owner: s.owner, team: s.team, pos: s.pos });
+    for (const h of this.heals.values()) out.push({ kind: 'heal', id: h.id, owner: h.owner, team: h.team, pos: h.pos, ms: Math.max(0, h.until - Date.now()) });
+    for (const s of this.sensors.values()) out.push({ kind: 'sensor', id: s.id, owner: s.owner, team: s.team, pos: s.pos, dir: s.dir });
     for (const b of this.barricades.values()) out.push(this.barricadeRecord(b));
     return out;
   }
@@ -90,10 +97,15 @@ export class Gadgets {
   update(dt, now) {
     this.stepGrenades(dt, now);
     this.checkClaymores(now);
+    this.updateFires(now);
+    this.updateShocks(now);
+    this.updateHeals(dt, now);
+    this.checkSensors(now);
     this.updateBarricading(now);
     for (const p of this.game.players.values()) {
       let slow = 1;
       if (p.stunUntil > now) slow = Math.min(slow, STUN.slow);
+      if (p.shockUntil > now) slow = Math.min(slow, ABILITY_STATS.shock.slow);
       if (p.alive) {
         for (const w of this.wires.values()) {
           if (Math.abs(p.state.x - w.x) < w.half && Math.abs(p.state.z - w.z) < w.half && Math.abs(p.state.y - w.y) < 0.6) {
@@ -112,7 +124,7 @@ export class Gadgets {
   // Thrown by Flash's stun ability (F) and by the utilities (flash, impact, smoke, frag).
 
   throwGrenade(p, id, type = 'stun') {
-    const cfg = type === 'stun' ? STUN : UTIL_STATS[type];
+    const cfg = type === 'stun' ? STUN : type === 'fire' ? ABILITY_STATS.fire : UTIL_STATS[type];
     const eye = getEyePosition(p.state, this.world);
     const dir = aimDirection(p.state.yaw, p.state.pitch);
     const g = {
@@ -178,6 +190,12 @@ export class Gadgets {
     this.grenades.delete(g.id);
     const round = (v) => Math.round(v * 100) / 100;
     const pos = g.pos.map(round);
+    if (g.type === 'fire') {
+      const F = ABILITY_STATS.fire;
+      this.fires.set(g.id, { id: g.id, owner: g.owner, pos, until: now + F.durationMs, nextTick: now + F.tickMs });
+      this.game.emitAll('fireStart', { id: g.id, pos, ms: F.durationMs, radius: F.radius });
+      return;
+    }
     if (g.type === 'smoke') {
       const ms = UTIL_STATS.smoke.duration * 1000;
       this.game.emitAll('smokeStart', { id: g.id, pos, ms, radius: UTIL_STATS.smoke.radius });
@@ -269,22 +287,28 @@ export class Gadgets {
     return true;
   }
 
-  /** Does an enemy's body touch one of the claymore's tripwires? */
-  tripped(c) {
+  /** Ids of every enemy whose body touches one of the gadget's tripwires. */
+  touching(c) {
     const touch = UTIL_STATS.claymore.touch;
+    const out = [];
     for (const line of claymoreLines(this.world, c.pos, c.dir)) {
       const [ax, , az] = line.from, [bx, , bz] = line.to;
       const abx = bx - ax, abz = bz - az, len2 = abx * abx + abz * abz || 1;
       for (const [pid, q] of this.game.players) {
-        if (!q.alive || q.spawned === false || q.member.team === c.team) continue;
+        if (out.includes(pid) || !q.alive || q.spawned === false || q.member.team === c.team) continue;
         const s = q.state;
         const y = line.from[1];
         if (y < s.y - 0.05 || y > s.y + bodyHeight(s.crouch, s.prone || 0)) continue;   // the line passes over or under them
         const t = Math.max(0, Math.min(1, ((s.x - ax) * abx + (s.z - az) * abz) / len2));
-        if (Math.hypot(s.x - (ax + abx * t), s.z - (az + abz * t)) <= touch) return pid;
+        if (Math.hypot(s.x - (ax + abx * t), s.z - (az + abz * t)) <= touch) out.push(pid);
       }
     }
-    return null;
+    return out;
+  }
+
+  /** The first enemy touching a claymore's tripwires, or null. */
+  tripped(c) {
+    return this.touching(c)[0] ?? null;
   }
 
   /** Enemies in front of the claymore, close enough and in the clear, caught by the blast. */
@@ -333,6 +357,74 @@ export class Gadgets {
     const c = this.claymores.get(id);
     if (!c || !this.removeClaymore(id)) return;
     this.game.emitAll('claymoreDestroyed', { id, pos: c.pos });
+  }
+
+  // ---------------------------------------------------------------- Stage 16 operator gadgets
+
+  /** Cinder: fire patches burn enemies of the thrower standing in them. */
+  updateFires(now) {
+    const F = ABILITY_STATS.fire;
+    for (const f of [...this.fires.values()]) {
+      if (now >= f.until) { this.fires.delete(f.id); continue; }
+      if (now < f.nextTick) continue;
+      f.nextTick = now + F.tickMs;
+      const ownerTeam = this.game.players.get(f.owner)?.member.team;
+      for (const [pid, q] of this.game.players) {
+        if (!q.alive || q.spawned === false || q.member.team === ownerTeam) continue;
+        if (Math.hypot(q.state.x - f.pos[0], q.state.z - f.pos[2]) > F.radius || Math.abs(q.state.y - f.pos[1]) > 1.6) continue;
+        this.game.applyDamage(pid, f.owner, F.tickDamage, { weapon: 'fire', from: [f.pos[0], f.pos[2]] });
+      }
+    }
+  }
+
+  /** Volt: a floor trap goes off once under the first enemy who steps on it. */
+  updateShocks(now) {
+    const S = ABILITY_STATS.shock;
+    for (const t of [...this.shocks.values()]) {
+      for (const [pid, q] of this.game.players) {
+        if (!q.alive || q.spawned === false || q.member.team === t.team) continue;
+        if (Math.hypot(q.state.x - t.pos[0], q.state.z - t.pos[2]) > S.touch || Math.abs(q.state.y - t.pos[1]) > 0.6) continue;
+        this.shocks.delete(t.id);
+        this.broadcast('gadgetRemove', 'shock', { id: t.id });
+        this.game.emitAll('shockTriggered', { pos: t.pos });
+        q.shockUntil = now + S.slowMs;
+        q.spottedUntil = now + S.markMs;
+        this.game.applyDamage(pid, t.owner, S.damage, { weapon: 'shock', from: [t.pos[0], t.pos[2]] });
+        break;
+      }
+    }
+  }
+
+  /** Tonic: teammates inside a healing field regain health. */
+  updateHeals(dt, now) {
+    const H = ABILITY_STATS.heal;
+    for (const f of [...this.heals.values()]) {
+      if (now >= f.until) { this.heals.delete(f.id); this.broadcast('gadgetRemove', 'heal', { id: f.id }); continue; }
+      for (const q of this.game.players.values()) {
+        if (!q.alive || q.spawned === false || q.member.team !== f.team || q.health >= 100) continue;
+        if (Math.hypot(q.state.x - f.pos[0], q.state.z - f.pos[2]) > H.radius || Math.abs(q.state.y - f.pos[1]) > 1.6) continue;
+        q.health = Math.min(100, q.health + H.hps * dt);
+      }
+    }
+  }
+
+  /** Picket: an enemy touching a sensor's lines is marked for the team (and can be marked again after a pause). */
+  checkSensors(now) {
+    const S = ABILITY_STATS.sensor;
+    for (const c of this.sensors.values()) {
+      for (const pid of this.touching(c)) {
+        if ((c.seen[pid] || 0) > now) continue;
+        c.seen[pid] = now + S.cooldownMs;
+        const q = this.game.players.get(pid);
+        if (q) q.spottedUntil = now + S.markMs;
+        this.game.io.to(c.owner).emit('actionError', { msg: 'Alarm sensor: enemy spotted!' });
+      }
+    }
+  }
+
+  /** The point an ability is aimed at (a surface within reach), or null. */
+  aimPoint(p, reach) {
+    return this.aimedSurface(p, reach);
   }
 
   // ---------------------------------------------------------------- barricades (B)
@@ -593,6 +685,98 @@ const ABILITIES = {
     const rec = { id: g.nextId++, owner: id, pos: point.map((v, i) => v + normal[i] * 0.07), dir: normal };
     g.cameras.set(rec.id, rec);
     g.broadcast('gadgetAdd', 'camera', rec);
+    p.ability.charges--;
+  },
+
+  /** Tremor: mark every moving enemy nearby, through walls. */
+  seismicPulse(g, id, p, ab) {
+    const S = ABILITY_STATS.seismic, now = Date.now();
+    if (p.ability.charges <= 0) return g.error(id, 'No seismic pulses left.');
+    const eye = getEyePosition(p.state, g.world);
+    const found = [];
+    for (const q of g.game.players.values()) {
+      if (!q.alive || q.spawned === false || q.member.team === p.member.team) continue;
+      if (Math.hypot(q.state.x - eye.x, q.state.y - eye.y, q.state.z - eye.z) > S.radius) continue;
+      if (Math.hypot(q.state.vx, q.state.vz) < S.moving) continue;
+      found.push(q);
+    }
+    if (!found.length) return g.error(id, 'No movement within 12 m.');
+    for (const q of found) q.spottedUntil = now + S.markMs;
+    p.ability.charges--;
+    g.game.emitAll('seismicPulse', { pos: [eye.x, p.state.y + 0.1, eye.z], radius: S.radius });
+  },
+
+  /** Cinder: throw a fire canister. */
+  fireCanister(g, id, p) {
+    const now = Date.now();
+    if (p.ability.charges <= 0) return g.error(id, 'No fire canisters left.');
+    if (cooldownLeft(p, now) > 0) return;
+    p.ability.charges--;
+    p.ability.cdUntil = now + 800;
+    g.throwGrenade(p, id, 'fire');
+  },
+
+  /** Surge: destroy defender cameras and jammers around the aimed point. */
+  emp(g, id, p) {
+    const E = ABILITY_STATS.emp;
+    if (p.ability.charges <= 0) return g.error(id, 'No EMP bursts left.');
+    const eye = getEyePosition(p.state, g.world);
+    const dir = aimDirection(p.state.yaw, p.state.pitch);
+    const hit = raycastWorld(g.world, [eye.x, eye.y, eye.z], dir, E.range);
+    const t = hit ? hit.t : 10;
+    const centre = [eye.x + dir[0] * t, eye.y + dir[1] * t, eye.z + dir[2] * t];
+    const near = (pos) => Math.hypot(pos[0] - centre[0], pos[1] - centre[1], pos[2] - centre[2]) <= E.radius;
+    const cams = [...g.cameras.values()].filter((c) => near(c.pos));
+    const jams = [...g.jammers.values()].filter((j) => near(j.pos));
+    if (!cams.length && !jams.length) return g.error(id, 'No cameras or jammers near where you aim.');
+    for (const c of cams) g.destroyCamera(c.id);
+    for (const j of jams) {
+      g.jammers.delete(j.id);
+      g.broadcast('gadgetRemove', 'jammer', { id: j.id });
+      g.game.emitAll('cameraDestroyed', { id: j.id, pos: j.pos });
+    }
+    p.ability.charges--;
+    g.game.emitAll('empBurst', { pos: centre.map((v) => Math.round(v * 100) / 100) });
+  },
+
+  /** Volt: a shock trap on the floor. */
+  shockTrap(g, id, p) {
+    if (p.ability.charges <= 0) return g.error(id, 'No shock traps left.');
+    const aim = g.aimedSurface(p, ABILITY_STATS.shock.reach);
+    if (!aim || aim.hit.normal[1] < 0.7) return g.error(id, 'Aim at the floor within 3.5 m.');
+    const rec = { id: g.nextId++, owner: id, team: p.member.team, pos: aim.hit.point.map((v) => Math.round(v * 100) / 100) };
+    g.shocks.set(rec.id, rec);
+    g.broadcast('gadgetAdd', 'shock', { id: rec.id, owner: id, team: rec.team, pos: rec.pos });
+    p.ability.charges--;
+  },
+
+  /** Tonic: a healing field on the floor. */
+  healField(g, id, p) {
+    if (p.ability.charges <= 0) return g.error(id, 'No healing fields left.');
+    const aim = g.aimedSurface(p, ABILITY_STATS.heal.reach);
+    if (!aim || aim.hit.normal[1] < 0.7) return g.error(id, 'Aim at the floor within 3.5 m.');
+    const H = ABILITY_STATS.heal;
+    const rec = { id: g.nextId++, owner: id, team: p.member.team, pos: aim.hit.point.map((v) => Math.round(v * 100) / 100), until: Date.now() + H.durationMs };
+    g.heals.set(rec.id, rec);
+    g.broadcast('gadgetAdd', 'heal', { id: rec.id, owner: id, team: rec.team, pos: rec.pos, ms: H.durationMs });
+    p.ability.charges--;
+  },
+
+  /** Picket: an alarm sensor on a floor or wall. */
+  alarmSensor(g, id, p) {
+    if (p.ability.charges <= 0) return g.error(id, 'No alarm sensors left.');
+    const aim = g.aimedSurface(p, ABILITY_STATS.sensor.reach);
+    if (!aim || aim.hit.normal[1] < -0.5) return g.error(id, 'Aim at a floor or wall within 3 m.');
+    const { point, normal } = aim.hit;
+    let dir;
+    if (normal[1] > 0.5) { const [fx, fz] = forwardVec(p.state.yaw); dir = [fx, 0, fz]; }
+    else { const len = Math.hypot(normal[0], normal[2]) || 1; dir = [normal[0] / len, 0, normal[2] / len]; }
+    const rec = {
+      id: g.nextId++, owner: id, team: p.member.team, seen: {},
+      pos: point.map((v, i) => Math.round((v + normal[i] * 0.06) * 100) / 100), dir: dir.map((v) => Math.round(v * 100) / 100),
+    };
+    g.sensors.set(rec.id, rec);
+    g.broadcast('gadgetAdd', 'sensor', { id: rec.id, owner: id, team: rec.team, pos: rec.pos, dir: rec.dir });
     p.ability.charges--;
   },
 

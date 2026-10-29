@@ -59,6 +59,7 @@ export class Game {
     this.abilityCdEnd = 0;
     this.stunUntil = 0;
     this.mySkins = {};
+    this.myOwned = [];
     this.stunMs = 0;
     this.camView = null;      // { rec, index } while a defender watches a camera
     this.wasSelecting = false;
@@ -218,6 +219,27 @@ export class Game {
       this.effects.puff(cloud.pos, 0xcfd2d6, 0.5);
       this.sound.placed('smoke', cloud.pos);
     });
+    network.on('fireStart', (fire) => {
+      if (!this.running) return;
+      this.gadgets.addFire(fire);
+      this.audio.explosion(fire.pos, this.listener());
+    });
+    network.on('seismicPulse', ({ pos, radius }) => {
+      if (!this.running) return;
+      this.effects.ring(pos, radius, 0x6fd0ff, 0.9);
+      this.audio.beep(160, 0.5, 0.2, 'sine');
+    });
+    network.on('empBurst', ({ pos }) => {
+      if (!this.running) return;
+      this.effects.ring(pos, 10, 0xb06bff, 0.6);
+      this.effects.flash(pos);
+      this.audio.beep(900, 0.25, 0.2, 'sawtooth');
+    });
+    network.on('shockTriggered', ({ pos }) => {
+      if (!this.running) return;
+      this.effects.puff(pos, 0x39f0ff, 0.5);
+      this.audio.beep(1400, 0.15, 0.2, 'square');
+    });
     network.on('claymoreDestroyed', ({ pos }) => {
       if (!this.running) return;
       this.effects.debris(pos, 0x4a5a3a, 5);
@@ -281,6 +303,7 @@ export class Game {
 
     this.myTeam = me.team;
     this.mySkins = me.skins || {};   // my equipped gun skins, drawn on my own gun
+    this.myOwned = me.owned || [];   // operators I own (the select screen locks the others)
     this.members.clear();
     for (const p of payload.players) this.members.set(p.id, { name: p.name, team: p.team });
 
@@ -503,7 +526,7 @@ export class Game {
         if (typeof p.hp === 'number' && this.local?.alive) this.health = p.hp;
       } else {
         const r = this.remotes.get(p.id);
-        if (r) { r.spotted = !!p.sp && this.myTeam === 'attack'; r.push(snap.t, p); }
+        if (r) { r.spotted = !!p.sp && r.team !== this.myTeam; r.push(snap.t, p); }
       }
     }
   }
@@ -814,7 +837,7 @@ export class Game {
     });
     this.ui.showOperatorSelect(selecting && local.alive, {
       team: this.myTeam, picks: this.picks, names, myId: this.network.id, myOp: this.loadout.op,
-      myUtility: this.loadout.utility?.id,
+      myUtility: this.loadout.utility?.id, owned: this.myOwned,
       timeText: `${left}s`, onPick: (opId) => this.network.pickOperator(opId), onUtility: (id) => this.network.pickUtility(id),
     });
     this.ui.updateSpawnPicker(noBody && local.alive, this.spawnChoice, this.mapDef.spawns.attack);

@@ -532,13 +532,13 @@ export class UI {
 
   // ---------------------------------------------------------------- operator select
 
-  showOperatorSelect(on, { team, picks, names, myId, myOp, myUtility, timeText, onPick, onUtility } = {}) {
+  showOperatorSelect(on, { team, picks, names, myId, myOp, myUtility, owned = [], timeText, onPick, onUtility } = {}) {
     const el = $('op-select');
     el.classList.toggle('hidden', !on);
     this.hud.classList.toggle('selecting', on);
     if (!on) { this.lastSelect = null; return; }
     $('op-timer').textContent = timeText;
-    const sig = JSON.stringify([team, picks, myOp, myUtility]);
+    const sig = JSON.stringify([team, picks, myOp, myUtility, owned]);
     if (sig === this.lastSelect) return;
     this.lastSelect = sig;
     const cards = $('op-cards');
@@ -552,9 +552,10 @@ export class UI {
     for (const op of operatorsFor(team)) {
       const holderId = Object.keys(picks || {}).find((id) => picks[id].op === op.id && picks[id].confirmed && id !== myId);
       const taken = op.unique && !!holderId;
+      const locked = !!op.price && !owned.includes(op.id);
       const mine = op.id === myOp;
       const card = document.createElement('div');
-      card.className = `op-card${mine ? ' selected' : ''}${taken ? ' taken' : ''}`;
+      card.className = `op-card${mine ? ' selected' : ''}${taken || locked ? ' taken' : ''}`;
       const utilities = op.utilities.map((id) => {
         const u = UTILITIES[id];
         const chosen = mine && id === myUtility;
@@ -568,11 +569,11 @@ export class UI {
         <div class="op-ab">${op.ability ? `<b>${op.ability.name}</b><br>${fillKeys(op.ability.desc)}` : '<i>No special ability</i>'}</div>
         <div class="op-utils-label">Utility${mine ? ' (pick one)' : ''}</div>
         <div class="op-utils${mine ? '' : ' inactive'}">${utilities}</div>
-        <div class="op-who">${taken ? `Taken by ${names[holderId] || 'a teammate'}` : (mine ? 'Your pick' : (op.unique ? '' : 'Unlimited'))}</div>`;
+        <div class="op-who">${locked ? `Locked: buy in the Operators tab (${op.price.toLocaleString()})` : taken ? `Taken by ${names[holderId] || 'a teammate'}` : (mine ? 'Your pick' : (op.unique ? '' : 'Unlimited'))}</div>`;
       card.addEventListener('click', (e) => {
         const util = e.target.closest('[data-util]');
         if (util && mine) { onUtility?.(util.dataset.util); return; }
-        if (!taken && !mine) onPick(op.id);
+        if (!taken && !locked && !mine) onPick(op.id);
       });
       cards.appendChild(card);
     }
