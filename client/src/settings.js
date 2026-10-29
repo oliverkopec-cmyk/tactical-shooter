@@ -1,14 +1,17 @@
-// Player settings, saved in localStorage (silently falls back to defaults if storage is unavailable).
+// Player settings. The account's copy is the source of truth once logged in;
+// localStorage only keeps the last values so the game has them before login.
+
+import { SETTING_DEFAULTS, SETTING_LIMITS, clampSetting, sanitizeSettings } from '../../shared/settings.js';
 
 const KEY = 'breachline:settings';
-const DEFAULTS = { sensitivity: 1, volume: 0.5, fov: 78 };
-const LIMITS = { sensitivity: [0.2, 3], volume: [0, 1], fov: [60, 100] };
 
 function load() {
-  try {
-    const saved = JSON.parse(localStorage.getItem(KEY) || '{}');
-    return { ...DEFAULTS, ...saved };
-  } catch { return { ...DEFAULTS }; }
+  try { return sanitizeSettings(JSON.parse(localStorage.getItem(KEY) || '{}')); }
+  catch { return { ...SETTING_DEFAULTS }; }
+}
+
+function cache() {
+  try { localStorage.setItem(KEY, JSON.stringify(settings)); } catch { /* storage unavailable */ }
 }
 
 export const settings = load();
@@ -20,10 +23,16 @@ export function onSettingsChange(fn) {
 }
 
 export function setSetting(name, value) {
-  const [lo, hi] = LIMITS[name];
-  settings[name] = Math.max(lo, Math.min(hi, Number(value)));
-  try { localStorage.setItem(KEY, JSON.stringify(settings)); } catch { /* storage unavailable */ }
+  settings[name] = clampSetting(name, value);
+  cache();
   for (const fn of listeners) fn(name, settings[name]);
 }
 
-export const SETTING_LIMITS = LIMITS;
+/** Load the settings saved on the account (after logging in). */
+export function applyAccountSettings(saved) {
+  for (const [name, value] of Object.entries(sanitizeSettings(saved))) {
+    if (settings[name] !== value) setSetting(name, value);
+  }
+}
+
+export { SETTING_LIMITS };

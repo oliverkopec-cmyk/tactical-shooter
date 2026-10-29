@@ -2,9 +2,11 @@
 
 A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite on the client, Node.js + Socket.IO on an authoritative server. One Node process serves both the game client and the realtime server, so the whole thing deploys as a single Render web service.
 
-## Status: Stage 9 (sound, melee on walls, objective sites)
+## Status: Stage 9 (accounts)
 
-- Enter a name, create a room (4-letter code) or join one
+- Log in or create an account (username + password); you stay logged in between visits
+- Your profile shows your level, Money, Polish Money and rank points, and saves your settings
+- Create a room (4-letter code) or join one; your username is your name in the lobby and in matches
 - Pick Attack or Defense in the lobby (max 5 per team); the host starts the match
 - First-person movement: WASD, mouse look (pointer lock), Shift sprint, Ctrl or Z crouch, Q/E lean
 - Server-authoritative movement with client-side prediction, reconciliation and interpolation of other players
@@ -65,6 +67,10 @@ npm run build && npm start
 
 Then open http://localhost:3000.
 
+Each browser keeps one login, and an account can only be connected from one tab at a time (a new tab takes over). To play two accounts on one computer, use a normal window and a private window, or open one tab at `localhost` and the other at `127.0.0.1`.
+
+Without `DATABASE_URL`, accounts are saved to a local file database in `.data/` (PGlite: real Postgres running inside Node), so nothing needs installing. To use your hosted database locally instead, put `DATABASE_URL=...` in a `.env` file in the project folder (git ignores it).
+
 Add `?debug` to the URL to expose `window.breachline` (game, network, ui) in the console.
 
 ## Project layout
@@ -80,8 +86,12 @@ shared/            Code used by BOTH client and server
   drone.js         drone physics (shared prediction + authority) and tuning
   operators.js     OPERATOR CONFIG: one entry per operator (shared by client and server)
   rules.js         which inputs are allowed in each round phase, objective zone test
+  account.js       username/password rules, which operators an account owns
+  settings.js      setting defaults and limits (the server cleans saved settings with these)
 server/
   index.js         Express static hosting + Socket.IO events
+  db.js            Postgres connection (DATABASE_URL) or local PGlite fallback, table setup
+  accounts.js      sign-up/log-in API, session cookies, profiles, socket login check
   rooms.js         room codes, join/leave, teams, host
   gameState.js     authoritative simulation and snapshots per room
   combat.js        pose history (lag compensation) and shot resolution
@@ -90,7 +100,8 @@ server/
   rounds.js        round/match state machine, scores, halftime, win conditions
 client/
   index.html       lobby screens + HUD markup
-  src/main.js      wires UI, network, game
+  src/main.js      wires login, UI, network, game
+  src/account.js   calls the account API (session, sign-up, log-in, settings)
   src/network.js   Socket.IO wrapper, server clock estimate
   src/game.js      Three.js scene and frame loop
   src/player.js    local player: input, prediction, reconciliation, camera
@@ -105,6 +116,15 @@ client/
   src/map.js       renders the shared map, lighting
   src/ui.js        lobby and HUD DOM
 ```
+
+## Accounts
+
+- Passwords are hashed with bcrypt; only the hash is stored.
+- Logging in creates a random session token. The browser keeps it in an `httpOnly` cookie (page scripts can't read it) and the database stores only its SHA-256 hash. Sessions last 90 days and every visit extends them.
+- The Socket.IO server refuses connections without a valid session, so every player in a room is a real account.
+- The client can only read its profile and save its own settings (cleaned and clamped by the server). Money, level, rank points and owned items are only ever changed by server code.
+- Polish Money is a placeholder: the column exists and is shown, but nothing can change it.
+- Log-in and sign-up are limited to 20 attempts per IP address per 10 minutes.
 
 ## Netcode
 
@@ -162,4 +182,16 @@ Every interior wall piece in `shared/map.js` is split into a grid of panels by `
 | Start command | `npm start` |
 | Health check path | `/healthz` |
 
-Render provides `PORT`; the server reads it automatically. WebSockets work on Render web services without extra configuration.
+Render provides `PORT`; the server reads it automatically.
+
+### Database (accounts)
+
+Saved data lives in a free hosted Postgres database. The server creates its tables on startup.
+
+1. Go to https://neon.com and sign up (GitHub login is fine).
+2. Create a project. Name it `breachline`, keep the latest Postgres version, and pick the region closest to your Render service's region.
+3. On the project dashboard, click **Connect**. Copy the connection string (it starts with `postgresql://` and ends with `?sslmode=require`). Treat it like a password.
+4. In the Render dashboard, open the `breachline` service → **Environment** → **Add Environment Variable**. Key `DATABASE_URL`, value: the connection string. Save; Render redeploys.
+5. Check the deploy logs: the line `DATABASE_URL is not set` should be gone. On the live site, the yellow "Dev mode" note under the login form disappears.
+
+Supabase also works: use the **Session pooler** connection string from Project Settings → Database, with your database password filled in. WebSockets work on Render web services without extra configuration.

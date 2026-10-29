@@ -100,6 +100,19 @@ button.ghost { background: transparent; }
 .join-row input { flex: 1; min-width: 0; text-transform: uppercase; letter-spacing: 0.3em; text-align: center; }
 
 .error { color: var(--error); min-height: 1em; margin: 0; font-size: 14px; }
+.warning { color: var(--accent); margin: 0; font-size: 13px; text-align: center; }
+
+.auth-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.auth-tab { background: transparent; color: var(--muted); }
+.auth-tab.active { background: rgba(255, 255, 255, 0.1); color: var(--text); border-color: var(--accent); }
+
+.profile-card { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+.profile-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.profile-top button.small { margin-top: 0; }
+.profile-name { font-size: 18px; font-weight: 700; overflow-wrap: anywhere; }
+.profile-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; text-align: center; }
+.profile-stats div { display: flex; flex-direction: column; gap: 2px; }
+.profile-stats b { font-size: 17px; }
 .muted { color: var(--muted); font-size: 13px; }
 .center { text-align: center; margin: 0; }
 
