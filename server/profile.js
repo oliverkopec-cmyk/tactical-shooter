@@ -3,7 +3,8 @@
 import { ownedOperatorIds } from '../shared/account.js';
 import { sanitizeSettings } from '../shared/settings.js';
 import { QUESTS } from '../shared/progression.js';
-import { SKINS, SKIN_IDS, FREE_SKINS } from '../shared/skins.js';
+import { DAILY_MONEY_CAP, earnedToday } from './progression.js';
+import { SKINS } from '../shared/skins.js';
 import { WEAPONS } from '../shared/weapons.js';
 import { OPERATORS } from '../shared/operators.js';
 
@@ -15,19 +16,45 @@ export function configureProfile(opts) { unlockAll = !!opts.unlockAll; devTools 
 export const skinsUnlocked = () => unlockAll;
 export const devToolsEnabled = () => devTools;
 
-/** Every skin the account may equip: the free ones, what it bought, or all of them in dev mode. */
-export function ownedSkinsOf(row) {
-  if (unlockAll) return [...SKIN_IDS];
-  const bought = Array.isArray(row.owned_skins) ? row.owned_skins.filter((id) => SKINS[id]) : [];
-  return [...new Set([...FREE_SKINS, ...bought])];
+/**
+ * What skins the account owns. `owned_skins` holds two kinds of entry: a plain skin id
+ * (bought in the old shop, owned on every gun) and "gun:skin" (won from that gun's crate).
+ */
+function ownership(row) {
+  const everyGun = new Set(), perGun = new Map();
+  for (const entry of Array.isArray(row.owned_skins) ? row.owned_skins : []) {
+    if (typeof entry !== 'string') continue;
+    const [a, b] = entry.split(':');
+    if (b === undefined) { if (SKINS[a]) everyGun.add(a); }
+    else if (WEAPONS[a] && SKINS[b]) { if (!perGun.has(a)) perGun.set(a, new Set()); perGun.get(a).add(b); }
+  }
+  return { everyGun, perGun };
+}
+
+/** Does the account own this skin for this gun? */
+export function ownsSkin(row, weapon, skin) {
+  if (!WEAPONS[weapon] || !SKINS[skin]) return false;
+  if (unlockAll) return true;
+  const { everyGun, perGun } = ownership(row);
+  return everyGun.has(skin) || !!perGun.get(weapon)?.has(skin);
+}
+
+/** { gunId: [skinIds] } of the skins owned for each gun (only guns with at least one). */
+export function ownedSkinsByGun(row) {
+  const { everyGun, perGun } = ownership(row);
+  const out = {};
+  for (const gun of Object.keys(WEAPONS)) {
+    const list = unlockAll ? Object.keys(SKINS) : [...new Set([...everyGun, ...(perGun.get(gun) || [])])];
+    if (list.length) out[gun] = list;
+  }
+  return out;
 }
 
 /** { weaponId: skinId }, with anything unknown or not owned dropped. */
 export function equippedSkinsOf(row) {
-  const owned = new Set(ownedSkinsOf(row));
   const out = {};
   for (const [weapon, skin] of Object.entries(row.equipped_skins || {})) {
-    if (WEAPONS[weapon] && owned.has(skin)) out[weapon] = skin;
+    if (ownsSkin(row, weapon, skin)) out[weapon] = skin;
   }
   return out;
 }
@@ -64,10 +91,11 @@ export function profileOf(row) {
     polishMoney: row.polish_money,
     rankPoints: row.rank_points,
     ownedOperators: ownedOperatorIds(row.owned_operators),
-    ownedSkins: ownedSkinsOf(row),
+    ownedSkins: ownedSkinsByGun(row),
     equippedSkins: equippedSkinsOf(row),
     equippedOperators: equippedOperatorsOf(row),
     skinsUnlocked: unlockAll,
+    dailyMoney: { earned: earnedToday(row.stats), limit: DAILY_MONEY_CAP },
     devTools,
     settings: sanitizeSettings(row.settings),
     quests: questsOf(row),

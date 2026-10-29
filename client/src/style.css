@@ -861,3 +861,61 @@ button.small { font-size: 12px; padding: 4px 10px; margin-top: 6px; }
 .map-option.selected { border-color: var(--accent); background: rgba(240, 180, 60, 0.12); }
 .map-option:disabled { opacity: 1; cursor: default; }
 .map-option:disabled:not(.selected) { opacity: 0.55; }
+
+/* ---------------------------------------------------------------- stage 17: crates */
+.side-col.wide-left { width: 560px; }
+.crate-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; max-height: calc(100vh - 290px); overflow-y: auto; padding: 2px; }
+.crate-card { display: flex; flex-direction: column; align-items: stretch; gap: 4px; text-align: left; padding: 8px; font-weight: 400; border: 2px solid var(--line); border-radius: 10px; }
+.crate-card.selected { border-color: var(--accent); background: rgba(240, 180, 60, 0.12); }
+.crate-card .gun-icon { align-self: center; opacity: 0.9; }
+.odds-row { display: flex; justify-content: space-between; font-size: 13px; }
+.crate-skins { display: flex; flex-wrap: wrap; gap: 4px; }
+.crate-skin { font-size: 11px; padding: 2px 7px; border: 1px solid var(--rar, var(--line)); border-radius: 10px; color: var(--muted); }
+.crate-skin.owned { color: var(--text); background: rgba(255, 255, 255, 0.08); }
+#shop-detail { max-height: calc(100vh - 190px); overflow-y: auto; }
+
+#crate-overlay { position: absolute; inset: 0; z-index: 12; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; padding-bottom: 40px; cursor: pointer; }
+#screen-home.crate-mode .tab-panel, #screen-home.crate-mode .tabs { visibility: hidden; }
+#crate-hint { font-size: 14px; letter-spacing: 0.08em; text-transform: uppercase; }
+#crate-result { display: flex; flex-direction: column; align-items: center; gap: 6px; cursor: default; text-shadow: 0 2px 12px rgba(0, 0, 0, 0.8); }
+.crate-rarity { font-size: 18px; font-weight: 900; letter-spacing: 0.3em; }
+.crate-skin-name { font-size: 32px; font-weight: 900; }
+.crate-note { font-size: 15px; font-weight: 700; }
+.crate-note.dup { color: var(--accent); }
+.crate-note.new { color: #6fdc7a; }
+.crate-buttons { display: flex; gap: 10px; margin-top: 10px; }
+@media (max-width: 900px) { .crate-grid { grid-template-columns: repeat(2, 1fr); max-height: none; } .side-col.wide-left { width: 100%; } }
+
+/* ---------------------------------------------------------------- stage 17: operator icons */
+.op-sides { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.op-side { position: relative; border: 1px solid var(--line); border-radius: 10px; padding: 10px; overflow: hidden; }
+.op-side .side-bg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; opacity: 0.07; pointer-events: none; }
+.op-side .side-bg svg { width: 85%; height: auto; }
+.op-side.attack { color: var(--attack); border-top: 3px solid var(--attack); }
+.op-side.defense { color: var(--defense); border-top: 3px solid var(--defense); }
+.side-title { position: relative; font-size: 12px; font-weight: 800; letter-spacing: 0.2em; margin-bottom: 8px; }
+.icon-grid { position: relative; display: grid; grid-template-columns: repeat(auto-fill, minmax(68px, 1fr)); gap: 8px; }
+.op-tile { position: relative; padding: 4px; line-height: 0; border-radius: 12px; background: transparent; border: 2px solid transparent; }
+.op-tile:hover:not(:disabled) { background: rgba(255, 255, 255, 0.08); }
+.op-tile.selected { border-color: var(--accent); background: rgba(240, 180, 60, 0.12); }
+.op-tile.locked .op-icon { filter: grayscale(1) brightness(0.55); }
+.op-tile .lock-badge { position: absolute; top: 4px; right: 6px; font-size: 14px; line-height: 1; }
+.op-tile .tile-price { position: absolute; left: 0; right: 0; bottom: 4px; text-align: center; font-size: 11px; font-weight: 800; line-height: 1.2; color: #fff; text-shadow: 0 1px 3px #000; }
+.op-tile .eq-badge { position: absolute; top: 4px; left: 6px; font-size: 12px; font-weight: 900; line-height: 1; color: #6fdc7a; text-shadow: 0 1px 3px #000; }
+.op-icon { display: block; }
+#name-tip { position: fixed; left: 0; top: 0; z-index: 70; padding: 5px 10px; border-radius: 6px; background: rgba(14, 17, 22, 0.97); border: 1px solid var(--line); font-size: 13px; font-weight: 700; pointer-events: none; }
+.op-name { display: flex; align-items: center; gap: 8px; }
+.op-ico { display: inline-flex; line-height: 0; }
+@media (max-width: 900px) { .op-sides { grid-template-columns: 1fr; } }
+
+/* ---------------------------------------------------------------- stage 17: match top bar */
+#scoreboard { gap: 10px; align-items: center; }
+#top-icons-mine, #top-icons-enemy { display: flex; gap: 4px; align-items: center; min-width: 0; }
+#top-icons-mine { order: 0; flex-direction: row-reverse; }   /* nearest the score first */
+#score-attack-box.mine, #score-defense-box.mine { order: 1; }
+#round-clock { order: 2; }
+#score-attack-box:not(.mine), #score-defense-box:not(.mine) { order: 3; }
+#top-icons-enemy { order: 4; }
+.top-icon { display: inline-flex; line-height: 0; border-radius: 8px; }
+.top-icon.dead { filter: grayscale(0.7); }
+@media (max-width: 900px) { .top-icon svg { width: 26px; height: 26px; } }
