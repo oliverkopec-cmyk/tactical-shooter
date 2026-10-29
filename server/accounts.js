@@ -17,6 +17,7 @@ import { WEAPONS } from '../shared/weapons.js';
 import { OPERATORS } from '../shared/operators.js';
 import { ownedOperatorIds } from '../shared/account.js';
 import { Progression } from './progression.js';
+import { Social } from './social.js';
 
 const COOKIE = 'bl_session';
 const SESSION_DAYS = 90;
@@ -43,6 +44,8 @@ export class Accounts {
     this.online = new Map();   // accountId -> socket (one connection per account)
     this.attempts = new Map(); // ip -> { count, resetAt }
     this.progression = new Progression(this);   // money, xp, rank points and daily quests
+    this.social = new Social(this);             // friends, presence and parties
+    this.lookups = new Map();                   // ip -> { count, resetAt } for friend searches
     // Skins are earned or bought. UNLOCK_ALL_SKINS=1 is a developer switch that unlocks them all.
     configureProfile({
       unlockAll: process.env.UNLOCK_ALL_SKINS === '1',
@@ -57,6 +60,7 @@ export class Accounts {
       this.db.query('DELETE FROM sessions WHERE expires_at < now()').catch((err) => console.error('Session cleanup failed:', err.message));
       const now = Date.now();
       for (const [ip, a] of this.attempts) if (a.resetAt < now) this.attempts.delete(ip);
+      for (const [ip, l] of this.lookups) if (l.resetAt < now) this.lookups.delete(ip);
     };
     sweep();
     setInterval(sweep, 60 * 60 * 1000).unref();
@@ -194,6 +198,28 @@ export class Accounts {
       res.json({ account: profileOf(rows[0]) });
     });
 
+    // ---------------------------------------------------------------- friends
+
+    const authed = (handler) => async (req, res) => {
+      const found = await this.fromCookie(req.headers.cookie);
+      if (!found) return res.status(401).json({ error: 'Not logged in.' });
+      return handler(found.row, req, res);
+    };
+    const answer = (res, out) => { const { status, ...rest } = out; res.status(status || 200).json(rest); };
+
+    r.get('/friends', authed(async (row, _req, res) => res.json(await this.social.list(row.id))));
+    r.get('/friends/search', authed(async (row, req, res) => {
+      // A few searches a second is plenty; more looks like someone listing every username
+      const now = Date.now();
+      let l = this.lookups.get(req.ip);
+      if (!l || l.resetAt < now) this.lookups.set(req.ip, (l = { count: 0, resetAt: now + 60000 }));
+      if (++l.count > 60) return res.status(429).json({ error: 'Too many searches. Wait a minute.' });
+      res.json({ results: await this.social.search(row.id, req.query.q) });
+    }));
+    r.post('/friends/request', authed(async (row, req, res) => answer(res, await this.social.request(row.id, req.body?.username))));
+    r.post('/friends/respond', authed(async (row, req, res) => answer(res, await this.social.respond(row.id, Number(req.body?.id), !!req.body?.accept))));
+    r.post('/friends/remove', authed(async (row, req, res) => answer(res, await this.social.remove(row.id, Number(req.body?.id)))));
+
     // ---------------------------------------------------------------- crates
 
     // Open a gun's crate. The server takes the Money, draws the skin and records it; the client only
@@ -297,7 +323,12 @@ export class Accounts {
       prev.disconnect(true);
     }
     this.online.set(id, socket);
-    socket.on('disconnect', () => { if (this.online.get(id) === socket) this.online.delete(id); });
+    socket.on('disconnect', () => {
+      if (this.online.get(id) !== socket) return;
+      this.online.delete(id);
+      this.social.onDisconnect(id);
+    });
+    this.social.onConnect(id);
     this.db.query('UPDATE accounts SET last_seen = now() WHERE id = $1', [id]).catch(() => {});
   }
 }

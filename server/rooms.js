@@ -8,9 +8,10 @@ import { DEFAULT_MAP_ID, MAP_IDS } from '../shared/map.js';
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
 
 export class RoomManager {
-  constructor(io, progression = null) {
+  constructor(io, progression = null, social = null) {
     this.io = io;
     this.progression = progression;   // pays out rewards and rank changes when a match ends
+    this.social = social;             // told when players join, leave or start a match (friends see it)
     this.rooms = new Map(); // code -> Room
   }
 
@@ -26,7 +27,7 @@ export class RoomManager {
   }
 
   createRoom() {
-    const room = new Room(this.io, this.generateCode(), () => this.rooms.delete(room.code), this.progression);
+    const room = new Room(this.io, this.generateCode(), () => this.rooms.delete(room.code), this.progression, this.social);
     this.rooms.set(room.code, room);
     return room;
   }
@@ -48,9 +49,10 @@ export function cleanName(name) {
 }
 
 class Room {
-  constructor(io, code, onEmpty, progression = null) {
+  constructor(io, code, onEmpty, progression = null, social = null) {
     this.io = io;
     this.progression = progression;
+    this.social = social;
     this.code = code;
     this.onEmpty = onEmpty;
     this.channel = `room:${code}`;
@@ -87,6 +89,7 @@ class Room {
       socket.emit('matchStart', this.game.startPayload(member.team));
     }
     this.broadcastState();
+    this.social?.presenceChanged(accountId);
     return member;
   }
 
@@ -95,6 +98,7 @@ class Room {
     this.members.delete(socket.id);
     socket.leave(this.channel);
     socket.data.room = null;
+    this.social?.presenceChanged(socket.data.account.id);
     if (this.game) this.game.removePlayer(socket.id);
 
     if (this.members.size === 0) {
@@ -143,6 +147,7 @@ class Room {
     for (const m of this.members.values()) this.game.addPlayer(m);
     this.game.start();
     for (const m of this.members.values()) this.io.to(m.id).emit('matchStart', this.game.startPayload(m.team));
+    for (const m of this.members.values()) this.social?.presenceChanged(m.accountId);
     this.broadcastState();
     return {};
   }
@@ -177,6 +182,7 @@ class Room {
     for (const m of this.members.values()) m.team = m.startTeam || m.team;
     if (notice) this.io.to(this.channel).emit('notice', { message: notice });
     this.broadcastState();
+    for (const m of this.members.values()) this.social?.presenceChanged(m.accountId);
   }
 
   destroy() {

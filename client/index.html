@@ -69,6 +69,7 @@
             <button id="join-btn">Join room</button>
           </div>
           <p id="home-error" class="error"></p>
+          <p id="party-note" class="muted small-note"></p>
         </div>
       </div>
       <div class="side-col right">
@@ -116,9 +117,11 @@
     </div>
 
     <section id="tab-friends" class="tab-panel hidden">
-      <div class="center-card card">
-        <h2>Friends</h2>
-        <p class="muted">Friends and parties are coming soon.</p>
+      <div class="side-col left wide-left">
+        <div id="friends-main" class="card"></div>
+      </div>
+      <div class="side-col right">
+        <div id="party-panel" class="card"></div>
       </div>
     </section>
   </div>
@@ -269,6 +272,13 @@
   </div>
 
   <div id="name-tip" class="hidden"></div>
+
+  <!-- Party invite pop-up and friend notices -->
+  <div id="party-invite" class="hidden">
+    <div id="invite-text"></div>
+    <div class="invite-buttons"><button type="button" id="invite-accept" class="primary">Accept</button><button type="button" id="invite-decline">Decline</button></div>
+  </div>
+  <div id="social-toast" class="hidden"></div>
 
   <!-- Hover card with a gun's stats (any element with data-gun) -->
   <div id="gun-tip" class="hidden"></div>

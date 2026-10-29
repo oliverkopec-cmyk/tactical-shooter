@@ -18,7 +18,8 @@ const pips = (n) => '●'.repeat(n) + '○'.repeat(3 - n);
 
 export class Menu {
   /** getAccount() -> the current profile; setAccount(profile) stores a new one. */
-  constructor({ getAccount, setAccount, onSettings }) {
+  constructor({ getAccount, setAccount, onSettings, onTab = () => {} }) {
+    this.onTab = onTab;
     this.getAccount = getAccount;
     this.setAccount = setAccount;
     this.onSettings = onSettings;
@@ -64,6 +65,7 @@ export class Menu {
   setActive(on) {
     this.active = on;
     $('menu-canvas').classList.toggle('hidden', !on);
+    this.onTab(on ? this.tab : null);
     if (!on) { this.scene?.stop(); return; }
     if (!this.scene) {
       try { this.scene = new MenuScene($('menu-canvas')); } catch { this.scene = null; $('menu-canvas').classList.add('hidden'); }
@@ -74,6 +76,7 @@ export class Menu {
 
   setTab(tab) {
     this.tab = tab;
+    this.onTab(tab);
     for (const btn of document.querySelectorAll('#menu-tabs .tab')) btn.classList.toggle('active', btn.dataset.tab === tab);
     for (const panel of document.querySelectorAll('.tab-panel')) panel.classList.toggle('hidden', panel.id !== `tab-${tab}`);
     this.refresh();

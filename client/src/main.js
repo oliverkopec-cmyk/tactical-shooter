@@ -6,6 +6,7 @@ import { Game } from './game.js';
 import { getSession, signUp, logIn, logOut, syncSettingsToAccount } from './account.js';
 import { applyAccountSettings } from './settings.js';
 import { Menu } from './menu.js';
+import { Social } from './social.js';
 import { usernameError, passwordError } from '../../shared/account.js';
 
 const network = new Network();
@@ -24,7 +25,8 @@ function setAccount(profile) {
   ui.renderProfile(profile);
   menu.refresh();
 }
-const menu = new Menu({ getAccount: () => account, setAccount, onSettings: () => ui.openSettings(false) });
+const social = new Social({ network, getAccount: () => account, onCreateRoom: () => createRoom() });
+const menu = new Menu({ getAccount: () => account, setAccount, onSettings: () => ui.openSettings(false), onTab: (tab) => social.setVisible(tab === 'friends') });
 ui.onShow = (screen) => menu.setActive(screen === 'home');
 syncSettingsToAccount(() => !!account);
 
@@ -34,10 +36,14 @@ function enterAccount(profile) {
   ui.homeError('');
   ui.show('home');
   network.connect();
+  social.updatePlayTab();
+  social.refresh();
 }
 
 function leaveAccount(message = '') {
   ui.hideMatchSummary();
+  social.reset();
+  social.updatePlayTab();
   account = null;
   room = null;
   game.stop();
@@ -65,13 +71,16 @@ ui.bindAuth({
   },
 });
 
+/** Create a room (a party's leader brings the whole party). */
+async function createRoom() {
+  ui.homeError('');
+  if (!(await network.ensureConnected())) return ui.homeError(outdated || 'Could not connect to the server.');
+  const res = await network.request('createRoom');
+  if (!res.ok) return ui.homeError(res.error || 'Could not create room.');
+}
+
 ui.bindHome({
-  onCreate: async () => {
-    ui.homeError('');
-    if (!(await network.ensureConnected())) return ui.homeError(outdated || 'Could not connect to the server.');
-    const res = await network.request('createRoom');
-    if (!res.ok) return ui.homeError(res.error || 'Could not create room.');
-  },
+  onCreate: createRoom,
   onJoin: async () => {
     ui.homeError('');
     if (ui.code.length !== 4) return ui.homeError('Enter a 4-letter room code.');

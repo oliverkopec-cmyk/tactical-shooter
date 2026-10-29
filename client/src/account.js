@@ -46,3 +46,10 @@ export const buyOperator = (operator) => call('POST', 'operators/buy', { operato
 
 /** Open a gun's crate. The server charges the Money and picks the skin: { account, result } or { error }. */
 export const openCrate = (weapon) => call('POST', 'crates/open', { weapon });
+
+// ---------------------------------------------------------------- friends
+export const getFriends = () => call('GET', 'friends');
+export const searchPlayers = (q) => call('GET', `friends/search?q=${encodeURIComponent(q)}`);
+export const sendFriendRequest = (username) => call('POST', 'friends/request', { username });
+export const answerFriendRequest = (id, accept) => call('POST', 'friends/respond', { id, accept });
+export const removeFriend = (id) => call('POST', 'friends/remove', { id });

@@ -2,7 +2,16 @@
 
 A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite on the client, Node.js + Socket.IO on an authoritative server. One Node process serves both the game client and the realtime server, so the whole thing deploys as a single Render web service.
 
-## Status: Stage 17 (crates, operator icons and match top bar)
+## Status: Stage 18 (friends and parties)
+
+- **Friends tab:** search players by username (at least 2 letters), send a friend request, accept or decline requests that were sent to you, cancel one you sent, and remove friends. Asking someone who already asked you makes you friends straight away. You can have 100 friends and 20 requests waiting. A badge on the tab counts requests waiting for you.
+- **Who is online:** every friend shows **Online · in the menu**, **In a lobby**, **In a match** or **Offline**, updated live (no refresh needed), with their rank icon.
+- **Parties:** press **Invite to party** on an online friend (you can only invite friends; a party holds up to 5, the size of a team). They get a **pop-up** to Accept or Decline, open for 60 seconds. The Friends tab shows the party with a crown on the leader and each member's status; anyone can leave. If the leader leaves, the next member leads; a party of one disbands; disconnecting leaves the party.
+- **Party room:** the party leader presses **Create room for the party** (also the Play tab's create button, which then shows the party size). Everyone in the party who is in the menu joins the room, **on the leader's team**. Anyone already in another room is skipped and the leader is told. Other members can't create a room while in the party (they can still join a room by code).
+- Removing a friend who is in your party takes them out of it.
+- **Server:** friendships are in the database (new table `friendships`, created automatically). Presence is worked out from live connections and parties are kept in memory only, so memory use stays tiny. Friend searches are limited to 60 a minute per address.
+
+### Earlier: Stage 17 (crates, operator icons and match top bar)
 
 - **Crates replace buying skins directly.** The Shop tab is a grid of 32 crates, one per gun, each showing the gun, the price (**900 Money**) and how many of its 13 skins you own. **Money only: Polish Money can't be used.** Click a crate to see the odds (**Common 60%, Rare 25%, Epic 12%, Legendary 3%**) and the full list of possible skins, with the ones you own ticked.
 - **The server picks the result** (`POST /api/crates/open`, a secure random draw). The client only names the gun; any price, skin or rarity it sends is ignored. The Money is taken and the skin recorded under a per-account lock, so a double click can't open two crates on one balance.
@@ -142,12 +151,7 @@ Six new operators, bought with Money in the Operators tab (the original eight an
 
 ## Planned: later stages
 
-Written down so they aren't forgotten (Stage 17 is being built now; see Status).
-
-### Stage 18 - Friends and parties
-
-- Friends tab: search by username, send/accept/decline friend requests, remove friends. Show who is online, in the menu, or in a match.
-- Invite an online friend to your party from the Friends tab. They get a pop-up to accept. The party leader can create a room and the whole party joins it.
+Written down so they aren't forgotten (see Status for what is built).
 
 ### Stage 19 - Finishing up
 
