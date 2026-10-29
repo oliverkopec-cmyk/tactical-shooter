@@ -31,42 +31,83 @@
     </form>
   </div>
 
-  <!-- Profile + create/join -->
-  <div id="screen-home" class="screen hidden">
-    <div class="panel">
-      <h1>BREACHLINE</h1>
-      <div class="profile-card">
-        <div class="profile-top">
-          <div id="profile-rank-icon" class="profile-rank-icon"></div>
-          <div class="profile-id">
-            <div id="profile-name" class="profile-name"></div>
-            <div id="profile-level" class="muted"></div>
+  <!-- Main menu: a 3D scene with your operator, a top bar and tabs -->
+  <canvas id="menu-canvas" class="hidden"></canvas>
+  <div id="screen-home" class="screen menu hidden">
+    <header class="topbar">
+      <div class="top-brand">BREACHLINE</div>
+      <div class="top-profile">
+        <div id="profile-rank-icon" class="profile-rank-icon"></div>
+        <div class="top-id">
+          <div id="profile-name" class="profile-name"></div>
+          <div class="top-sub"><span id="profile-rank-label" class="rank-label"></span><span id="profile-level" class="muted"></span></div>
+          <div class="bar thin"><div id="profile-rank-bar"></div></div>
+          <div id="profile-rank" class="muted top-rank"></div>
+        </div>
+      </div>
+      <div class="top-stats">
+        <div class="stat"><span>Money</span><b id="profile-money">0</b></div>
+        <div class="stat"><span>Polish Money</span><b id="profile-polish">0</b></div>
+      </div>
+      <button id="logout-btn" class="ghost small">Log out</button>
+    </header>
+    <nav class="tabs" id="menu-tabs">
+      <button type="button" class="tab active" data-tab="play">Play</button>
+      <button type="button" class="tab" data-tab="operators">Operators</button>
+      <button type="button" class="tab" data-tab="shop">Shop</button>
+      <button type="button" class="tab" data-tab="friends">Friends</button>
+      <button type="button" class="tab" data-tab="settings">Settings</button>
+    </nav>
+
+    <section id="tab-play" class="tab-panel">
+      <div class="side-col left">
+        <div class="card">
+          <h2>Play</h2>
+          <button id="create-btn" class="primary">Create room</button>
+          <div class="join-row">
+            <input id="code-input" maxlength="4" placeholder="CODE" autocomplete="off" />
+            <button id="join-btn">Join room</button>
           </div>
-          <button id="logout-btn" class="ghost small">Log out</button>
-        </div>
-        <div class="profile-rank-row">
-          <span id="profile-rank-label" class="rank-label"></span>
-          <span id="profile-rank" class="muted"></span>
-        </div>
-        <div class="bar thin"><div id="profile-rank-bar"></div></div>
-        <div class="profile-stats">
-          <div><span class="muted">Money</span><b id="profile-money">0</b></div>
-          <div><span class="muted">Polish Money</span><b id="profile-polish">0</b></div>
-          <div><span class="muted">Level XP</span><b id="profile-xp">0</b></div>
+          <p id="home-error" class="error"></p>
         </div>
       </div>
-      <div class="quests">
-        <div class="quests-head"><h2>Daily quests</h2><span id="quest-timer" class="muted"></span></div>
-        <div id="quest-list"></div>
+      <div class="side-col right">
+        <div class="card quests">
+          <div class="quests-head"><h2>Daily quests</h2><span id="quest-timer" class="muted"></span></div>
+          <div id="quest-list"></div>
+        </div>
       </div>
-      <button id="create-btn" class="primary">Create room</button>
-      <div class="join-row">
-        <input id="code-input" maxlength="4" placeholder="CODE" autocomplete="off" />
-        <button id="join-btn">Join room</button>
+      <div class="menu-hint muted">Drag to turn your operator. Change who stands here in the Operators tab.</div>
+    </section>
+
+    <section id="tab-operators" class="tab-panel hidden">
+      <div class="side-col left">
+        <div class="card">
+          <div class="side-toggle">
+            <button type="button" class="side-btn active" data-side="attack">Attack</button>
+            <button type="button" class="side-btn" data-side="defense">Defense</button>
+          </div>
+          <div id="op-list"></div>
+        </div>
       </div>
-      <p id="home-error" class="error"></p>
-      <button class="ghost settings-open">Settings</button>
-    </div>
+      <div class="side-col right wide">
+        <div id="op-detail" class="card"></div>
+      </div>
+    </section>
+
+    <section id="tab-shop" class="tab-panel hidden">
+      <div class="center-card card">
+        <h2>Shop</h2>
+        <p class="muted">Gun skins will be on sale here soon.</p>
+      </div>
+    </section>
+
+    <section id="tab-friends" class="tab-panel hidden">
+      <div class="center-card card">
+        <h2>Friends</h2>
+        <p class="muted">Friends and parties are coming soon.</p>
+      </div>
+    </section>
   </div>
 
   <!-- Room lobby -->

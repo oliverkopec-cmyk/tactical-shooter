@@ -5,6 +5,7 @@ import { UI } from './ui.js';
 import { Game } from './game.js';
 import { getSession, signUp, logIn, logOut, syncSettingsToAccount } from './account.js';
 import { applyAccountSettings } from './settings.js';
+import { Menu } from './menu.js';
 import { usernameError, passwordError } from '../../shared/account.js';
 
 const network = new Network();
@@ -16,12 +17,20 @@ let account = null;   // profile from the server, null when logged out
 let replaced = false; // this tab was kicked because the account logged in elsewhere
 let outdated = '';    // set when the server runs different game code than this page
 ui.bindCopyCode();
+
+// Main menu: tabs, 3D operator, Operators tab. Server-sent profile changes redraw it.
+function setAccount(profile) {
+  account = profile;
+  ui.renderProfile(profile);
+  menu.refresh();
+}
+const menu = new Menu({ getAccount: () => account, setAccount, onSettings: () => ui.openSettings(false) });
+ui.onShow = (screen) => menu.setActive(screen === 'home');
 syncSettingsToAccount(() => !!account);
 
 function enterAccount(profile) {
   applyAccountSettings(profile.settings);
-  account = profile;
-  ui.renderProfile(profile);
+  setAccount(profile);
   ui.homeError('');
   ui.show('home');
   network.connect();
@@ -110,8 +119,7 @@ network.on('notice', ({ message }) => ui.lobbyError(message));
 // The server pays out rewards and rank changes itself and tells us the new numbers.
 network.on('profile', (profile) => {
   if (!account) return;
-  account = { ...account, ...profile };
-  ui.renderProfile(account);
+  setAccount({ ...account, ...profile });
 });
 network.on('matchSummary', (summary) => ui.showMatchSummary(summary));
 
@@ -166,4 +174,4 @@ window.addEventListener('beforeunload', (e) => {
 });
 
 // ?debug exposes internals in the console for testing.
-if (new URLSearchParams(location.search).has('debug')) window.breachline = { game, network, ui };
+if (new URLSearchParams(location.search).has('debug')) window.breachline = { game, network, ui, menu };

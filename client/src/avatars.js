@@ -58,8 +58,9 @@ function makeMarker() {
 }
 
 export class RemotePlayer {
-  constructor(scene, { id, name, team }, isTeammate) {
+  constructor(scene, { id, name, team, skins }, isTeammate) {
     this.id = id;
+    this.skins = skins || {};   // gun skins this player has equipped: { weaponId: skinId }
     this.name = name;
     this.team = team;
     this.buffer = []; // [{ t, s }]
@@ -178,7 +179,7 @@ export class RemotePlayer {
     if (!id || id === this.weaponId) return;
     this.weaponId = id;
     this.gunMount.clear();
-    const gun = makeGunModel(id);
+    const gun = makeGunModel(id, this.skins[id]);
     gun.scale.multiplyScalar(1.3);   // keeps the gun's own size
     gun.traverse((o) => { if (o.isMesh) o.castShadow = true; });
     this.gunMount.add(gun);

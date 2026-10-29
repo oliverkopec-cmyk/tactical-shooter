@@ -32,3 +32,8 @@ export function syncSettingsToAccount(isLoggedIn) {
     timer = setTimeout(() => call('PUT', 'settings', { settings }), 600);
   });
 }
+
+/** Equip a skin on a gun (skin null = default look). Returns { account } or { error }. */
+export const equipSkin = (weapon, skin) => call('PUT', 'equip/skin', { weapon, skin });
+/** Equip an operator for their side; they also become the one shown in the main menu. */
+export const equipOperator = (operator) => call('PUT', 'equip/operator', { operator });

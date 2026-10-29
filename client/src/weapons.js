@@ -3,19 +3,92 @@
 
 import * as THREE from 'three';
 import { WEAPONS } from '../../shared/weapons.js';
+import { SKINS } from '../../shared/skins.js';
 
 const REST = new THREE.Vector3(0.2, -0.2, -0.42);
 
 function part(geo, color, x, y, z) {
   const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color, roughness: 0.55, metalness: 0.35 }));
   m.position.set(x, y, z);
+  m.userData.base = color;   // which of the gun's own colours this part uses (skins swap them)
   return m;
 }
 const box = (w, h, d) => new THREE.BoxGeometry(w, h, d);
 const barrel = (r, len) => new THREE.CylinderGeometry(r, r, len, 10).rotateX(Math.PI / 2);
 
-/** Build a gun model pointing down -z. Shared with remote avatars (scaled down). */
-export function makeGunModel(id) {
+/** Small deterministic random numbers so a skin's pattern looks the same everywhere. */
+function seeded(text) {
+  let a = 0;
+  for (let i = 0; i < text.length; i++) a = (a * 31 + text.charCodeAt(i)) >>> 0;
+  return () => { a = (a + 0x6d2b79f5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+
+/**
+ * Recolour a gun with a skin: swap its two colours, change how shiny and glowing it is,
+ * and draw the pattern as thin marks on the receiver (the first, biggest part).
+ */
+function applySkin(g, w, skin, skinId) {
+  g.traverse((o) => {
+    if (!o.isMesh) return;
+    const m = o.material;
+    if (o.userData.base === w.color) m.color.setHex(skin.body);
+    else if (o.userData.base === w.accent) m.color.setHex(skin.accent);
+    else { m.metalness = Math.min(1, 0.4 + skin.metal * 0.5); return; }     // barrels and small dark parts stay dark
+    m.metalness = 0.2 + skin.metal * 0.75;
+    m.roughness = 0.65 - skin.metal * 0.4;
+    if (skin.glow > 0) { m.emissive.setHex(o.userData.base === w.color ? skin.body : skin.accent); m.emissiveIntensity = skin.glow * 0.5; }
+  });
+  const body = g.children[0];
+  const geo = body?.geometry?.parameters;
+  if (!geo || skin.pattern === 'solid') return;
+  const { width: bw, height: bh, depth: bd } = geo;
+  const rand = seeded(skinId);
+  const markMat = () => new THREE.MeshStandardMaterial({
+    color: skin.mark, emissive: skin.mark, emissiveIntensity: 0.25 + skin.glow * 1.3, roughness: 0.5, metalness: 0.3,
+  });
+  const mark = (sx, sy, sz, x, y, z) => {
+    const m = new THREE.Mesh(box(sx, sy, sz), markMat());
+    m.position.set(body.position.x + x, body.position.y + y, body.position.z + z);
+    g.add(m);
+  };
+  const e = 0.0015;                       // marks sit just outside the surface
+  const sides = [-1, 1];
+  if (skin.pattern === 'stripes') {
+    for (const f of [-0.3, 0, 0.3]) mark(bw + e * 2, bh + e * 2, bd * 0.05, 0, 0, f * bd);
+  } else if (skin.pattern === 'camo') {
+    for (let i = 0; i < 9; i++) {
+      const sz = bd * (0.1 + rand() * 0.16), sy = bh * (0.2 + rand() * 0.35);
+      const side = sides[i % 2], z = (rand() - 0.5) * bd * 0.85, y = (rand() - 0.5) * bh * 0.5;
+      mark(e * 2, sy, sz, side * (bw / 2 + e), y, z);
+    }
+    for (let i = 0; i < 3; i++) mark(bw * (0.3 + rand() * 0.4), e * 2, bd * (0.1 + rand() * 0.15), (rand() - 0.5) * bw * 0.4, bh / 2 + e, (rand() - 0.5) * bd * 0.8);
+  } else if (skin.pattern === 'circuit') {
+    for (const side of sides) {
+      mark(e * 2, bh * 0.06, bd * 0.86, side * (bw / 2 + e), bh * 0.22, 0);
+      mark(e * 2, bh * 0.06, bd * 0.55, side * (bw / 2 + e), -bh * 0.22, bd * 0.12);
+      for (let i = 0; i < 5; i++) mark(e * 2, bh * 0.4, bd * 0.03, side * (bw / 2 + e), 0, (-0.4 + i * 0.2) * bd);
+    }
+    mark(bw * 0.1, e * 2, bd * 0.9, 0, bh / 2 + e, 0);
+  } else if (skin.pattern === 'flames') {
+    for (const side of sides) {
+      for (let i = 0; i < 9; i++) {
+        const hgt = bh * (0.25 + rand() * 0.6);
+        mark(e * 2, hgt, bd * 0.07, side * (bw / 2 + e), -bh / 2 + hgt / 2, (-0.46 + i * 0.115) * bd);
+      }
+    }
+  } else if (skin.pattern === 'void') {
+    for (let i = 0; i < 14; i++) {
+      const side = sides[i % 2];
+      mark(e * 2, bh * 0.07, bh * 0.07, side * (bw / 2 + e), (rand() - 0.5) * bh * 0.7, (rand() - 0.5) * bd * 0.9);
+    }
+    mark(bw * 0.08, e * 2, bd * 0.95, 0, bh / 2 + e, 0);
+    mark(e * 2, bh * 0.05, bd * 0.95, bw / 2 + e, 0, 0);
+    mark(e * 2, bh * 0.05, bd * 0.95, -(bw / 2 + e), 0, 0);
+  }
+}
+
+/** Build a gun model pointing down -z. Shared with remote avatars (scaled down). skinId: optional, from shared/skins.js. */
+export function makeGunModel(id, skinId = null) {
   const w = WEAPONS[id] || WEAPONS.rifle;
   const g = new THREE.Group();
   const muzzle = new THREE.Object3D();
@@ -83,6 +156,7 @@ export function makeGunModel(id) {
   }
   g.add(muzzle);
   g.userData.muzzle = muzzle;
+  if (skinId && SKINS[skinId]) applySkin(g, w, SKINS[skinId], skinId);
   if (w.scale !== 1) g.scale.setScalar(w.scale);
   // Pistols are short: the view model moves them forward and up so they sit in view
   g.userData.hold = ['pistol', 'revolver', 'machinePistol'].includes(w.model) ? [0, 0.03, -0.1] : [0, 0, 0];
@@ -117,6 +191,7 @@ export class ViewModel {
     this.scene.add(this.flashLight);
 
     this.weaponId = null;
+    this.weaponKey = null;
     this.gun = null;
     this.kick = 0;
     this.raise = 0;
@@ -126,13 +201,15 @@ export class ViewModel {
     this.visible = true;
   }
 
-  setWeapon(id) {
-    if (id === this.weaponId) return;
-    const previous = this.weaponId;
+  setWeapon(id, skinId = null) {
+    const key = `${id}|${skinId || ''}`;
+    if (key === this.weaponKey) return;
+    const previous = this.weaponKey && this.weaponId !== id ? this.weaponId : null;   // only a different gun gets the draw animation
+    this.weaponKey = key;
     this.weaponId = id;
     if (this.gun) this.holder.remove(this.gun);
     if (previous) this.raise = 1;   // drawing a gun: lift it into view
-    this.gun = makeGunModel(id);
+    this.gun = makeGunModel(id, skinId);
     this.gun.position.set(...this.gun.userData.hold);
     this.holder.add(this.gun);
     this.gun.userData.muzzle.add(this.flash);
