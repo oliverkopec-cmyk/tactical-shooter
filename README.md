@@ -56,6 +56,14 @@ A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite o
 - **Sound** is positional: you hear other players from the right direction, quieter and duller with distance, through walls and from another floor. Footsteps: sprinting is loud and carries about 40 m, walking about 14 m, crouch-walking only a couple of metres. Also reloading, landing from a fall, barricades and walls breaking, gadgets being placed, melee swings and drone motors. Volume is in the settings menu
 - Defenders reinforce wall sections (V, 10 per team): darker, immune to bullets and basic charges; only a heavy charge (Spark, stage 6) breaks them
 
+## Planned: Stage 18 - Finishing up
+
+Not built yet. Written down so it isn't forgotten.
+
+- **New barricade look:** 6 horizontal wooden planks, parallel and evenly spaced. The bottom is left open with no plank, a gap big enough for a drone to drive through but too small for a player.
+- **Breaking:** a barricade breaks completely after 3 melee hits. This replaces the current 0.5 m plank grid, where melee and bullets break planks one by one (breach charges still destroy a barricade at once).
+- **Windows start barricaded:** every window begins every round already barricaded, using these same breakable barricades. Doors are not included.
+
 ## Run locally
 
 ```bash
