@@ -2,6 +2,7 @@
 
 import { TEAMS, MAX_PER_TEAM, ROOM_CODE_LENGTH, MAX_NAME_LENGTH } from '../shared/constants.js';
 import { GameState } from './gameState.js';
+import { DEFAULT_MAP_ID, MAP_IDS } from '../shared/map.js';
 
 // No I or O, so codes can't be confused with 1 / 0.
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -55,6 +56,7 @@ class Room {
     this.channel = `room:${code}`;
     this.members = new Map(); // socketId -> { id, accountId, name, team }
     this.hostId = null;
+    this.mapId = DEFAULT_MAP_ID;   // chosen by the host in the lobby
     this.phase = 'lobby';     // 'lobby' | 'match'
     this.game = null;
   }
@@ -118,6 +120,16 @@ class Room {
     return {};
   }
 
+  /** The host picks the map for the next match. */
+  setMap(socketId, mapId) {
+    if (socketId !== this.hostId) return { error: 'Only the host can choose the map.' };
+    if (this.phase !== 'lobby') return { error: 'The map is locked once the match starts.' };
+    if (!MAP_IDS.includes(mapId)) return { error: 'Unknown map.' };
+    this.mapId = mapId;
+    this.broadcastState();
+    return {};
+  }
+
   start(socketId) {
     if (socketId !== this.hostId) return { error: 'Only the host can start the match.' };
     if (this.phase !== 'lobby') return { error: 'Match already started.' };
@@ -148,6 +160,7 @@ class Room {
       code: this.code,
       hostId: this.hostId,
       phase: this.phase,
+      mapId: this.mapId,
       players: [...this.members.values()].map(({ id, name, team, skins }) => ({ id, name, team, skins })),
     };
   }

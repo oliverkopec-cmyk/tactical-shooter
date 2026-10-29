@@ -4,23 +4,22 @@
 // so client and server agree on them and only need to sync which panels are
 // gone and which sections are reinforced.
 
-import { MAP } from './map.js';
 
 export const PANEL_SIZE = 0.5;        // target panel width/height (m)
 export const PANEL_HP = 50;           // bullet damage needed to knock a panel out
 export const SECTION_COLUMNS = 4;     // panel columns per reinforceable section (~2 m)
 
-let cachedLayout = null;
+const layouts = new WeakMap();   // map -> its wall layout
 
-/** Split interior wall pieces into panels and reinforcement sections. */
-export function getWallLayout() {
-  if (cachedLayout) return cachedLayout;
+/** Split a map's interior wall pieces into panels and reinforcement sections. */
+export function getWallLayout(map) {
+  if (layouts.has(map)) return layouts.get(map);
   const staticBoxes = [];
   const walls = [];
   const panels = [];
   const sections = [];
 
-  for (const b of MAP.boxes) {
+  for (const b of map.boxes) {
     if (b.kind !== 'interior') { staticBoxes.push(b); continue; }
 
     const axis = b.wallAxis; // 'x': runs along x (thin in z); 'z': runs along z (thin in x)
@@ -68,13 +67,15 @@ export function getWallLayout() {
       }
     }
   }
-  cachedLayout = { staticBoxes, walls, panels, sections };
-  return cachedLayout;
+  const layout = { staticBoxes, walls, panels, sections };
+  layouts.set(map, layout);
+  return layout;
 }
 
 export class World {
-  constructor() {
-    this.layout = getWallLayout();
+  constructor(map) {
+    this.map = map;
+    this.layout = getWallLayout(map);
     this.reset();
   }
 
@@ -94,7 +95,7 @@ export class World {
     for (const b of this.extra.values()) boxes.push(b);
     this.boxes = boxes;
     // What defenders collide with during prep: the map plus plugs in every exterior opening.
-    this.barrierView = { boxes: boxes.concat(MAP.barriers) };
+    this.barrierView = { boxes: boxes.concat(this.map.barriers) };
   }
 
   addBox(box) { this.extra.set(box.id, box); this.rebuild(); }

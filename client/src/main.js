@@ -86,6 +86,10 @@ ui.bindLobby({
     const res = await network.request('setTeam', team);
     ui.lobbyError(res.error);
   },
+  onMap: async (mapId) => {
+    const res = await network.request('setMap', mapId);
+    ui.lobbyError(res.error);
+  },
   onStart: async () => {
     const res = await network.request('startMatch');
     ui.lobbyError(res.error);

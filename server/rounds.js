@@ -3,7 +3,6 @@
 // Scores are kept per squad (A starts attacking, B starts defending) so they
 // follow the players when sides swap at halftime.
 
-import { MAP } from '../shared/map.js';
 import { inObjectiveZone } from '../shared/rules.js';
 import {
   PHASE, INTRO_MS, PREP_MS, ACTION_MS, ROUND_END_MS, MATCH_END_MS, ROUNDS_TO_WIN,

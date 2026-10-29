@@ -8,7 +8,7 @@
 import {
   PHASE, SHIELD, WIRE, JAMMER_RANGE, CAMERA_REACH, STUN, GADGET_REACH, HAWK_MISS_COOLDOWN_MS, BARRICADE,
 } from '../shared/constants.js';
-import { MAP, findOpening } from '../shared/map.js';
+import { findOpening } from '../shared/map.js';
 import { OPERATORS } from '../shared/operators.js';
 import { getEyePosition, forwardVec, eyeHeight, bodyHeight } from '../shared/movement.js';
 import { aimDirection } from '../shared/weapons.js';
@@ -363,7 +363,7 @@ export class Gadgets {
     if (this.barricading.has(id)) return;
     if (this.barricadesLeft <= 0) return this.error(id, 'Your team has no barricades left.');
     const eye = getEyePosition(p.state, this.world);
-    const o = findOpening([eye.x, eye.y, eye.z], aimDirection(p.state.yaw, p.state.pitch), BARRICADE.reach);
+    const o = findOpening(this.game.map, [eye.x, eye.y, eye.z], aimDirection(p.state.yaw, p.state.pitch), BARRICADE.reach);
     if (!o) return this.error(id, 'Aim at a doorway or window within 2.5 m.');
     if (this.barricadeAt(o.id) || [...this.barricading.values()].some((b) => b.openingId === o.id)) return this.error(id, 'That opening is already barricaded.');
     if (this.openingBlocked(o)) return this.error(id, 'Someone is standing in the way.');
@@ -382,7 +382,7 @@ export class Gadgets {
       if (Math.hypot(p.state.x - b.x, p.state.z - b.z) > 0.8) { this.cancelBarricade(id, 'You moved away.'); continue; }
       if (now < b.doneAt) continue;
       this.barricading.delete(id);
-      const o = MAP.openings[b.openingId];
+      const o = this.game.map.openings[b.openingId];
       if (this.openingBlocked(o)) { this.game.io.to(id).emit('reinforceCancel', { reason: 'Someone is standing in the way.' }); continue; }
       this.placeBarricade(o, id);
     }

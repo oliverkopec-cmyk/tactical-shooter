@@ -3,11 +3,11 @@
 import { MAX_PER_TEAM, MAX_HEALTH } from '../../shared/constants.js';
 import { WEAPONS, weaponStats } from '../../shared/weapons.js';
 import { UTILITIES } from '../../shared/utilities.js';
-import { MAP } from '../../shared/map.js';
 import { operatorsFor, OPERATORS } from '../../shared/operators.js';
 import { settings, setSetting, setKeybinds, onSettingsChange } from './settings.js';
 import { fillKeys, keyFor } from './controls.js';
 import { rankIcon } from './rankIcon.js';
+import { mapChoices } from '../../shared/map.js';
 import { rankInfo, rankStep, xpForLevel } from '../../shared/progression.js';
 import { BIND_ACTIONS, DEFAULT_KEYBINDS, keyLabel, isBindableCode, RESERVED_CODES } from '../../shared/keybinds.js';
 
@@ -344,7 +344,11 @@ export class UI {
     $('code-input').addEventListener('input', (e) => { e.target.value = e.target.value.toUpperCase().replace(/[^A-Z]/g, ''); });
   }
 
-  bindLobby({ onTeam, onStart, onLeave }) {
+  bindLobby({ onTeam, onStart, onLeave, onMap }) {
+    $('map-options').addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-map]');
+      if (btn && !btn.disabled) onMap(btn.dataset.map);
+    });
     for (const btn of document.querySelectorAll('.team-btn')) {
       btn.addEventListener('click', () => onTeam(btn.dataset.team));
     }
@@ -382,6 +386,13 @@ export class UI {
       const btn = document.querySelector(`.team-btn[data-team="${team}"]`);
       btn.disabled = me?.team === team || members.length >= MAX_PER_TEAM;
     }
+
+    // The host chooses the map; everyone else sees which one it is
+    $('map-note').textContent = isHost ? '(you choose)' : '(chosen by the host)';
+    $('map-options').innerHTML = mapChoices().map((m) => `
+      <button type="button" class="map-option${m.id === room.mapId ? ' selected' : ''}" data-map="${m.id}" ${isHost ? '' : 'disabled'}>
+        <b>${escapeHtml(m.name)}</b><span>${escapeHtml(m.description)}</span>
+      </button>`).join('');
 
     const startBtn = $('start-btn');
     startBtn.classList.toggle('hidden', !isHost);
@@ -483,7 +494,7 @@ export class UI {
   }
 
   /** Defenders vote on the objective site during operator select; attackers just wait. */
-  renderSiteVote(on, { team, counts, mine, onVote }) {
+  renderSiteVote(on, { team, counts, mine, onVote, sites }) {
     const el = $('site-vote');
     el.classList.toggle('hidden', !on);
     if (!on) { this.lastSiteVote = null; return; }
@@ -496,7 +507,7 @@ export class UI {
     }
     el.innerHTML = '<div class="site-title">Vote for the objective site</div><div class="site-options"></div>';
     const row = el.querySelector('.site-options');
-    MAP.sites.forEach((site, i) => {
+    sites.forEach((site, i) => {
       const b = document.createElement('button');
       b.className = `site-option${mine === i ? ' selected' : ''}`;
       b.innerHTML = `<b>${site.name}</b><span>${site.where}</span><span class="votes">${counts[i]} vote${counts[i] === 1 ? '' : 's'}</span>`;
@@ -644,16 +655,16 @@ export class UI {
     $('score-defense-box').classList.toggle('mine', myTeam === 'defense');
   }
 
-  updateSpawnPicker(show, choice) {
+  updateSpawnPicker(show, choice, spawns = []) {
     const box = $('spawn-box');
     box.classList.toggle('hidden', !show);
     if (!show) return;
-    const sig = String(choice);
+    const sig = `${choice}|${spawns.map((s) => s.name).join()}`;
     if (sig === this.lastSpawn) return;
     this.lastSpawn = sig;
     const opts = $('spawn-opts');
     opts.innerHTML = '';
-    MAP.spawns.attack.forEach((sp, i) => {
+    spawns.forEach((sp, i) => {
       const el = document.createElement('span');
       el.className = 'spawn-opt' + (i + 1 === choice ? ' selected' : '');
       el.innerHTML = `<span class="keycap">${i + 1}</span> ${sp.name}`;
