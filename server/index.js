@@ -68,6 +68,11 @@ io.on('connection', (socket) => {
     reply(ack, room ? room.setTeam(socket.id, team) : { error: 'Not in a room.' });
   });
 
+  socket.on('setMap', (mapId, ack) => {
+    const room = socket.data.room;
+    reply(ack, room ? room.setMap(socket.id, String(mapId)) : { error: 'Not in a room.' });
+  });
+
   socket.on('startMatch', (ack) => {
     const room = socket.data.room;
     reply(ack, room ? room.start(socket.id) : { error: 'Not in a room.' });

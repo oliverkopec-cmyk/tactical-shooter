@@ -1,7 +1,6 @@
 // Phase rules shared by client prediction and server authority.
 
 import { KEY, PHASE } from './constants.js';
-import { MAP } from './map.js';
 
 /**
  * Which inputs count in the current phase.
@@ -22,8 +21,8 @@ export function maskKeys(keys, team, phase, viewingCamera = false) {
  * attackers who picked the same point don't overlap. slot/count are the
  * attacker's index among those sharing the point.
  */
-export function attackSpawnPoint(choice, slot = 0, count = 1) {
-  const base = MAP.spawns.attack[(Math.max(1, Math.min(MAP.spawns.attack.length, choice | 0)) - 1)];
+export function attackSpawnPoint(map, choice, slot = 0, count = 1) {
+  const base = map.spawns.attack[(Math.max(1, Math.min(map.spawns.attack.length, choice | 0)) - 1)];
   const off = (slot - (count - 1) / 2) * 1.5;
   // Sideways = perpendicular to facing; yaw 0 faces -z, right vector is (cos, -sin)
   return { x: base.x + Math.cos(base.yaw) * off, y: base.y, z: base.z - Math.sin(base.yaw) * off, yaw: base.yaw };

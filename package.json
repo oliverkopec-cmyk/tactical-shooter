@@ -12,7 +12,8 @@
     "dev:server": "node --watch server/index.js",
     "dev:client": "vite",
     "build": "vite build",
-    "start": "node server/index.js"
+    "start": "node server/index.js",
+    "check:maps": "node tools/check-map.mjs"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.13",

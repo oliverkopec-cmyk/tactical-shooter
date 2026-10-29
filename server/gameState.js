@@ -4,7 +4,7 @@
 // time is rationed against real time so a modified client can't move or fire
 // faster by sending extra inputs.
 
-import { MAP } from '../shared/map.js';
+import { getMap } from '../shared/map.js';
 import { createPlayerState, stepPlayer, weaponInput } from '../shared/movement.js';
 import { createWeaponState, stepWeapon, gunMobility } from '../shared/weapons.js';
 import { UTILITIES } from '../shared/utilities.js';
@@ -34,14 +34,15 @@ const MAX_PITCH = Math.PI / 2;
 export class GameState {
   constructor(room) {
     this.room = room;
-    this.world = new World();
+    this.map = getMap(room.mapId);   // the map the host chose in the lobby
+    this.world = new World(this.map);
     this.destruction = new Destruction(this);
     this.rounds = new RoundManager(this);
     this.gadgets = new Gadgets(this);
     this.players = new Map(); // id -> ServerPlayer
     this.history = new PoseHistory();
     this.drones = new Map();   // id -> { id, owner, state, hp, alive }
-    this.site = null;          // index into MAP.sites, chosen by the defenders' vote
+    this.site = null;          // index into this.map.sites, chosen by the defenders' vote
     this.siteFound = false;    // attackers learn the site only once they've found it
     this.siteVotes = new Map();// defender id -> site index
     this.nextDroneId = 1;
@@ -397,7 +398,7 @@ export class GameState {
   }
 
   pickSpawn(team, random = false) {
-    const spawns = MAP.spawns[team];
+    const spawns = this.map.spawns[team];
     if (random) return spawns[Math.floor(Math.random() * spawns.length)];
     const used = [...this.players.values()].filter((p) => p.member.team === team).length;
     return spawns[used % spawns.length];
@@ -421,9 +422,9 @@ export class GameState {
     const used = { attack: 0, defense: 0 };
     for (const p of this.players.values()) {
       const team = p.member.team;
-      const spawns = MAP.spawns[team];
+      const spawns = this.map.spawns[team];
       p.state = createPlayerState(spawns[used[team] % spawns.length]);
-      if (team === 'attack') p.spawnChoice = (used[team] % MAP.spawns.attack.length) + 1;
+      if (team === 'attack') p.spawnChoice = (used[team] % this.map.spawns.attack.length) + 1;
       used[team]++;
       p.spawned = true;
       p.health = MAX_HEALTH;
@@ -455,7 +456,7 @@ export class GameState {
     }
     for (const [choice, list] of groups) {
       list.forEach((p, i) => {
-        p.state = createPlayerState(attackSpawnPoint(choice, i, list.length));
+        p.state = createPlayerState(attackSpawnPoint(this.map, choice, i, list.length));
         p.state.speedMul = speedMultiplier(OPERATORS[p.operator]);
       });
     }
@@ -483,7 +484,7 @@ export class GameState {
     const p = this.players.get(id);
     const n = Number(choice) | 0;
     if (!p || p.member.team !== 'attack' || this.rounds.phase !== PHASE.PREP) return;
-    if (n < 1 || n > MAP.spawns.attack.length) return;
+    if (n < 1 || n > this.map.spawns.attack.length) return;
     p.spawnChoice = n;
     this.io.to(id).emit('spawnChoice', { choice: n });
   }
@@ -492,19 +493,19 @@ export class GameState {
 
   /** The site that counts this round (before the vote ends, the first one). */
   activeSite() {
-    return MAP.sites[this.site ?? 0];
+    return this.map.sites[this.site ?? 0];
   }
 
   voteSite(id, index) {
     const p = this.players.get(id);
     const i = Number(index) | 0;
-    if (!p || p.member.team !== 'defense' || this.rounds.phase !== PHASE.INTRO || i < 0 || i >= MAP.sites.length) return;
+    if (!p || p.member.team !== 'defense' || this.rounds.phase !== PHASE.INTRO || i < 0 || i >= this.map.sites.length) return;
     this.siteVotes.set(id, i);
     this.sendSiteVotes();
   }
 
   siteCounts() {
-    const counts = MAP.sites.map(() => 0);
+    const counts = this.map.sites.map(() => 0);
     for (const v of this.siteVotes.values()) counts[v]++;
     return counts;
   }
@@ -532,7 +533,7 @@ export class GameState {
 
   /** Defenders start in or right next to the site they voted for, facing it. */
   placeDefenders() {
-    const spawns = MAP.siteSpawns[this.site];
+    const spawns = this.map.siteSpawns[this.site];
     let i = 0;
     for (const [id, p] of this.players) {
       if (p.member.team !== 'defense') continue;
@@ -549,7 +550,7 @@ export class GameState {
    */
   updateSiteReveal() {
     if (this.siteFound || this.site === null) return;
-    const site = MAP.sites[this.site];
+    const site = this.map.sites[this.site];
     const centre = [site.x, site.y + site.size / 2, site.z];
     let found = false;
     for (const d of this.drones.values()) {
@@ -789,7 +790,7 @@ export class GameState {
       barricadesLeft: this.gadgets.barricadesLeft,
       gadgets: this.gadgets.list(team),
       picks: this.picksFor(team),
-      mapName: MAP.name,
+      mapId: this.map.id, mapName: this.map.name,
       players: [...this.players.entries()].map(([id, p]) => ({
         id, name: p.member.name, team: p.member.team, skins: p.member.skins || {}, state: p.state,
         weapon: p.weapon, health: p.health, alive: p.alive,

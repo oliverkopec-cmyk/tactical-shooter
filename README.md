@@ -2,7 +2,16 @@
 
 A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite on the client, Node.js + Socket.IO on an authoritative server. One Node process serves both the game client and the realtime server, so the whole thing deploys as a single Render web service.
 
-## Status: Stage 14 (shop)
+## Status: Stage 15 (bigger map)
+
+- **New map: Meridian Hotel.** A 40 x 28 m, three-floor hotel in a large 150 x 150 m grounds: 9 rooms on the ground floor, 13 on the first floor, 3 on the second (west wing), two interior staircases, a third staircase to the top floor, two balconies with outside stairs, 81 doors and windows (all barricade spots), about 3,200 destructible wall panels, furniture, rugs and pictures, and cover all around the outside (crates, containers, vehicles, barriers, a fountain, a back garden).
+- **Three objective sites on three floors:** Kitchen (ground), Gallery (first floor), Penthouse suite (second floor). Defenders vote as before and start next to the winning site.
+- **Attackers enter from the West, South or East** edge of the grounds, about 52 m from the hotel.
+- **The host chooses the map in the lobby;** everyone sees the choice and it locks when the match starts. **Dockside House (the old map) is unchanged.**
+- Maps now live in `shared/maps/` and are built with `shared/mapkit.js`; client and server look a map up by id (`getMap`). The map's boxes are drawn in batches, so the big map stays fast.
+- **Walkability check:** `npm run check:maps` walks every map with the game's own collision code and reports unreachable rooms, blocked spawns and doors that can't be reached. Run it after editing a map. (It is conservative on the old map's narrow doors; the hotel passes.)
+
+### Earlier: Stage 14 (shop)
 
 - **Shop tab:** gun skins for Money, sorted by rarity, with prices that rise with rarity: **Rare 1,000**, **Epic 2,500**, **Legendary 6,000**. Common skins are free and every account already owns them, so they aren't sold.
 - **Featured today:** three skins, one of each rarity, picked from the date so everyone sees the same ones. They change at 00:00 UTC (the shop shows a countdown). Featured is a highlight, not a discount.

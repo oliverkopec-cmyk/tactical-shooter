@@ -1,7 +1,6 @@
 // Builds Three.js meshes for the shared map definition.
 
 import * as THREE from 'three';
-import { MAP } from '../../shared/map.js';
 import { getWallLayout } from '../../shared/world.js';
 
 const KIND_STYLE = {
@@ -26,7 +25,8 @@ const KIND_STYLE = {
 
 const unitBox = new THREE.BoxGeometry(1, 1, 1);
 
-export function buildMap(scene) {
+/** Draws a map (from getMap) into the scene. Everything it adds lives in the returned group. */
+export function buildMap(scene, map) {
   const materials = {};
   const material = (kind, color) => {
     const key = `${kind}:${color ?? ''}`;
@@ -35,23 +35,32 @@ export function buildMap(scene) {
   };
 
   const group = new THREE.Group();
-  const meshesById = new Map();
-
+  // Static boxes are drawn in batches: one instanced mesh per look (kind and colour),
+  // so a map with hundreds of boxes costs a few dozen draw calls, not hundreds.
   // Destructible interior walls are drawn as panels by DestructionView.
-  for (const b of getWallLayout().staticBoxes) {
-    const sx = b.max[0] - b.min[0], sy = b.max[1] - b.min[1], sz = b.max[2] - b.min[2];
-    const mesh = new THREE.Mesh(unitBox, material(b.kind, b.color));
-    mesh.scale.set(sx, sy, sz);
-    mesh.position.set(b.min[0] + sx / 2, b.min[1] + sy / 2, b.min[2] + sz / 2);
-    mesh.castShadow = b.kind !== 'ground' && b.kind !== 'boundary';
+  const batches = new Map();
+  for (const b of getWallLayout(map).staticBoxes) {
+    const key = `${b.kind}:${b.color ?? ''}`;
+    if (!batches.has(key)) batches.set(key, { kind: b.kind, color: b.color, boxes: [] });
+    batches.get(key).boxes.push(b);
+  }
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion();
+  for (const { kind, color, boxes } of batches.values()) {
+    const mesh = new THREE.InstancedMesh(unitBox, material(kind, color), boxes.length);
+    boxes.forEach((b, i) => {
+      const sx = b.max[0] - b.min[0], sy = b.max[1] - b.min[1], sz = b.max[2] - b.min[2];
+      m4.compose(new THREE.Vector3(b.min[0] + sx / 2, b.min[1] + sy / 2, b.min[2] + sz / 2), q, new THREE.Vector3(sx, sy, sz));
+      mesh.setMatrixAt(i, m4);
+    });
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.castShadow = kind !== 'ground' && kind !== 'boundary';
     mesh.receiveShadow = true;
-    mesh.userData.boxId = b.id;
-    meshesById.set(b.id, mesh);
+    mesh.frustumCulled = false;
     group.add(mesh);
   }
 
   // Visual-only details: rugs, pictures, monitors, plants, car windows
-  for (const d of MAP.details) {
+  for (const d of map.details) {
     const mat = new THREE.MeshStandardMaterial({ color: d.color, roughness: 0.8, ...(d.emissive ? { emissive: d.color, emissiveIntensity: 0.6 } : {}) });
     const mesh = new THREE.Mesh(unitBox, mat);
     mesh.scale.set(d.max[0] - d.min[0], d.max[1] - d.min[1], d.max[2] - d.min[2]);
@@ -62,7 +71,7 @@ export function buildMap(scene) {
 
   // One zone marking (ring, disc, glow) per possible site. They stay hidden until the
   // site is known to you: defenders after the vote, attackers once they find it.
-  const sites = MAP.sites.map((site) => {
+  const sites = map.sites.map((site) => {
     const mat = new THREE.MeshBasicMaterial({ color: 0xffc43a, transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide });
     const ring = new THREE.Mesh(new THREE.RingGeometry(site.zoneRadius - 0.1, site.zoneRadius, 64), mat);
     ring.rotation.x = -Math.PI / 2;
@@ -82,8 +91,15 @@ export function buildMap(scene) {
     return { holder, mat };
   });
 
+  // Soft fill lights so the building interior isn't pitch black under the roof
+  for (const [x, y, z] of map.lights || []) {
+    const l = new THREE.PointLight(0xfff0d8, 4, 12, 1.6);
+    l.position.set(x, y, z);
+    group.add(l);
+  }
+
   scene.add(group);
-  return { group, meshesById, sites };
+  return { group, sites };
 }
 
 export function setupLighting(scene) {
@@ -102,11 +118,5 @@ export function setupLighting(scene) {
   sun.shadow.bias = -0.0005;
   sun.shadow.normalBias = 0.03;
   scene.add(sun);
-
-  // Soft fill lights so the building interior isn't pitch black under the roof.
-  for (const [x, y, z] of [[-8, 2.6, 0], [0, 2.6, -3], [0, 2.6, 4.5], [8, 2.6, 0], [-8, 5.6, 0], [0, 5.6, 0], [8, 5.6, -5]]) {
-    const l = new THREE.PointLight(0xfff0d8, 4, 12, 1.6);
-    l.position.set(x, y, z);
-    scene.add(l);
-  }
+  return sun;
 }

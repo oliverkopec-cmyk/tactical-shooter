@@ -5,7 +5,7 @@ import {
   MAX_HEALTH, MAX_SHOT_RANGE, BARRICADE, CHARGE_REACH, REINFORCE_REACH, TEAM_REINFORCEMENTS, PHASE, ROUNDS_TO_WIN,
 } from '../../shared/constants.js';
 import { maskKeys } from '../../shared/rules.js';
-import { MAP } from '../../shared/map.js';
+import { getMap, DEFAULT_MAP_ID } from '../../shared/map.js';
 import { getEyePosition } from '../../shared/movement.js';
 import { currentSpread, aimDirection } from '../../shared/weapons.js';
 import { World } from '../../shared/world.js';
@@ -43,17 +43,15 @@ export class Game {
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(settings.fov, 1, 0.05, 300);
     this.scene.add(this.camera);
-    setupLighting(this.scene);
-    this.map = buildMap(this.scene);
-    this.world = new World();
+    this.sun = setupLighting(this.scene);
 
     this.viewModel = new ViewModel();
     this.effects = new Effects(this.scene);
     this.audio = new Audio(settings.volume);
     this.sound = new Soundscape(this);
-    this.destruction = new DestructionView(this.scene, this.world, this.effects, this.audio);
     this.drones = new DroneView(this.scene, this.effects, this.audio);
-    this.gadgets = new GadgetView(this.scene, this.world);
+    this.mapId = null;
+    this.loadMap(DEFAULT_MAP_ID);       // the map, world, destruction and gadget views follow the host's choice at match start
     this.picks = {};
     this.siteIndex = null;                 // the objective site this player knows about
     this.siteVotes = { counts: [0, 0, 0], mine: null };
@@ -182,7 +180,7 @@ export class Game {
       const found = this.siteIndex === null;
       this.siteIndex = site;
       if (found) {
-        this.ui.banner('Objective found', MAP.sites[site].name, 3200);
+        this.ui.banner('Objective found', this.mapDef.sites[site].name, 3200);
         this.audio.beep(1240, 0.18, 0.2, 'triangle');
       } else if (this.myTeam === 'defense') this.ui.toast('The attackers have found the objective');
     });
@@ -252,9 +250,31 @@ export class Game {
     this.viewModel?.setAspect(w / h);
   }
 
+  /** Build the map the match is played on (does nothing if it's already the one in the scene). */
+  loadMap(id) {
+    const def = getMap(id);
+    if (this.mapId === def.id) return;
+    if (this.mapView) {
+      this.scene.remove(this.mapView.group);
+      this.scene.remove(this.destruction.mesh);
+      this.gadgets.clear();
+    }
+    this.mapId = def.id;
+    this.mapDef = def;
+    this.mapView = buildMap(this.scene, def);
+    this.world = new World(def);
+    this.destruction = new DestructionView(this.scene, this.world, this.effects, this.audio);
+    this.gadgets = new GadgetView(this.scene, this.world);
+    const c = this.sun.shadow.camera;
+    const e = def.shadowExtent || 40;
+    c.left = -e; c.right = e; c.top = e; c.bottom = -e;
+    c.updateProjectionMatrix();
+  }
+
   /** Called on 'matchStart' (also for late joiners). */
   start(payload) {
     this.stop();
+    this.loadMap(payload.mapId);
     const myId = this.network.id;
     const me = payload.players.find((p) => p.id === myId);
     if (!me) return;
@@ -345,7 +365,7 @@ export class Game {
 
   /** Keys 1-3 while attacking in prep choose the entry point; otherwise they pick a test weapon. */
   pickSpawn(n) {
-    if (this.myTeam !== 'attack' || this.round.phase !== PHASE.PREP || n > MAP.spawns.attack.length) return false;
+    if (this.myTeam !== 'attack' || this.round.phase !== PHASE.PREP || n > this.mapDef.spawns.attack.length) return false;
     this.spawnChoice = n;
     this.network.sendSpawnChoice(n);
     return true;
@@ -636,7 +656,7 @@ export class Game {
     // Defenders in prep: aiming at a bare doorway or window offers a barricade
     if (!prompt && !attack && local.alive && this.round.phase === PHASE.PREP && !this.reinforcing && this.barricadesLeft > 0) {
       const eye = getEyePosition(local.state, this.world);
-      const o = findOpening([eye.x, eye.y, eye.z], aimDirection(local.aimYaw, local.aimPitch), BARRICADE.reach);
+      const o = findOpening(this.mapDef, [eye.x, eye.y, eye.z], aimDirection(local.aimYaw, local.aimPitch), BARRICADE.reach);
       if (o && !this.gadgets.hasBarricade(o.id)) prompt = `Press ${keyFor('barricade')} to barricade (${this.barricadesLeft} left)`;
     }
     this.ui.setPrompt(prompt);
@@ -728,13 +748,13 @@ export class Game {
     const capturing = phase === PHASE.ACTION && this.capture.p > 0;
     this.ui.setCapture(capturing ? this.capture.p : null, this.capture.c);
     // Only the site you know about is marked on the floor
-    this.map.sites.forEach((s, i) => { s.holder.visible = i === this.siteIndex; });
-    const zone = this.map.sites[this.siteIndex]?.mat;
+    this.mapView.sites.forEach((s, i) => { s.holder.visible = i === this.siteIndex; });
+    const zone = this.mapView.sites[this.siteIndex]?.mat;
     if (zone) {
       zone.color.set(this.capture.c ? 0xff7a45 : capturing ? 0xffee88 : 0xffc43a);
       zone.opacity = capturing ? 0.9 : 0.55;
     }
-    const known = this.siteIndex !== null ? MAP.sites[this.siteIndex] : null;
+    const known = this.siteIndex !== null ? this.mapDef.sites[this.siteIndex] : null;
     this.ui.setSiteChip(known ? `Objective: ${known.name}` : (this.myTeam === 'attack' ? 'Objective: unknown. Find it with your drones' : ''));
   }
 
@@ -773,7 +793,7 @@ export class Game {
     // Attackers have no body in prep: no gun, and (if the drone is lost) a view from their entry point
     const noBody = this.myTeam === 'attack' && this.round.phase === PHASE.PREP;
     if (noBody && !inDrone && local.alive) {
-      const sp = MAP.spawns.attack[this.spawnChoice - 1];
+      const sp = this.mapDef.spawns.attack[this.spawnChoice - 1];
       this.camera.position.set(sp.x, sp.y + 1.62, sp.z);
       this.camera.rotation.set(0, sp.yaw, 0, 'YXZ');
     }
@@ -790,14 +810,14 @@ export class Game {
     for (const [id, m] of this.members) names[id] = m.name;
     const left = Math.max(0, Math.ceil((this.round.endsAt - (Date.now() + (this.network.serverOffset ?? 0))) / 1000));
     this.ui.renderSiteVote(selecting && local.alive, {
-      team: this.myTeam, counts: this.siteVotes.counts, mine: this.siteVotes.mine, onVote: (i) => { this.siteVotes = { ...this.siteVotes, mine: i }; this.network.voteSite(i); },
+      sites: this.mapDef.sites, team: this.myTeam, counts: this.siteVotes.counts, mine: this.siteVotes.mine, onVote: (i) => { this.siteVotes = { ...this.siteVotes, mine: i }; this.network.voteSite(i); },
     });
     this.ui.showOperatorSelect(selecting && local.alive, {
       team: this.myTeam, picks: this.picks, names, myId: this.network.id, myOp: this.loadout.op,
       myUtility: this.loadout.utility?.id,
       timeText: `${left}s`, onPick: (opId) => this.network.pickOperator(opId), onUtility: (id) => this.network.pickUtility(id),
     });
-    this.ui.updateSpawnPicker(noBody && local.alive, this.spawnChoice);
+    this.ui.updateSpawnPicker(noBody && local.alive, this.spawnChoice, this.mapDef.spawns.attack);
     this.drones.update(dt);
     this.gadgets.update(dt);
     this.ui.setDroneHud(
