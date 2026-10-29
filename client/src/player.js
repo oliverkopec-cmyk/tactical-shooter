@@ -69,6 +69,7 @@ export class LocalPlayer {
     this.outbox = [];    // inputs waiting for the next network send
     this.sendTimer = 0;
     this.smoothing = { x: 0, y: 0, z: 0 }; // visual offset that hides small corrections
+    this.droneSmoothing = { x: 0, y: 0, z: 0 }; // the same for the drone you're piloting
     this.lastCorrection = 0;
     this.sprinting = false;
     this.dragging = false;
@@ -203,6 +204,8 @@ export class LocalPlayer {
     // Decay the visual correction offset
     const k = Math.exp(-12 * frameDt);
     this.smoothing.x *= k; this.smoothing.y *= k; this.smoothing.z *= k;
+    const ds = this.droneSmoothing;
+    ds.x *= k; ds.y *= k; ds.z *= k;
 
     if (this.alive) this.updateCamera();
   }
@@ -269,6 +272,7 @@ export class LocalPlayer {
     this.yaw = entry.yaw;
     this.pitch = 0;
     this.pending.length = 0;
+    this.droneSmoothing = { x: 0, y: 0, z: 0 };
   }
 
   reconcile(serverState, droneEntry = null) {
@@ -285,6 +289,7 @@ export class LocalPlayer {
     if (serverState.w) Object.assign(this.weapon, serverState.w);
     if (serverState.sm) s.speedMul = serverState.sm;   // operator speed rating can change during select
     const ds = this.droneState;
+    const droneBefore = ds && { x: ds.x, y: ds.y, z: ds.z };
     if (ds && droneEntry && droneEntry.id === this.droneId) {
       for (const k of ['x', 'y', 'z', 'vx', 'vy', 'vz']) ds[k] = droneEntry[k];
       ds.onGround = !!droneEntry.g;
@@ -292,6 +297,12 @@ export class LocalPlayer {
       this.droneJammed = !!droneEntry.j;
     }
     for (const input of this.pending) this.simulate(input, false);
+
+    if (droneBefore) {
+      const sm = this.droneSmoothing;
+      const ex = droneBefore.x - ds.x, ey = droneBefore.y - ds.y, ez = droneBefore.z - ds.z;
+      if (Math.hypot(ex, ey, ez) > 2) { sm.x = 0; sm.y = 0; sm.z = 0; } else { sm.x += ex; sm.y += ey; sm.z += ez; }
+    }
 
     const dx = before.x - s.x, dy = before.y - s.y, dz = before.z - s.z;
     const err = Math.hypot(dx, dy, dz);
@@ -344,8 +355,8 @@ export class LocalPlayer {
 
   updateCamera() {
     if (this.droneState) {
-      const e = droneEye(this.droneState);
-      this.camera.position.set(e[0], e[1], e[2]);
+      const e = droneEye(this.droneState), sm = this.droneSmoothing;
+      this.camera.position.set(e[0] + sm.x, e[1] + sm.y, e[2] + sm.z);
       this.camera.rotation.set(this.droneState.pitch, this.droneState.yaw, 0, 'YXZ');
       return;
     }

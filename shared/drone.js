@@ -12,8 +12,8 @@ export const DRONE = {
   fastSpeed: 5.2,
   accel: 40,
   gravity: 22,
-  jumpSpeed: 4.4,       // a small hop, about 0.44 m: onto low ledges and over debris
-  jumpBoost: 5,         // forward push on a hop: about 1.5 m further than rolling would go
+  jumpSpeed: 5,         // hop about 0.57 m high, about 0.45 s in the air: onto low ledges and over debris
+  jumpBoost: 3.3,       // forward push on a hop: about 1.5 m further than rolling would go
   jumpCooldown: 1,      // seconds between hops, so hopping can't be chained to zoom around
   stepHeight: 0.22,     // climbs stairs, but not full ledges
   maxPitch: 0.7,
@@ -50,7 +50,8 @@ export function stepDrone(s, input, dt, world) {
   if (len > 0) { wx /= len; wz /= len; }
   const speed = (keys & KEY.SPRINT) ? D.fastSpeed : D.walkSpeed;
 
-  const accel = (s.onGround ? D.accel : D.accel * 0.15) * dt;
+  // No steering in the air: hops and falls follow a smooth arc
+  const accel = (s.onGround ? D.accel : 0) * dt;
   const tvx = wx * speed - s.vx, tvz = wz * speed - s.vz;
   const tlen = Math.hypot(tvx, tvz);
   if (tlen <= accel) { s.vx += tvx; s.vz += tvz; } else { s.vx += tvx / tlen * accel; s.vz += tvz / tlen * accel; }

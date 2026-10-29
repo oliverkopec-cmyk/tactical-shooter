@@ -8,6 +8,7 @@ import { Server } from 'socket.io';
 import { RoomManager } from './rooms.js';
 import { openDatabase } from './db.js';
 import { Accounts } from './accounts.js';
+import { sharedCodeVersion } from './sharedVersion.js';
 
 // Local secrets (e.g. DATABASE_URL) can live in a .env file, which git ignores.
 try { process.loadEnvFile(); } catch { /* no .env file */ }
@@ -33,6 +34,13 @@ const io = new Server(server, {
 });
 
 const rooms = new RoomManager(io);
+const SHARED_VERSION = sharedCodeVersion();
+// Pages built from different shared code would mispredict movement: send them back to reload.
+// ('dev' is the Vite dev server, which always runs the current files.)
+io.use((socket, next) => {
+  const version = socket.handshake.auth?.version;
+  next(version === SHARED_VERSION || version === 'dev' ? undefined : new Error('outdated'));
+});
 io.use(accounts.socketAuth());
 
 io.on('connection', (socket) => {

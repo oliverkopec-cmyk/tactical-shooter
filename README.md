@@ -4,7 +4,7 @@ A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite o
 
 ## Status: Stage 10 (movement and keybinds)
 
-- Jump (Space) for players and drones; players can't shoot in mid-air. A drone hop also launches it about 1.5 m forward, once per second
+- Jump (Space) for players and drones; players can't shoot in mid-air. A drone hop arcs about 0.5 m up and 1.5 m forward, once per second
 - Prone (Z, toggle): slow, no sprinting, a smaller hitbox lying along the body; crouch moved to C and defender cameras to T
 - Settings → Keybinds: rebind every action to any key or mouse button, reset to default; saved to the account
 
@@ -131,6 +131,7 @@ client/
 - `state.prone` (0..1) blends height, eye height and speed. Getting up needs head room; if standing doesn't fit, you end up crouched.
 - Lying down (`prone >= 0.5`), the hitbox in `shared/raycast.js` is a low box along the facing direction with the head in front. The avatar in `client/src/avatars.js` uses the same measurements, and lag compensation records `prone` with every pose.
 - No shooting mid-air: `weaponInput()` drops the trigger while `!onGround`.
+- The page and the server must run the same `shared/` code, or prediction disagrees with the server and things jitter. `npm run build` stamps the page with a fingerprint of `shared/*.js` (`server/sharedVersion.js`); the server rejects a connection with a different one, and the page reloads once (or shows a message). After changing shared code locally, rebuild **and** restart `npm start`. `npm run dev` skips the check.
 - Keybinds live in `settings.keybinds` (action → `KeyboardEvent.code` or `MouseN`). The server cleans them with `sanitizeKeybinds()`: unknown actions are dropped, bad codes reset, and duplicates unbound. Esc and 1-3 can't be rebound. Binding a key that's already used swaps the two actions.
 - Hints, prompts and ability descriptions use `keyFor(action)` / `{action}` placeholders, so they show the player's own keys.
 
