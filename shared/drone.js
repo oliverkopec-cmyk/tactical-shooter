@@ -13,6 +13,8 @@ export const DRONE = {
   accel: 40,
   gravity: 22,
   jumpSpeed: 4.4,       // a small hop, about 0.44 m: onto low ledges and over debris
+  jumpBoost: 5,         // forward push on a hop: about 1.5 m further than rolling would go
+  jumpCooldown: 1,      // seconds between hops, so hopping can't be chained to zoom around
   stepHeight: 0.22,     // climbs stairs, but not full ledges
   maxPitch: 0.7,
   hp: 40,
@@ -26,7 +28,7 @@ const EPS = 1e-4;
 export const DRONE_KEYS = KEY.FORWARD | KEY.BACK | KEY.LEFT | KEY.RIGHT | KEY.SPRINT | KEY.JUMP;
 
 export function createDroneState(x, y, z, yaw) {
-  return { x, y, z, vx: 0, vy: 0, vz: 0, yaw, pitch: 0, onGround: true };
+  return { x, y, z, vx: 0, vy: 0, vz: 0, yaw, pitch: 0, onGround: true, jumpCd: 0 };
 }
 
 export function copyDroneState(s) {
@@ -70,7 +72,14 @@ export function stepDrone(s, input, dt, world) {
     } else { s.x = ax; s.z = az; }
   } else { s.x = ax; s.z = az; }
 
-  if ((keys & KEY.JUMP) && s.onGround) { s.vy = D.jumpSpeed; s.onGround = false; }
+  // Hop: up, plus a push the way the drone faces
+  s.jumpCd = Math.max(0, (s.jumpCd || 0) - dt);
+  if ((keys & KEY.JUMP) && s.onGround && s.jumpCd <= 0) {
+    s.vy = D.jumpSpeed;
+    s.vx += fx * D.jumpBoost; s.vz += fz * D.jumpBoost;
+    s.onGround = false;
+    s.jumpCd = D.jumpCooldown;
+  }
 
   // Gravity, ceilings; stick to stairs when rolling down them
   const wasOnGround = s.onGround;

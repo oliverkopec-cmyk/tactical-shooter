@@ -4,7 +4,7 @@ A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite o
 
 ## Status: Stage 10 (movement and keybinds)
 
-- Jump (Space) for players and drones; players can't shoot in mid-air
+- Jump (Space) for players and drones; players can't shoot in mid-air. A drone hop also launches it about 1.5 m forward, once per second
 - Prone (Z, toggle): slow, no sprinting, a smaller hitbox lying along the body; crouch moved to C and defender cameras to T
 - Settings → Keybinds: rebind every action to any key or mouse button, reset to default; saved to the account
 

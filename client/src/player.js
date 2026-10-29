@@ -264,7 +264,7 @@ export class LocalPlayer {
     this.droneId = entry.id;
     this.droneState = {
       x: entry.x, y: entry.y, z: entry.z, vx: entry.vx, vy: entry.vy, vz: entry.vz,
-      yaw: entry.yaw, pitch: entry.pitch, onGround: !!entry.g,
+      yaw: entry.yaw, pitch: entry.pitch, onGround: !!entry.g, jumpCd: entry.jc || 0,
     };
     this.yaw = entry.yaw;
     this.pitch = 0;
@@ -288,6 +288,7 @@ export class LocalPlayer {
     if (ds && droneEntry && droneEntry.id === this.droneId) {
       for (const k of ['x', 'y', 'z', 'vx', 'vy', 'vz']) ds[k] = droneEntry[k];
       ds.onGround = !!droneEntry.g;
+      ds.jumpCd = droneEntry.jc || 0;
       this.droneJammed = !!droneEntry.j;
     }
     for (const input of this.pending) this.simulate(input, false);

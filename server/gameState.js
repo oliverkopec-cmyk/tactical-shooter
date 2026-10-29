@@ -688,7 +688,7 @@ export class GameState {
       const s = d.state, owner = this.players.get(d.owner);
       drones.push({
         id: d.id, o: d.owner, a: owner?.activeDrone === d.id ? 1 : 0, hp: d.hp, j: d.jammed ? 1 : 0,
-        x: s.x, y: s.y, z: s.z, vx: s.vx, vy: s.vy, vz: s.vz, yaw: s.yaw, pitch: s.pitch, g: s.onGround,
+        x: s.x, y: s.y, z: s.z, vx: s.vx, vy: s.vy, vz: s.vz, yaw: s.yaw, pitch: s.pitch, g: s.onGround, jc: round2(s.jumpCd || 0),
       });
     }
     this.io.to(this.room.channel).volatile.emit('snapshot', { t: Date.now(), players, cap, drones, grenades: this.gadgets.snapshotGrenades() });
