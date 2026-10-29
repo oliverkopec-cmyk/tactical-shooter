@@ -7,8 +7,9 @@ import { GameState } from './gameState.js';
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
 
 export class RoomManager {
-  constructor(io) {
+  constructor(io, progression = null) {
     this.io = io;
+    this.progression = progression;   // pays out rewards and rank changes when a match ends
     this.rooms = new Map(); // code -> Room
   }
 
@@ -24,7 +25,7 @@ export class RoomManager {
   }
 
   createRoom() {
-    const room = new Room(this.io, this.generateCode(), () => this.rooms.delete(room.code));
+    const room = new Room(this.io, this.generateCode(), () => this.rooms.delete(room.code), this.progression);
     this.rooms.set(room.code, room);
     return room;
   }
@@ -40,8 +41,9 @@ export function cleanName(name) {
 }
 
 class Room {
-  constructor(io, code, onEmpty) {
+  constructor(io, code, onEmpty, progression = null) {
     this.io = io;
+    this.progression = progression;
     this.code = code;
     this.onEmpty = onEmpty;
     this.channel = `room:${code}`;

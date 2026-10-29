@@ -239,6 +239,7 @@ export class Gadgets {
       this.throwGrenade(p, id, u.id);
     }
     u.charges--;
+    p.stats.utilities++;
     p.utilityReadyAt = now + UTIL_STATS.cooldown * 1000;
     this.game.sendLoadout(id, p);
   }
@@ -383,11 +384,11 @@ export class Gadgets {
       this.barricading.delete(id);
       const o = MAP.openings[b.openingId];
       if (this.openingBlocked(o)) { this.game.io.to(id).emit('reinforceCancel', { reason: 'Someone is standing in the way.' }); continue; }
-      this.placeBarricade(o);
+      this.placeBarricade(o, id);
     }
   }
 
-  placeBarricade(o) {
+  placeBarricade(o, ownerId) {
     const t = BARRICADE.thickness / 2;
     const cols = Math.max(1, Math.round((o.to - o.from) / BARRICADE.panel)), rows = Math.max(1, Math.round((o.y1 - o.y0) / BARRICADE.panel));
     const pw = (o.to - o.from) / cols, ph = (o.y1 - o.y0) / rows;
@@ -406,6 +407,8 @@ export class Gadgets {
     const b = { id: bid, openingId: o.id, panels };
     this.barricades.set(bid, b);
     this.barricadesLeft--;
+    const builder = this.game.players.get(ownerId);
+    if (builder) builder.stats.barricades++;
     this.game.emitAll('gadgetAdd', this.barricadeRecord(b));
     this.game.emitAll('barricadesLeft', { left: this.barricadesLeft });
   }

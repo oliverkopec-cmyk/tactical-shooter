@@ -34,7 +34,14 @@ const SCHEMA = `
     expires_at  TIMESTAMPTZ NOT NULL
   );
   CREATE INDEX IF NOT EXISTS sessions_account_idx ON sessions (account_id);
+  ALTER TABLE accounts ADD COLUMN IF NOT EXISTS quests JSONB NOT NULL DEFAULT '{}';
+  ALTER TABLE accounts ADD COLUMN IF NOT EXISTS stats JSONB NOT NULL DEFAULT '{}';
 `;
+
+/** Create or update the tables (safe to run every start). */
+export async function applySchema(query) {
+  for (const statement of SCHEMA.split(';').map((s) => s.trim()).filter(Boolean)) await query(statement);
+}
 
 /** Returns { query(sql, params) -> { rows }, kind: 'postgres' | 'local' }. */
 export async function openDatabase() {
@@ -56,8 +63,6 @@ export async function openDatabase() {
       + 'On Render this is wiped on every deploy, so set DATABASE_URL there.');
   }
 
-  for (const statement of SCHEMA.split(';').map((s) => s.trim()).filter(Boolean)) {
-    await db.query(statement);
-  }
+  await applySchema((sql) => db.query(sql));
   return db;
 }

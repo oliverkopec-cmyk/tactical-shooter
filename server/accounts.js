@@ -8,8 +8,10 @@
 import crypto from 'node:crypto';
 import bcrypt from 'bcrypt';
 import express from 'express';
-import { usernameError, passwordError, ownedOperatorIds } from '../shared/account.js';
+import { usernameError, passwordError } from '../shared/account.js';
 import { sanitizeSettings } from '../shared/settings.js';
+import { profileOf } from './profile.js';
+import { Progression } from './progression.js';
 
 const COOKIE = 'bl_session';
 const SESSION_DAYS = 90;
@@ -27,28 +29,12 @@ function readCookie(header, name) {
   return null;
 }
 
-/** What the client gets to see about its own account. */
-export function profileOf(row) {
-  return {
-    id: row.id,
-    username: row.username,
-    level: row.level,
-    xp: row.xp,
-    money: row.money,
-    polishMoney: row.polish_money,
-    rankPoints: row.rank_points,
-    ownedOperators: ownedOperatorIds(row.owned_operators),
-    ownedSkins: row.owned_skins,
-    equippedSkins: row.equipped_skins,
-    settings: sanitizeSettings(row.settings),
-  };
-}
-
 export class Accounts {
   constructor(db) {
     this.db = db;
     this.online = new Map();   // accountId -> socket (one connection per account)
     this.attempts = new Map(); // ip -> { count, resetAt }
+    this.progression = new Progression(this);   // money, xp, rank points and daily quests
     // Compared against when the username doesn't exist, so a wrong username
     // takes as long to reject as a wrong password.
     this.dummyHash = bcrypt.hash(crypto.randomBytes(16).toString('hex'), BCRYPT_ROUNDS);
@@ -115,7 +101,8 @@ export class Accounts {
         await this.db.query(`UPDATE sessions SET expires_at = now() + interval '${SESSION_DAYS} days' WHERE token_hash = $1`, [found.tokenHash]);
         this.setCookie(req, res, readCookie(req.headers.cookie, COOKIE));
       }
-      res.json({ account: found ? profileOf(found.row) : null, storage: this.db.kind });
+      const row = found ? await this.progression.ensureQuests(found.row) : null;
+      res.json({ account: row ? profileOf(row) : null, storage: this.db.kind });
     });
 
     r.post('/signup', async (req, res) => {
@@ -132,7 +119,7 @@ export class Accounts {
       );
       if (!rows[0]) return res.status(409).json({ error: 'That username is taken.' });
       this.setCookie(req, res, await this.createSession(rows[0].id));
-      res.json({ account: profileOf(rows[0]) });
+      res.json({ account: profileOf(await this.progression.ensureQuests(rows[0])) });
     });
 
     r.post('/login', async (req, res) => {
@@ -144,7 +131,7 @@ export class Accounts {
       const ok = await bcrypt.compare(password, rows[0]?.password_hash || await this.dummyHash);
       if (!rows[0] || !ok) return res.status(401).json({ error: 'Wrong username or password.' });
       this.setCookie(req, res, await this.createSession(rows[0].id));
-      res.json({ account: profileOf(rows[0]) });
+      res.json({ account: profileOf(await this.progression.ensureQuests(rows[0])) });
     });
 
     r.post('/logout', async (req, res) => {

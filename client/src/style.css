@@ -671,3 +671,71 @@ button.small { font-size: 12px; padding: 4px 10px; margin-top: 6px; }
 #gun-tip .tip-row b { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
 #gun-tip .tip-bar { height: 7px; border-radius: 4px; background: rgba(255, 255, 255, 0.1); overflow: hidden; }
 #gun-tip .tip-bar i { display: block; height: 100%; border-radius: 4px; background: linear-gradient(90deg, #c98a1c, var(--accent)); }
+
+/* ---------------------------------------------------------------- stage 12: rank, quests, match summary */
+.bar.thin { height: 6px; background: rgba(255, 255, 255, 0.12); border-radius: 3px; overflow: hidden; }
+.bar.thin > div { height: 100%; background: var(--accent); border-radius: 3px; }
+#screen-home .panel { max-width: 420px; }
+.profile-top { gap: 10px; }
+.profile-id { flex: 1; min-width: 0; }
+.profile-rank-icon { display: flex; flex-shrink: 0; }
+.profile-rank-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-top: 2px; }
+.rank-label { font-weight: 800; letter-spacing: 0.04em; }
+
+.quests { border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; display: flex; flex-direction: column; gap: 8px; }
+.quests-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.quests-head h2 { margin: 0; }
+.quest { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.quest-top { display: flex; justify-content: space-between; gap: 8px; }
+.quest-top b { color: var(--accent); }
+.quest-row { display: flex; align-items: center; gap: 8px; }
+.quest-row .bar { flex: 1; }
+.quest-row span { font-size: 11px; min-width: 44px; text-align: right; }
+.quest.done .quest-label { color: #6fdc7a; }
+.quest.done .bar > div { background: #6fdc7a; }
+
+#match-summary {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(6, 8, 12, 0.82);
+  overflow-y: auto;
+}
+.summary-card {
+  width: 100%;
+  max-width: 420px;
+  max-height: 100%;
+  overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 22px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+}
+.summary-title { font-size: 32px; font-weight: 900; letter-spacing: 0.1em; text-align: center; }
+.summary-title.win { color: #6fdc7a; }
+.summary-title.lose { color: #e8604a; }
+.summary-rank { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; }
+.rank-side { display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 13px; font-weight: 700; min-width: 96px; text-align: center; }
+.rank-mid { display: flex; flex-direction: column; align-items: center; }
+.rank-mid b { font-size: 28px; }
+.up { color: #6fdc7a; }
+.down { color: #e8604a; }
+.rank-verdict { text-align: center; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; font-size: 13px; }
+.small-note { font-size: 12px; }
+.sum-sub { margin-top: 10px; font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.sum-line { display: flex; justify-content: space-between; gap: 8px; font-size: 14px; padding: 2px 0; }
+.sum-line b { color: var(--accent); font-variant-numeric: tabular-nums; }
+.sum-line.quest-done span { color: #6fdc7a; }
+.sum-line.total { border-top: 1px solid var(--line); margin-top: 6px; padding-top: 8px; font-size: 16px; font-weight: 800; }
+.levelup { text-align: center; font-weight: 900; letter-spacing: 0.08em; color: var(--accent); margin-top: 6px; }
+#summary-close { margin-top: 10px; }
+.summary-card .bar.thin { margin-top: 6px; }
+.rank-verdict { margin-top: 4px; }

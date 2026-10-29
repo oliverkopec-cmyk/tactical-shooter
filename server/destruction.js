@@ -99,6 +99,7 @@ export class Destruction {
     this.charges.set(charge.id, charge);
     if (type === 'heavy') p.ability.charges--; else p.charges--;
     p[slot] = charge.id;
+    p.stats.plants++;
     this.emitAll('chargePlaced', charge);
     this.game.sendLoadout(id, p);
   }
@@ -182,6 +183,7 @@ export class Destruction {
       if (this.world.reinforced[section.id] || (r.personal ? !(p.ability?.charges > 0) : this.reinforcementsLeft <= 0)) { this.emitTo(id, 'reinforceCancel', { reason: '' }); continue; }
 
       this.world.reinforce(section.id);
+      p.stats.reinforced++;
       if (r.personal) { p.ability.charges--; this.game.sendLoadout(id, p); } else this.reinforcementsLeft--;
       for (const pid of section.panelIds) this.panelHp[pid] = PANEL_HP;
       this.emitAll('reinforced', { section: section.id, left: this.reinforcementsLeft });
