@@ -17,6 +17,9 @@ export const BIND_ACTIONS = [
   { id: 'fire', label: 'Fire / drone ping', group: 'Combat', key: 'Mouse0' },
   { id: 'melee', label: 'Melee', group: 'Combat', key: 'Mouse2' },
   { id: 'reload', label: 'Reload', group: 'Combat', key: 'KeyR' },
+  { id: 'primary', label: 'Primary weapon', group: 'Combat', key: 'Digit1' },
+  { id: 'secondary', label: 'Secondary weapon', group: 'Combat', key: 'Digit2' },
+  { id: 'utility', label: 'Use utility', group: 'Combat', key: 'Digit4' },
   { id: 'ability', label: 'Operator ability', group: 'Combat', key: 'KeyF' },
   { id: 'breach', label: 'Breach charge (attack)', group: 'Gadgets', key: 'KeyG' },
   { id: 'droneNext', label: 'Switch drone (attack)', group: 'Gadgets', key: 'KeyX' },
@@ -29,8 +32,11 @@ export const BIND_ACTIONS = [
 
 export const DEFAULT_KEYBINDS = Object.fromEntries(BIND_ACTIONS.map((a) => [a.id, a.key]));
 
-/** Keys that always keep their own job: Esc (pause) and 1-3 (entry point choice). */
-export const RESERVED_CODES = new Set(['Escape', 'Digit1', 'Digit2', 'Digit3']);
+/**
+ * Keys that always keep their own job: Esc (pause). Keys 1-3 also choose the
+ * entry point while you're an attacker in prep, whatever they're bound to.
+ */
+export const RESERVED_CODES = new Set(['Escape']);
 
 const CODE_RE = /^[A-Za-z0-9]{1,24}$/;
 

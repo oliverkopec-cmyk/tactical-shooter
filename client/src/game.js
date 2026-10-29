@@ -22,6 +22,7 @@ import { GadgetView } from './gadgets.js';
 import { Soundscape } from './soundscape.js';
 import { findOpening } from '../../shared/map.js';
 import { OPERATORS } from '../../shared/operators.js';
+import { UTILITIES } from '../../shared/utilities.js';
 import { settings, onSettingsChange } from './settings.js';
 import { DRONE } from '../../shared/drone.js';
 import { actionFor, mouseCode, keyFor } from './controls.js';
@@ -206,9 +207,21 @@ export class Game {
       this.stunMs = ms;
       this.audio.beep(3200, 0.5, 0.12, 'sine');
     });
-    network.on('grenadeExploded', ({ pos }) => {
+    network.on('grenadeExploded', ({ pos, type }) => {
       if (!this.running) return;
-      this.effects.flash(pos);
+      if (type === 'frag' || type === 'impact') this.effects.explosion(pos);
+      else this.effects.flash(pos);
+      this.audio.explosion(pos, this.listener());
+    });
+    network.on('smokeStart', (cloud) => {
+      if (!this.running) return;
+      this.gadgets.addSmoke(cloud);
+      this.effects.puff(cloud.pos, 0xcfd2d6, 0.5);
+      this.sound.placed('smoke', cloud.pos);
+    });
+    network.on('claymoreBlast', ({ pos }) => {
+      if (!this.running) return;
+      this.effects.explosion(pos);
       this.audio.explosion(pos, this.listener());
     });
     network.on('camView', (msg) => this.onCamView(msg));
@@ -355,7 +368,7 @@ export class Game {
     if (!this.local.alive) return `Click to switch teammate · ${tail}`;
     if (watching) return `${k('camView')} next camera · mouse pans the feed · you can't move while watching`;
     if (inDrone) return `Drone: ${move} drive · ${k('sprint')} fast · ${k('jump')} hop · ${k('fire')} ping enemy · ${k('droneNext')} switch · 1/2/3 spawn point · ${k('scoreboard')} scoreboard`;
-    const base = `${move} move · ${k('sprint')} sprint · ${k('jump')} jump · ${k('crouch')} crouch · ${k('prone')} prone · ${k('leanLeft')}/${k('leanRight')} lean · ${k('reload')} reload · ${k('melee')} melee`;
+    const base = `${move} move · ${k('sprint')} sprint · ${k('jump')} jump · ${k('crouch')} crouch · ${k('prone')} prone · ${k('leanLeft')}/${k('leanRight')} lean · ${k('reload')} reload · ${k('primary')}/${k('secondary')} guns · ${k('utility')} utility · ${k('melee')} melee`;
     const f = OPERATORS[this.loadout.op]?.ability ? ` · ${k('ability')} ability` : '';
     if (attack) return phase === PHASE.PREP ? 'Fly your drone to find the objective · 1/2/3 choose where you appear' : `${base}${f} · ${k('breach')} breach charge · ${tail}`;
     return `${base}${f} · ${phase === PHASE.PREP ? `${k('reinforce')} reinforce · ${k('barricade')} barricade · ` : ''}${k('camView')} cameras · ${tail}`;
@@ -639,6 +652,8 @@ export class Game {
       }
       lines.push({ key: keyFor('ability'), label: cfg.name, value });
     }
+    const util = this.loadout.utility;
+    if (util && UTILITIES[util.id]) lines.push({ key: keyFor('utility'), label: UTILITIES[util.id].name, value: `×${util.charges}` });
     if (attack) lines.push({ key: keyFor('breach'), label: 'Breach charge', value: this.loadout.placed ? `planted, ${keyFor('breach')} detonates` : `×${this.loadout.charges}` });
     else {
       lines.push({ key: keyFor('reinforce'), label: 'Team reinforcements', value: `${this.reinforcementsLeft}` });
@@ -771,7 +786,8 @@ export class Game {
     });
     this.ui.showOperatorSelect(selecting && local.alive, {
       team: this.myTeam, picks: this.picks, names, myId: this.network.id, myOp: this.loadout.op,
-      timeText: `${left}s`, onPick: (opId) => this.network.pickOperator(opId),
+      myUtility: this.loadout.utility?.id,
+      timeText: `${left}s`, onPick: (opId) => this.network.pickOperator(opId), onUtility: (id) => this.network.pickUtility(id),
     });
     this.ui.updateSpawnPicker(noBody && local.alive, this.spawnChoice);
     this.drones.update(dt);
@@ -800,7 +816,7 @@ export class Game {
     const spread = currentSpread(local.weapon, s);
     const halfFov = THREE.MathUtils.degToRad(this.camera.fov / 2);
     this.ui.setCrosshairGap(inDrone ? 5 : 3 + (Math.tan(spread) / Math.tan(halfFov)) * (window.innerHeight / 2));
-    this.ui.updateCombat({ health: this.health, weapon: local.weapon, alive: local.alive });
+    this.ui.updateCombat({ health: this.health, weapon: local.weapon, alive: local.alive, slotKeys: [keyFor('primary'), keyFor('secondary')] });
 
     this.updateGadgetHud(now);
     this.updateRoundHud();

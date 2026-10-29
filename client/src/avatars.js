@@ -179,7 +179,7 @@ export class RemotePlayer {
     this.weaponId = id;
     this.gunMount.clear();
     const gun = makeGunModel(id);
-    gun.scale.setScalar(1.3);
+    gun.scale.multiplyScalar(1.3);   // keeps the gun's own size
     gun.traverse((o) => { if (o.isMesh) o.castShadow = true; });
     this.gunMount.add(gun);
     this.muzzle = gun.userData.muzzle;

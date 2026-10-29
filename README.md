@@ -2,7 +2,21 @@
 
 A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite on the client, Node.js + Socket.IO on an authoritative server. One Node process serves both the game client and the realtime server, so the whole thing deploys as a single Render web service.
 
-## Status: Stage 10 (movement and keybinds)
+## Status: Stage 11 (weapons and loadouts)
+
+- **Every operator has a unique primary and secondary gun** (20 guns in all: assault rifles, a carbine, SMGs, shotgun, LMG, marksman and battle rifles, pistols, revolvers, a hand cannon and machine pistol), plus their F ability. The two Recruits are the standard-issue loadouts.
+- **Weapon keys:** `1` primary, `2` secondary (drawing a gun takes 0.4 s; ammo is kept per gun). Both are rebindable.
+- **Mobility is real:** each gun has a mobility rating that multiplies walking speed while it is drawn (heavy LMG -14%, light pistols +10%).
+- **Gun stats on hover:** hover any gun name in the operator select screen for a card with damage, fire rate, range, magazine, reload and mobility bars plus a short description. Any element with `data-gun="<weapon id>"` gets the card, so later menus only need that attribute.
+- **Utilities:** every operator offers two; you pick one on the operator select screen before each round (your choice is remembered). `4` uses it (rebindable). 2 charges each, 0.8 s between uses:
+  - **Claymore**: sticks to a floor or wall, arms after 1.2 s, then blasts the first enemy to walk into the cone in front of it (up to 3.4 m, 85 damage, falling off with distance; teammates and anyone behind it are safe)
+  - **Flash grenade**: blinds enemies who can see the burst for 3.2 s (40% as long if they look away); no slow
+  - **Impact grenade**: explodes the moment it hits anything, including an enemy; 60 damage within 3.2 m and smashes barricades
+  - **Smoke grenade**: a thick cloud that blocks sight for 12 s
+  - **Frag grenade**: bounces, bursts after 2.2 s; 95 damage within 5.5 m (falling off), blocked by walls, and it smashes barricades
+- Utilities are placed or thrown in prep (defenders) and action. They only ever hurt enemies.
+
+### Earlier: Stage 10 (movement and keybinds)
 
 - Jump (Space) for players and drones; players can't shoot in mid-air. A drone hop arcs about 0.5 m up and 1.5 m forward, once per second
 - Prone (Z, toggle): slow, no sprinting, a smaller hitbox lying along the body; crouch moved to C and defender cameras to T
@@ -17,7 +31,7 @@ A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite o
 - First-person movement: WASD, mouse look (pointer lock), Shift sprint, Space jump, C crouch, Z prone, Q/E lean (all rebindable)
 - Server-authoritative movement with client-side prediction, reconciliation and interpolation of other players
 - Two-storey map with interior and exterior stairs, a balcony, and the objective box
-- Hitscan weapons (rifle, SMG, shotgun) with recoil, spread, magazines and reload (R)
+- Hitscan weapons with recoil, spread, magazines and reload (R)
 - Server-side, lag-compensated hit detection; headshots deal extra damage
 - Health, death and spectating teammates until the round ends
 - HUD: health, ammo, dynamic crosshair, hit markers, damage direction, kill feed
@@ -27,18 +41,20 @@ A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite o
 - Attackers win by eliminating all defenders or holding the objective zone for 10 s (frozen while a defender contests it, reset if nobody holds it); defenders win by eliminating all attackers or running out the clock
 - Dead players spectate teammates until the round ends (no respawns); sides swap after round 3; late joiners wait for the next round
 - Breach charges only work in the action phase, wall reinforcement only in prep, and attackers wait in spawn during prep (drones arrive in stage 5)
-- Operator select (20 s, ends early once everyone has picked) before every round. One player per team per operator; a Recruit with no ability is always available for the 5th player. Each operator sets weapon, speed and armor ratings, and one ability on **F**:
+- Operator select (20 s, ends early once everyone has picked) before every round. One player per team per operator; a Recruit with no ability is always available for the 5th player. Each operator sets guns, utilities, speed and armor ratings, and one ability on **F**:
 
-  | Operator | Weapon | Ability |
-  | --- | --- | --- |
-  | Spark (A) | Rifle | Heavy breach charge, 1 use. F plants, F detonates. Breaks reinforced walls |
-  | Hawk (A) | SMG | Sonar ping on a 8 s cooldown: pings the enemy under his crosshair exactly like a drone pilot does (marker over their head for 3 s, no outlines through walls). Also pilots 2 extra drones (3 total) |
-  | Bulwark (A) | Shotgun | Portable bulletproof shield, F deploys and F next to it picks it up |
-  | Flash (A) | Rifle | 3 stun grenades: blind and slow enemies in sight for 4 s |
-  | Warden (D) | Shotgun | 2 barbed wire traps that slow anyone walking through |
-  | Jammer (D) | SMG | Device that disables drones and breach charges within 5 m |
-  | Lookout (D) | Rifle | 2 security cameras on walls; **C** cycles through the feeds. Everyone can see them, and one shot from an attacker (or a melee hit) destroys a camera and throws any defender watching it back to their body |
-  | Mason (D) | Rifle | 2 extra wall reinforcements in prep, on top of the team's 10 |
+  | Operator | Primary | Secondary | Utilities | Ability |
+  | --- | --- | --- | --- | --- |
+  | Spark (A) | Ember AR | Sidewinder (revolver) | Impact / Frag | Heavy breach charge, 1 use. F plants, F detonates. Breaks reinforced walls |
+  | Hawk (A) | Hornet SMG | Sting (machine pistol) | Smoke / Flash | Sonar ping on a 8 s cooldown: pings the enemy under his crosshair exactly like a drone pilot does (marker over their head for 3 s, no outlines through walls). Also pilots 2 extra drones (3 total) |
+  | Bulwark (A) | Breaker 12 (shotgun) | Anvil .45 (heavy pistol) | Frag / Claymore | Portable bulletproof shield, F deploys and F next to it picks it up |
+  | Flash (A) | Gale Carbine | Needle (light pistol) | Smoke / Impact | 3 stun grenades: blind and slow enemies in sight for 4 s |
+  | Recruit (A) | Vanguard AR | Sidekick 9 | Frag / Smoke | None |
+  | Warden (D) | Bastion LMG | Gavel (hand cannon) | Claymore / Frag | 2 barbed wire traps that slow anyone walking through |
+  | Jammer (D) | Pulse PDW | Zap 18 | Claymore / Flash | Device that disables drones and breach charges within 5 m |
+  | Lookout (D) | Longview DMR | Peep 7 | Flash / Smoke | 2 security cameras on walls; **T** cycles through the feeds. Everyone can see them, and one shot from an attacker (or a melee hit) destroys a camera and throws any defender watching it back to their body |
+  | Mason (D) | Keystone BR | Trowel (revolver) | Claymore / Impact | 2 extra wall reinforcements in prep, on top of the team's 10 |
+  | Recruit (D) | Garrison AR | Holdout | Frag / Flash | None |
 
   Speed rating changes walking speed (-8% / 0 / +8%), armor rating changes damage taken (+15% / 0 / -15%).
 - Attackers have no body during prep, so nobody can camp them: they appear at one of three entry points around the outside of the map (West, South, East) when the action phase starts. They pick one from the drone cam with keys 1-3
@@ -94,7 +110,8 @@ shared/            Code used by BOTH client and server
   constants.js     tuning values, key bit flags, team colours
   map.js           map geometry (axis-aligned boxes), spawns, objective
   movement.js      deterministic movement + collision (prediction and authority)
-  weapons.js       weapon stats + deterministic ammo/fire-rate/reload/spread
+  weapons.js       the 20 guns + deterministic ammo/fire-rate/reload/spread/swap, stat rows for menus
+  utilities.js     claymore, flash, impact, smoke and frag grenade definitions
   raycast.js       ray tests against the map and player hitboxes
   world.js         destructible wall panels/sections + the collidable world
   drone.js         drone physics (shared prediction + authority) and tuning
@@ -140,7 +157,7 @@ client/
 - Lying down (`prone >= 0.5`), the hitbox in `shared/raycast.js` is a low box along the facing direction with the head in front. The avatar in `client/src/avatars.js` uses the same measurements, and lag compensation records `prone` with every pose.
 - No shooting mid-air: `weaponInput()` drops the trigger while `!onGround`.
 - The page and the server must run the same `shared/` code, or prediction disagrees with the server and things jitter. `npm run build` stamps the page with a fingerprint of `shared/*.js` (`server/sharedVersion.js`); the server rejects a connection with a different one, and the page reloads once (or shows a message). After changing shared code locally, rebuild **and** restart `npm start`. `npm run dev` skips the check.
-- Keybinds live in `settings.keybinds` (action → `KeyboardEvent.code` or `MouseN`). The server cleans them with `sanitizeKeybinds()`: unknown actions are dropped, bad codes reset, and duplicates unbound. Esc and 1-3 can't be rebound. Binding a key that's already used swaps the two actions.
+- Keybinds live in `settings.keybinds` (action → `KeyboardEvent.code` or `MouseN`). The server cleans them with `sanitizeKeybinds()`: unknown actions are dropped, bad codes reset, and duplicates unbound. Esc can't be rebound. Keys 1-3 also choose the entry point while an attacker is in prep, whatever they're bound to (1/2/4 are the default weapon and utility keys). Binding a key that's already used swaps the two actions.
 - Hints, prompts and ability descriptions use `keyFor(action)` / `{action}` placeholders, so they show the player's own keys.
 
 ## Accounts
@@ -177,9 +194,17 @@ Other players' sounds are derived on each client from the snapshots (speed, stan
 
 `MAP.openings` lists every door and window gap (generated in `shared/map.js`; `findOpening()` finds the one a ray passes through). A barricade is a set of dynamic boxes added to the shared `World` (`kind: 'barricade'`), so movement and bullets on both sides treat the planks as solid. The server owns plank health and sends `barricadeBroken` events; clients remove the same planks. Props live in the same `MAP.boxes` list as walls (`prop()` in `shared/map.js`), with `MAP.details` for visual-only decoration. Run the reachability check idea from the commit when you move props: every room, both staircases and all spawn points must stay open.
 
+## Weapons and utilities
+
+- `shared/weapons.js` holds every gun (`gun({...})` fills in defaults) and the deterministic weapon simulation. A weapon state is the drawn gun plus the stowed one (`other`); `input.wsel` (1 or 2) is the slot the player wants, sent with every input, so the client predicts swaps exactly like the server does. `weaponStats()` turns a gun into the rows and bar fractions the hover card shows.
+- Gun mobility multiplies walking speed through `state.gunMul`, set from the drawn gun before every movement step on both sides.
+- `shared/utilities.js` lists the five utilities and their numbers (`UTIL_STATS`). Thrown ones share the grenade code in `server/abilities.js` (Flash's stun ability uses it too); claymores are server-side triggers (`checkClaymores`). Smoke is only a visual on the client (`GadgetView.addSmoke`), the server just sends `smokeStart`.
+- The server owns utility charges and the pick: `pickUtility` only works during operator select and only for utilities the operator offers.
+- To add a gun: add an entry in `shared/weapons.js` (use an existing `model` or add one in `client/src/weapons.js`), give it a shot tone in `client/src/audio.js`, and assign it in `shared/operators.js`.
+
 ## Adding an operator
 
-1. Add one entry to `shared/operators.js` (name, team, colour, weapon, speed/armor, and an `ability` with `id`, `name`, `desc` and either `charges` or `cooldown`).
+1. Add one entry to `shared/operators.js` (name, team, colour, `weapons: { primary, secondary }`, two `utilities`, speed/armor, and an `ability` with `id`, `name`, `desc` and either `charges` or `cooldown`).
 2. If it has a new ability, add a handler with the same `id` to `ABILITIES` in `server/abilities.js`. It receives the gadget manager, the player's socket id, the player, and the ability config, and can use `p.ability.charges` / `p.ability.cdUntil`.
 3. If the gadget is visible in the world, add a visual to `client/src/gadgets.js` and send it with `gadgetAdd`.
 

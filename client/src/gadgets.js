@@ -1,5 +1,6 @@
 // Visuals for operator gadgets: shields, barbed wire, jammers, hidden cameras
-// (defenders only, the server never sends them to attackers) and stun grenades.
+// (defenders only, the server never sends them to attackers), claymores,
+// thrown grenades and smoke clouds.
 // Shields also become solid boxes in the shared World so prediction and
 // raycasts agree with the server.
 
@@ -16,6 +17,16 @@ const redLed = new THREE.MeshBasicMaterial({ color: 0xff2a2a });
 const camBodyMat = new THREE.MeshStandardMaterial({ color: 0xd9dce0, roughness: 0.45, metalness: 0.3 });
 const woodMats = [0x8a5a2b, 0x7a4e24, 0x96663a].map((c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.9 }));
 const grenadeMat = new THREE.MeshStandardMaterial({ color: 0xe8e8ff, emissive: 0x9999ff, emissiveIntensity: 0.8, roughness: 0.3 });
+// One look per thrown grenade type, so you can tell what is flying at you
+const GRENADE_LOOK = { stun: null, flash: null, frag: 0x3f5a3a, impact: 0xd2502f, smoke: 0x9aa0a6 };
+const grenadeMats = {};
+function grenadeMaterial(kind) {
+  const color = GRENADE_LOOK[kind];
+  if (!color) return grenadeMat;
+  return (grenadeMats[kind] ||= new THREE.MeshStandardMaterial({ color, roughness: 0.5, metalness: 0.3 }));
+}
+const claymoreMat = new THREE.MeshStandardMaterial({ color: 0x4a5a3a, roughness: 0.7 });
+const smokeGeo = new THREE.SphereGeometry(1, 12, 9);
 
 function makeWire(half) {
   const g = new THREE.Group();
@@ -70,12 +81,32 @@ function makeCamera() {
   return g;
 }
 
+/** A claymore: a curved olive-drab plate on two legs with a red light. It faces +z. */
+function makeClaymore() {
+  const g = new THREE.Group();
+  const plate = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.13, 0.045), claymoreMat);
+  plate.position.set(0, 0.1, 0);
+  for (const sx of [-0.09, 0.09]) {
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.08, 5), darkMat);
+    leg.position.set(sx, 0.04, -0.01);
+    g.add(leg);
+  }
+  const face = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.09, 0.012), new THREE.MeshStandardMaterial({ color: 0x20261a, roughness: 0.9 }));
+  face.position.set(0, 0.1, 0.028);
+  const led = new THREE.Mesh(new THREE.SphereGeometry(0.014, 8, 6), redLed);
+  led.position.set(0.1, 0.17, 0.02);
+  g.add(plate, face, led);
+  g.userData.led = led;
+  return g;
+}
+
 export class GadgetView {
   constructor(scene, world) {
     this.scene = scene;
     this.world = world;
     this.items = new Map();      // "kind:id" -> { kind, group, rec }
     this.grenades = new Map();   // id -> { mesh, target }
+    this.smokes = [];            // { group, age, life, size }
     this.t = 0;
   }
 
@@ -107,6 +138,10 @@ export class GadgetView {
         group.userData.meshes.set(p.i, m);
         this.world.addBox({ id: `bar-${rec.id}-${p.i}`, kind: 'barricade', barricadeId: rec.id, panelIndex: p.i, min: p.min, max: p.max });
       }
+    } else if (rec.kind === 'claymore') {
+      group = makeClaymore();
+      group.position.set(...rec.pos);
+      group.lookAt(rec.pos[0] + rec.dir[0], rec.pos[1], rec.pos[2] + rec.dir[2]);
     } else if (rec.kind === 'camera') {
       group = makeCamera();
       group.position.set(...rec.pos);
@@ -162,6 +197,28 @@ export class GadgetView {
     this.items.clear();
     for (const g of this.grenades.values()) this.scene.remove(g.mesh);
     this.grenades.clear();
+    for (const s of this.smokes) this.scene.remove(s.group);
+    this.smokes = [];
+  }
+
+  /** A smoke grenade went off: a cloud of overlapping soft balls that grows, hangs, then thins out. */
+  addSmoke({ id, pos, ms, radius }) {
+    const group = new THREE.Group();
+    group.position.set(pos[0], pos[1], pos[2]);
+    let seed = id * 9301 + 49297;
+    const rand = () => ((seed = (seed * 9301 + 49297) % 233280) / 233280);
+    for (let i = 0; i < 22; i++) {
+      const shade = 0xa4 + Math.floor(rand() * 0x20);   // light greys, slightly blue
+      const mat = new THREE.MeshBasicMaterial({ color: (shade << 16) | (shade << 8) | (shade + 6), transparent: true, opacity: 0.93, depthWrite: true, fog: false });
+      const ball = new THREE.Mesh(smokeGeo, mat);
+      const r = radius * (0.32 + rand() * 0.3);
+      ball.scale.setScalar(r);
+      const a = rand() * Math.PI * 2, d = rand() * radius * 0.55;
+      ball.position.set(Math.cos(a) * d, r * 0.25 + rand() * radius * 0.45, Math.sin(a) * d);
+      group.add(ball);
+    }
+    this.scene.add(group);
+    this.smokes.push({ group, age: 0, life: ms / 1000 });
   }
 
   syncGrenades(list) {
@@ -170,7 +227,7 @@ export class GadgetView {
       seen.add(g.id);
       let e = this.grenades.get(g.id);
       if (!e) {
-        const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.075, 10, 8), grenadeMat);
+        const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.075, 10, 8), grenadeMaterial(g.k));
         mesh.position.set(g.x, g.y, g.z);
         this.scene.add(mesh);
         e = { mesh, target: g };
@@ -190,6 +247,14 @@ export class GadgetView {
       e.mesh.position.x += (e.target.x - e.mesh.position.x) * k;
       e.mesh.position.y += (e.target.y - e.mesh.position.y) * k;
       e.mesh.position.z += (e.target.z - e.mesh.position.z) * k;
+    }
+    for (let i = this.smokes.length - 1; i >= 0; i--) {
+      const s = this.smokes[i];
+      s.age += dt;
+      if (s.age >= s.life) { this.scene.remove(s.group); this.smokes.splice(i, 1); continue; }
+      const grow = Math.min(1, s.age / 0.9), fade = Math.min(1, (s.life - s.age) / 3);
+      s.group.scale.setScalar(0.25 + 0.75 * (1 - (1 - grow) ** 2));
+      for (const ball of s.group.children) ball.material.opacity = 0.93 * fade;
     }
     const on = this.t % 1.2 < 0.25;
     for (const it of this.items.values()) {

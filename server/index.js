@@ -78,10 +78,12 @@ io.on('connection', (socket) => {
   });
 
   socket.on('action', (type) => {
-    if (type === 'breach' || type === 'reinforce' || type === 'droneNext' || type === 'ping' || type === 'ability' || type === 'camView' || type === 'barricade' || type === 'melee') socket.data.room?.handleAction(socket.id, type);
+    if (type === 'breach' || type === 'reinforce' || type === 'droneNext' || type === 'ping' || type === 'ability' || type === 'utility' || type === 'camView' || type === 'barricade' || type === 'melee') socket.data.room?.handleAction(socket.id, type);
   });
 
   socket.on('pickOperator', (opId) => socket.data.room?.game?.pickOperator(socket.id, String(opId)));
+
+  socket.on('pickUtility', (id) => socket.data.room?.game?.pickUtility(socket.id, String(id)));
 
   socket.on('voteSite', (i) => socket.data.room?.game?.voteSite(socket.id, i));
 

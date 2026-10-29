@@ -6,7 +6,8 @@
 
 import { MAP } from '../shared/map.js';
 import { createPlayerState, stepPlayer, weaponInput } from '../shared/movement.js';
-import { createWeaponState, stepWeapon } from '../shared/weapons.js';
+import { createWeaponState, stepWeapon, gunMobility } from '../shared/weapons.js';
+import { UTILITIES } from '../shared/utilities.js';
 import { OPERATORS, defaultOperator, operatorsFor, speedMultiplier, damageMultiplier } from '../shared/operators.js';
 import { World } from '../shared/world.js';
 import { maskKeys, attackSpawnPoint, inObjectiveZone } from '../shared/rules.js';
@@ -75,6 +76,9 @@ export class GameState {
       operator: defaultOperator(member.team),
       opConfirmed: false,     // picked on the select screen this round
       ability: null,          // { charges, cdUntil, shieldId } for the current operator
+      utilityChoice: null,    // the utility picked on the select screen (kept between rounds)
+      utility: null,          // { id, charges } for this round
+      utilityReadyAt: 0,
       camView: -1,            // index of the camera a defender is watching, or -1
       camId: null,
       stunUntil: 0,
@@ -107,6 +111,7 @@ export class GameState {
     else if (type === 'droneNext') this.cycleDrone(p);
     else if (type === 'ping') this.pingFromDrone(id, p, Date.now());
     else if (type === 'ability') this.gadgets.use(id, p);
+    else if (type === 'utility') this.gadgets.useUtility(id, p);
     else if (type === 'barricade') this.gadgets.startBarricade(id, p);
     else if (type === 'melee') this.melee(id, p, Date.now());
     else if (type === 'camView') this.gadgets.cycleCamera(id, p);
@@ -221,11 +226,25 @@ export class GameState {
   /** Give a player their operator's weapon, ratings and ability stock. */
   applyOperator(p) {
     const op = OPERATORS[p.operator];
-    p.weapon = createWeaponState(op.weapon);
+    p.weapon = createWeaponState(op.weapons.primary, op.weapons.secondary);
     p.state.speedMul = speedMultiplier(op);
     p.ability = op.ability ? { charges: op.ability.charges ?? 0, cdUntil: 0, shieldId: null } : null;
     p.placedHeavy = null;
+    // Keep last round's utility if this operator offers it, else the first one
+    if (!op.utilities.includes(p.utilityChoice)) p.utilityChoice = op.utilities[0];
+    p.utility = { id: p.utilityChoice, charges: UTILITIES[p.utilityChoice].charges };
+    p.utilityReadyAt = 0;
     this.sendLoadout(p.member.id, p);
+  }
+
+  /** The select screen: choose which of the operator's two utilities to bring this round. */
+  pickUtility(id, utilityId) {
+    const p = this.players.get(id);
+    if (!p || this.rounds.phase !== PHASE.INTRO) return;
+    if (!OPERATORS[p.operator].utilities.includes(utilityId)) return;
+    p.utilityChoice = utilityId;
+    p.utility = { id: utilityId, charges: UTILITIES[utilityId].charges };
+    this.sendLoadout(id, p);
   }
 
   pickOperator(id, opId) {
@@ -341,6 +360,7 @@ export class GameState {
     const ab = p.ability, cfg = OPERATORS[p.operator]?.ability;
     this.io.to(id).emit('loadout', {
       op: p.operator, charges: p.charges, placed: !!p.placedCharge,
+      utility: p.utility ? { id: p.utility.id, charges: p.utility.charges } : null,
       ability: cfg ? {
         id: cfg.id, charges: ab.charges, cdLeft: Math.max(0, ab.cdUntil - Date.now()),
         deployed: !!(ab.shieldId || p.placedHeavy),
@@ -378,7 +398,6 @@ export class GameState {
       if (team === 'attack') p.spawnChoice = (used[team] % MAP.spawns.attack.length) + 1;
       used[team]++;
       p.spawned = true;
-      p.weapon = createWeaponState(p.weapon.id);
       p.health = MAX_HEALTH;
       p.alive = true;
       p.queue.length = 0;
@@ -577,6 +596,7 @@ export class GameState {
           input.keys = maskKeys(input.keys, p.member.team, phase, p.camView >= 0);
           // Defenders can't leave the building during prep
           const solid = phase === PHASE.PREP && p.member.team === 'defense' ? this.world.barrierView : this.world;
+          p.state.gunMul = gunMobility(p.weapon);
           stepPlayer(p.state, input, input.dt, solid);
           if (stepWeapon(p.weapon, weaponInput(p.state, input), input.dt)) this.fire(id, p, input, wallNow);
         }
@@ -679,7 +699,7 @@ export class GameState {
         id, seq: p.lastSeq, alive: p.alive, u: p.spawned === false ? 1 : 0, hp: p.health, o: p.operator, slow: p.state.slow, sm: p.state.speedMul, fd: p.state.fireDelay, jc: round2(p.state.jumpCd || 0), spr: p.state.sprinting ? 1 : 0, sp: p.spottedUntil > Date.now() ? 1 : 0,
         x: s.x, y: s.y, z: s.z, vx: s.vx, vy: s.vy, vz: s.vz,
         yaw: s.yaw, pitch: s.pitch, crouch: s.crouch, prone: s.prone || 0, lean: s.lean, onGround: s.onGround,
-        w: { id: w.id, ammo: w.ammo, reserve: w.reserve, cooldown: w.cooldown, reload: w.reload, bloom: w.bloom, trigger: w.trigger },
+        w: { id: w.id, ammo: w.ammo, reserve: w.reserve, cooldown: w.cooldown, reload: w.reload, bloom: w.bloom, trigger: w.trigger, slot: w.slot, other: w.other },
       });
     }
     const cap = { p: Math.min(1, this.rounds.capture / CAPTURE_TIME), c: this.rounds.contested };
@@ -724,7 +744,7 @@ function sanitizeInput(raw) {
   const seq = Number(raw.seq), dt = Number(raw.dt), yaw = Number(raw.yaw), pitch = Number(raw.pitch);
   if (!Number.isInteger(seq) || !Number.isFinite(dt) || !Number.isFinite(yaw) || !Number.isFinite(pitch)) return null;
   if (dt <= 0 || dt > MAX_INPUT_DT) return null;
-  const wsel = Number(raw.wsel) | 0;
+  const wsel = Number(raw.wsel) === 2 ? 2 : Number(raw.wsel) === 1 ? 1 : 0;
   const rt = Number(raw.rt);
   return {
     seq,
@@ -732,7 +752,7 @@ function sanitizeInput(raw) {
     keys: (raw.keys | 0) & KEY_MASK,
     yaw: yaw % (Math.PI * 2),
     pitch: Math.max(-MAX_PITCH, Math.min(MAX_PITCH, pitch)),
-    wsel: 0,   // weapons come from the operator now
+    wsel,      // 1 = primary, 2 = secondary
     rt: Number.isFinite(rt) ? rt : 0,
   };
 }

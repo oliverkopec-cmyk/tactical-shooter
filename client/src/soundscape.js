@@ -157,7 +157,8 @@ export class Soundscape {
     if (kind === 'shield') this.at('placeShield', pos, range);
     else if (kind === 'wire') this.at('placeWire', pos, range);
     else if (kind === 'jammer') { this.at('placeBeep', pos, range); setTimeout(() => this.at('placeBeep', pos, range, 0.8), 90); }
-    else if (kind === 'camera') this.at('placeClick', pos, range);
+    else if (kind === 'camera' || kind === 'claymore') this.at('placeClick', pos, range);
+    else if (kind === 'smoke') this.at('whoosh', pos, 26);
     else if (kind === 'barricade') for (let i = 0; i < 3; i++) setTimeout(() => this.at('hammer', pos, 26), i * 150);
     else this.at('placeBeep', pos, range);   // breach charge
   }
