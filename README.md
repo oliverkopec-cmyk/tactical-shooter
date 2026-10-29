@@ -2,7 +2,20 @@
 
 A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite on the client, Node.js + Socket.IO on an authoritative server. One Node process serves both the game client and the realtime server, so the whole thing deploys as a single Render web service.
 
-## Status: Stage 16 (new operators)
+## Status: Stage 17 (crates, operator icons and match top bar)
+
+- **Crates replace buying skins directly.** The Shop tab is a grid of 32 crates, one per gun, each showing the gun, the price (**900 Money**) and how many of its 13 skins you own. **Money only: Polish Money can't be used.** Click a crate to see the odds (**Common 60%, Rare 25%, Epic 12%, Legendary 3%**) and the full list of possible skins, with the ones you own ticked.
+- **The server picks the result** (`POST /api/crates/open`, a secure random draw). The client only names the gun; any price, skin or rarity it sends is ignored. The Money is taken and the skin recorded under a per-account lock, so a double click can't open two crates on one balance.
+- **Duplicates:** if you already own that skin for that gun you get **450 Money back** (half the price) and the screen says so.
+- **Skins are now owned per gun.** A skin won from the Rifle crate can be equipped on the Rifle. Skins you bought in the old shop stay owned on every gun. Common skins are no longer free for everyone (they are crate drops): any Common you had equipped is kept for that gun automatically.
+- **Daily Money cap: 3,500 Money per UTC day** from matches and quests (there wasn't one before). Money is paid in order (match first, then quest rewards). After the cap a match pays nothing, the end-of-match screen says "Daily Money limit reached", and XP and rank still count. Crate refunds don't count towards the cap. The Shop shows how much you've earned today.
+- **Crate opening (about 4 seconds, click to skip):** the crate drops onto the platform with a thud and dust, shakes and glows in pulses whose colour climbs grey, blue, purple, gold and stops on your skin's rarity, the lid bursts off with a flash and particles in that colour, then the gun rises out spinning, wearing the skin, with its name and rarity. Legendary pulls get more particles, gold light beams and a fanfare. Duplicates show "Duplicate: +450 Money refunded". Buttons: Equip, Open another, Back to shop. Your balance in the top bar only changes at the reveal.
+- **Operator icons and the Operators tab:** every operator has an original icon drawn in code (a bold symbol of their ability on a square in their colour). The tab is now two grids side by side, ATTACKERS and DEFENDERS, with a large faint symbol behind each. Hover for the name, click for the details. Operators you don't own are greyed out with a lock and their price. The same icons are on the operator select screen.
+- **Match top bar:** next to the score and timer, your team's operator icons on the left and the enemy's on the right (your own team is always shown). **Enemy icons are a "?" until your team has seen them**: a teammate has a clear view of them, a defender camera sees them, they are marked (drone ping, Hawk, Tremor, a Volt trap, a Picket sensor) or they are killed. Once revealed they stay revealed for the rest of the round. Dead players' icons are crossed out and darkened for both teams. A new round starts hidden again.
+- **No cheating:** the server decides what is revealed. It doesn't send an enemy's operator or gun (in the start payload, the snapshots or the shot messages) to a team that hasn't seen them.
+- Memory: nothing new is kept per match beyond two small sets of player ids, and the crate data is a few small tables, so the server stays well inside Render's 512 MB plan.
+
+### Earlier: Stage 16 (new operators)
 
 Six new operators, bought with Money in the Operators tab (the original eight and both Recruits stay free). Each has a unique primary and secondary gun, two utilities and an ability on F:
 
@@ -127,9 +140,18 @@ Six new operators, bought with Money in the Operators tab (the original eight an
 - **Sound** is positional: you hear other players from the right direction, quieter and duller with distance, through walls and from another floor. Footsteps: sprinting is loud and carries about 40 m, walking about 14 m, crouch-walking only a couple of metres. Also reloading, landing from a fall, barricades and walls breaking, gadgets being placed, melee swings and drone motors. Volume is in the settings menu
 - Defenders reinforce wall sections (V, 10 per team): darker, immune to bullets and basic charges; only a heavy charge (Spark, stage 6) breaks them
 
-## Planned: Stage 18 - Finishing up
+## Planned: later stages
 
-Not built yet. Written down so it isn't forgotten.
+Written down so they aren't forgotten (Stage 17 is being built now; see Status).
+
+### Stage 18 - Friends and parties
+
+- Friends tab: search by username, send/accept/decline friend requests, remove friends. Show who is online, in the menu, or in a match.
+- Invite an online friend to your party from the Friends tab. They get a pop-up to accept. The party leader can create a room and the whole party joins it.
+
+### Stage 19 - Finishing up
+
+Not built yet.
 
 - **New barricade look:** 6 horizontal wooden planks, parallel and evenly spaced. The bottom is left open with no plank, a gap big enough for a drone to drive through but too small for a player.
 - **Breaking:** a barricade breaks completely after 3 melee hits. This replaces the current 0.5 m plank grid, where melee and bullets break planks one by one (breach charges still destroy a barricade at once).

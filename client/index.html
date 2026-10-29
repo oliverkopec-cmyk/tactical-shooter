@@ -81,13 +81,9 @@
     </section>
 
     <section id="tab-operators" class="tab-panel hidden">
-      <div class="side-col left">
+      <div class="side-col left wide-left">
         <div class="card">
-          <div class="side-toggle">
-            <button type="button" class="side-btn active" data-side="attack">Attack</button>
-            <button type="button" class="side-btn" data-side="defense">Defense</button>
-          </div>
-          <div id="op-list"></div>
+          <div id="op-list" class="op-sides"></div>
         </div>
       </div>
       <div class="side-col right wide">
@@ -103,6 +99,21 @@
         <div id="shop-detail" class="card"></div>
       </div>
     </section>
+
+    <!-- Crate opening: the 3D scene plays the animation; this shows the result and buttons -->
+    <div id="crate-overlay" class="hidden">
+      <div id="crate-hint" class="muted">Click to skip</div>
+      <div id="crate-result" class="hidden">
+        <div id="crate-rarity" class="crate-rarity"></div>
+        <div id="crate-skin" class="crate-skin-name"></div>
+        <div id="crate-note" class="crate-note"></div>
+        <div class="crate-buttons">
+          <button type="button" id="crate-equip" class="primary">Equip</button>
+          <button type="button" id="crate-more">Open another</button>
+          <button type="button" id="crate-back">Back to shop</button>
+        </div>
+      </div>
+    </div>
 
     <section id="tab-friends" class="tab-panel hidden">
       <div class="center-card card">
@@ -163,9 +174,11 @@
       <div id="spawn-opts"></div>
     </div>
     <div id="scoreboard">
+      <div id="top-icons-mine" class="top-icons"></div>
       <div id="score-attack-box" class="score attack"><span class="score-name">ATK</span><span id="score-attack">0</span></div>
       <div id="round-clock"><div id="round-time">0:00</div><div id="round-label"></div></div>
       <div id="score-defense-box" class="score defense"><span id="score-defense">0</span><span class="score-name">DEF</span></div>
+      <div id="top-icons-enemy" class="top-icons"></div>
     </div>
     <div id="site-chip" class="hud-chip"></div>
     <div id="capture" class="hidden"><div id="capture-label"></div><div class="bar"><div id="capture-bar"></div></div></div>
@@ -254,6 +267,8 @@
       <button id="summary-close" class="primary">Continue</button>
     </div>
   </div>
+
+  <div id="name-tip" class="hidden"></div>
 
   <!-- Hover card with a gun's stats (any element with data-gun) -->
   <div id="gun-tip" class="hidden"></div>

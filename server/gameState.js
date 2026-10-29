@@ -45,6 +45,11 @@ export class GameState {
     this.site = null;          // index into this.map.sites, chosen by the defenders' vote
     this.siteFound = false;    // attackers learn the site only once they've found it
     this.siteVotes = new Map();// defender id -> site index
+    // Which enemy players each team has seen this round (so their operator may be shown). The server
+    // alone decides this; an enemy's operator and gun are not sent to a team that hasn't seen them.
+    this.revealed = { attack: new Set(), defense: new Set() };
+    this.rosterDirty = true;
+    this.lastRoster = 0;
     this.nextDroneId = 1;
     this.timer = null;
     this.tick = 0;
@@ -118,6 +123,9 @@ export class GameState {
       this.room.progression?.forfeit(leaving.member.accountId).catch((err) => console.error('Forfeit failed:', err.message));
     }
     this.players.delete(id);
+    this.revealed.attack.delete(id);
+    this.revealed.defense.delete(id);
+    this.rosterDirty = true;
     for (const d of [...this.drones.values()]) if (d.owner === id) this.drones.delete(d.id);
     this.destruction.removeChargesOf(id);
     this.destruction.reinforcing.delete(id);
@@ -247,6 +255,7 @@ export class GameState {
 
   /** Give a player their operator's weapon, ratings and ability stock. */
   applyOperator(p) {
+    this.rosterDirty = true;
     const op = OPERATORS[p.operator];
     p.weapon = createWeaponState(op.weapons.primary, op.weapons.secondary);
     p.state.speedMul = speedMultiplier(op);
@@ -392,6 +401,69 @@ export class GameState {
     }
   }
 
+  // ---------------------------------------------------------------- who has seen whom
+
+  /** Can a player on `viewerTeam` know this player's operator? (Their own team always; enemies once seen.) */
+  canSee(viewerTeam, p) {
+    return p.member.team === viewerTeam || this.revealed[viewerTeam].has(p.member.id);
+  }
+
+  reveal(viewerTeam, playerId) {
+    const set = this.revealed[viewerTeam];
+    if (set.has(playerId)) return;
+    set.add(playerId);
+    this.rosterDirty = true;
+  }
+
+  /**
+   * An enemy is revealed to a team when one of its living players has a clear line of sight to them
+   * inside their view, a defender camera sees them, or they are marked (drone ping, Hawk, Tremor, a
+   * Volt trap, a Picket sensor). Run a few times a second.
+   */
+  updateVision(now) {
+    for (const team of ['attack', 'defense']) {
+      const enemies = [...this.players.values()].filter((q) => q.member.team !== team && q.alive && q.spawned !== false && !this.revealed[team].has(q.member.id));
+      if (!enemies.length) continue;
+      const viewers = [...this.players.values()].filter((q) => q.member.team === team && q.alive && q.spawned !== false);
+      const cameras = team === 'defense' ? [...this.gadgets.cameras.values()] : [];
+      for (const e of enemies) {
+        let seen = e.spottedUntil > now;
+        const targets = [[e.state.x, e.state.y + 1.1, e.state.z], [e.state.x, e.state.y + 1.55, e.state.z]];
+        const visibleFrom = (origin, facing, maxDist, cone) => targets.some((t) => {
+          const v = [t[0] - origin[0], t[1] - origin[1], t[2] - origin[2]];
+          const dist = Math.hypot(...v);
+          if (dist > maxDist || dist < 0.05) return false;
+          const d = [v[0] / dist, v[1] / dist, v[2] / dist];
+          if (d[0] * facing[0] + d[1] * facing[1] + d[2] * facing[2] < cone) return false;
+          const wall = raycastWorld(this.world, origin, d, dist);
+          return !wall || wall.t >= dist - 0.3;
+        });
+        for (let i = 0; i < viewers.length && !seen; i++) {
+          const a = viewers[i];
+          const eye = getEyePosition(a.state, this.world);
+          seen = visibleFrom([eye.x, eye.y, eye.z], aimDirection(a.state.yaw, a.state.pitch), 70, 0.5);
+        }
+        for (const c of cameras) { if (!seen) seen = visibleFrom(c.pos, c.dir, 30, 0.45); }
+        if (seen) this.reveal(team, e.member.id);
+      }
+    }
+  }
+
+  /** The operator icons list one team sees: everyone's alive state, and operators only where known. */
+  rosterFor(team) {
+    return [...this.players.values()].map((p) => ({
+      id: p.member.id, team: p.member.team, alive: p.alive,
+      op: this.canSee(team, p) ? p.operator : null,
+    }));
+  }
+
+  sendRoster() {
+    this.rosterDirty = false;
+    this.lastRoster = Date.now();
+    const lists = { attack: this.rosterFor('attack'), defense: this.rosterFor('defense') };
+    for (const [id, p] of this.players) this.io.to(id).emit('roster', lists[p.member.team]);
+  }
+
   sendLoadout(id, p) {
     const ab = p.ability, cfg = OPERATORS[p.operator]?.ability;
     this.io.to(id).emit('loadout', {
@@ -422,6 +494,9 @@ export class GameState {
     this.world.reset();
     this.destruction.reset();
     this.history.frames.length = 0;
+    this.revealed.attack.clear();
+    this.revealed.defense.clear();
+    this.rosterDirty = true;
     this.clearDrones();
     this.site = null;
     this.siteFound = false;
@@ -677,6 +752,8 @@ export class GameState {
     if ((phase === PHASE.PREP || phase === PHASE.ACTION) && this.tick % 6 === 0) this.updateSiteReveal();
     this.destruction.update(wallNow);
     this.history.record(wallNow, this.players);
+    if (this.tick % 12 === 0 && (phase === PHASE.PREP || phase === PHASE.ACTION)) this.updateVision(wallNow);
+    if (this.rosterDirty && wallNow - this.lastRoster >= 100) this.sendRoster();
     if (this.tick % Math.round(TICK_RATE / SNAPSHOT_RATE) === 0) this.broadcastSnapshot();
   }
 
@@ -699,10 +776,12 @@ export class GameState {
     }
 
     // Others see a tracer; the shooter already drew its own predicted one.
-    const shooterSocket = this.io.sockets.sockets.get(shooterId);
-    const shotMsg = { id: shooterId, w: shooter.weapon.id, ends: shot.pellets.map((p) => p.end.map(round2)) };
-    if (shooterSocket) shooterSocket.to(this.room.channel).emit('shot', shotMsg);
-    else this.emitAll('shot', shotMsg);
+    // The gun is named only to teams that know who the shooter is (otherwise it would give the operator away)
+    const ends = shot.pellets.map((p) => p.end.map(round2));
+    for (const [pid, q] of this.players) {
+      if (pid === shooterId) continue;
+      this.io.to(pid).emit('shot', { id: shooterId, w: this.canSee(q.member.team, shooter) ? shooter.weapon.id : null, ends });
+    }
 
     const w = shooter.weapon.id;
     const breaksWalls = this.canBreakWalls(shooter);
@@ -744,6 +823,8 @@ export class GameState {
 
   kill(victimId, victim, killerId, weaponId, head) {
     victim.alive = false;
+    this.reveal(opposite(victim.member.team), victimId);   // a kill shows the other team who it was
+    this.rosterDirty = true;
     victim.queue.length = 0;
     this.gadgets.exitCamera(victimId, victim);
     this.gadgets.cancelBarricade(victimId, 'You were eliminated.');
@@ -785,7 +866,13 @@ export class GameState {
         x: s.x, y: s.y, z: s.z, vx: s.vx, vy: s.vy, vz: s.vz, yaw: s.yaw, pitch: s.pitch, g: s.onGround, jc: round2(s.jumpCd || 0),
       });
     }
-    this.io.to(this.room.channel).volatile.emit('snapshot', { t: Date.now(), players, cap, drones, grenades: this.gadgets.snapshotGrenades() });
+    // Each team gets its own copy: an enemy's operator and gun are left out until that team has seen them
+    const t = Date.now(), grenades = this.gadgets.snapshotGrenades();
+    const forTeam = {};
+    for (const team of ['attack', 'defense']) {
+      forTeam[team] = { t, players: players.map((e) => (this.canSee(team, this.players.get(e.id)) ? e : { ...e, o: undefined, w: undefined })), cap, drones, grenades };
+    }
+    for (const [id, p] of this.players) this.io.to(id).volatile.emit('snapshot', forTeam[p.member.team]);
   }
 
   /** Everything a client needs to (re)build the round. Hidden gadgets are filtered by team. */
@@ -801,9 +888,10 @@ export class GameState {
       mapId: this.map.id, mapName: this.map.name,
       players: [...this.players.entries()].map(([id, p]) => ({
         id, name: p.member.name, team: p.member.team, skins: p.member.skins || {}, owned: p.member.owned || [], state: p.state,
-        weapon: p.weapon, health: p.health, alive: p.alive,
-        charges: p.charges, placed: !!p.placedCharge, spawnChoice: p.spawnChoice, operator: p.operator,
+        weapon: this.canSee(team, p) ? p.weapon : null, health: p.health, alive: p.alive,
+        charges: p.charges, placed: !!p.placedCharge, spawnChoice: p.spawnChoice, operator: this.canSee(team, p) ? p.operator : null,
       })),
+      roster: this.rosterFor(team),
       destruction: this.destruction.snapshot(),
       round: this.rounds.info(),
     };

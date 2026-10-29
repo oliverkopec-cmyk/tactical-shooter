@@ -44,6 +44,23 @@ export async function applySchema(query) {
   for (const statement of SCHEMA.split(';').map((s) => s.trim()).filter(Boolean)) await query(statement);
 }
 
+/**
+ * Common skins used to be free for everyone; they now come from crates. So nobody loses the
+ * look of a gun they had equipped, every Common skin an account has equipped is added to what
+ * it owns for that gun. Safe to run every start.
+ */
+export async function migrateEquippedCommons(query, commonIds) {
+  const { rows } = await query("SELECT id, owned_skins, equipped_skins FROM accounts WHERE equipped_skins <> '{}'::jsonb");
+  for (const row of rows) {
+    const owned = Array.isArray(row.owned_skins) ? row.owned_skins : [];
+    const add = [];
+    for (const [gun, skin] of Object.entries(row.equipped_skins || {})) {
+      if (commonIds.includes(skin) && !owned.includes(skin) && !owned.includes(`${gun}:${skin}`)) add.push(`${gun}:${skin}`);
+    }
+    if (add.length) await query('UPDATE accounts SET owned_skins = $2 WHERE id = $1', [row.id, JSON.stringify([...owned, ...add])]);
+  }
+}
+
 /** Returns { query(sql, params) -> { rows }, kind: 'postgres' | 'local' }. */
 export async function openDatabase() {
   let db;
@@ -65,5 +82,7 @@ export async function openDatabase() {
   }
 
   await applySchema((sql) => db.query(sql));
+  const { SKIN_IDS, SKINS } = await import('../shared/skins.js');
+  await migrateEquippedCommons((sql, params) => db.query(sql, params), SKIN_IDS.filter((id) => SKINS[id].rarity === 'common'));
   return db;
 }

@@ -7,6 +7,7 @@ import { TEAM_COLORS } from '../../shared/constants.js';
 import { OPERATORS } from '../../shared/operators.js';
 import { RemotePlayer } from './avatars.js';
 import { makeGunModel } from './weapons.js';
+import { CrateSequence } from './crateScene.js';
 
 const CAMERA = { y: 1.6, z: 6.8, lookY: 1.15 };
 
@@ -87,12 +88,27 @@ export class MenuScene {
     this.mode = mode;
     this.targetX = mode === 'operators' ? -0.8 : 0;
     this.applyShowcaseLayout();
+    if (mode !== 'crate') this.stopCrate();
+  }
+
+  /** Play the crate opening for a result { weapon, skin, rarity }; onReveal runs when the gun appears. */
+  playCrate(result, onReveal) {
+    this.stopCrate();
+    this.mode = 'crate';
+    this.applyShowcaseLayout();
+    this.crate = new CrateSequence(this.scene, result, { onReveal });
+    return this.crate;
+  }
+
+  stopCrate() {
+    this.crate?.dispose();
+    this.crate = null;
   }
 
   applyShowcaseLayout() {
     if (!this.showcase) return;
     const shop = this.mode === 'shop';
-    this.showcase.visible = this.mode === 'operators' || shop;
+    this.showcase.visible = this.mode === 'operators' || shop;   // hidden while a crate is opening
     this.showcase.position.x = shop ? 0.2 : 0.3;
     this.showcase.scale.setScalar(shop ? 1.35 : 1);
   }
@@ -163,8 +179,10 @@ export class MenuScene {
       const yaw = Math.PI - 0.7 + Math.sin(this.time * 0.5) * 0.22 + this.userYaw;   // turned a little so the gun is seen from the side
       this.avatar.push(now, { x: this.x, y: 0, z: 0, yaw, pitch: 0, crouch: 0, prone: 0, lean: 0, vx: 0, vy: 0, vz: 0, onGround: true, alive: true });
       this.avatar.update(now, dt);
-      this.avatar.root.visible = this.mode !== 'shop';
+      this.avatar.root.visible = this.mode !== 'shop' && this.mode !== 'crate';
     }
+    this.camera.position.y = CAMERA.y * 1 + 0;      // undo the landing thump from last frame
+    if (this.crate) this.crate.update(dt, this.camera);
     if (this.showcase?.visible) {
       this.showcase.rotation.y = this.time * 0.7;
       this.showcase.position.y = 1.2 + Math.sin(this.time * 1.4) * 0.05;

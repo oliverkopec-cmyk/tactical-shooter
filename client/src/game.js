@@ -60,6 +60,7 @@ export class Game {
     this.stunUntil = 0;
     this.mySkins = {};
     this.myOwned = [];
+    this.roster = [];          // everyone's operator (enemies show ? until your team has seen them) and whether they're alive
     this.stunMs = 0;
     this.camView = null;      // { rec, index } while a defender watches a camera
     this.wasSelecting = false;
@@ -186,6 +187,7 @@ export class Game {
       } else if (this.myTeam === 'defense') this.ui.toast('The attackers have found the objective');
     });
     network.on('opPicks', ({ picks }) => { this.picks = picks; });
+    network.on('roster', (list) => { this.roster = list; this.renderRoster(); });
     network.on('gadgetAdd', (rec) => {
       if (!this.running) return;
       this.gadgets.add(rec);
@@ -272,6 +274,12 @@ export class Game {
     this.viewModel?.setAspect(w / h);
   }
 
+  /** Operator icons at the top of the screen: my team on the left, the enemy on the right. */
+  renderRoster() {
+    const mine = this.roster.filter((r) => r.team === this.myTeam), enemy = this.roster.filter((r) => r.team !== this.myTeam);
+    this.ui.renderTopIcons(mine, enemy);
+  }
+
   /** Build the map the match is played on (does nothing if it's already the one in the scene). */
   loadMap(id) {
     const def = getMap(id);
@@ -338,6 +346,7 @@ export class Game {
     this.loadout = { ...this.loadout, op: me.operator, charges: me.charges ?? 0, placed: !!me.placed };
     this.reinforcing = null;
     this.picks = payload.picks || {};
+    if (payload.roster) { this.roster = payload.roster; this.renderRoster(); }
     this.siteIndex = payload.site ?? null;
     this.siteVotes = payload.siteVotes || { counts: [0, 0, 0], mine: null };
     this.barricadesLeft = payload.barricadesLeft ?? BARRICADE.pool;

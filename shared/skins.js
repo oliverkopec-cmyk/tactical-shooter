@@ -34,9 +34,6 @@ export const SKINS = {
 };
 
 export const SKIN_IDS = Object.keys(SKINS);
-/** Skins every account owns without buying them. */
-export const FREE_SKINS = SKIN_IDS.filter((id) => SKINS[id].rarity === 'common');
-
 /** Skins sorted by rarity, then name, for menus. */
 export function skinList() {
   return SKIN_IDS.map((id) => ({ id, ...SKINS[id], rarityInfo: RARITIES[SKINS[id].rarity] }))
@@ -45,29 +42,36 @@ export function skinList() {
 
 export const hexColor = (n) => `#${n.toString(16).padStart(6, '0')}`;
 
-// ---------------------------------------------------------------- shop
-
-/** Money price by rarity. Common skins are free, so the shop only sells the rest. */
-export const SKIN_PRICES = { rare: 1000, epic: 2500, legendary: 6000 };
-export const priceOf = (skinId) => (SKINS[skinId] ? SKIN_PRICES[SKINS[skinId].rarity] ?? null : null);
-/** Skins the shop sells, cheapest rarity first. */
-export const shopSkins = () => skinList().filter((s) => priceOf(s.id) !== null);
-
-export const DAY_MS = 24 * 60 * 60 * 1000;
-/** The UTC day number the featured skins are picked for. */
-export const dayIndex = (now = Date.now()) => Math.floor(now / DAY_MS);
+// ---------------------------------------------------------------- crates
 
 /**
- * Today's featured skins: one of each rarity the shop sells, picked from the day number so
- * everyone sees the same ones and they change at 00:00 UTC.
+ * Every gun has one crate. It holds every skin, and the skin you get is picked by the
+ * server: first a rarity by these odds, then one skin of that rarity at random.
+ * A skin you already own for that gun refunds half the price in Money. Crates cost
+ * Money only (never Polish Money).
  */
-export function featuredSkins(day = dayIndex()) {
-  let a = (day * 2654435761) >>> 0;
-  const rand = () => { a = (a + 0x6d2b79f5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
-  const out = [];
-  for (const rarity of Object.keys(SKIN_PRICES)) {
-    const pool = SKIN_IDS.filter((id) => SKINS[id].rarity === rarity);
-    out.push(pool[Math.floor(rand() * pool.length)]);
-  }
+export const CRATE = {
+  price: 900,
+  refund: 450,
+  odds: { common: 0.6, rare: 0.25, epic: 0.12, legendary: 0.03 },
+};
+
+/** Skins in a crate, grouped by rarity: { common: [ids], rare: [...], ... }. */
+export function crateContents() {
+  const out = { common: [], rare: [], epic: [], legendary: [] };
+  for (const id of SKIN_IDS) out[SKINS[id].rarity].push(id);
   return out;
+}
+
+/** Pick a skin. `randInt(n)` must return a whole number in 0..n-1 (the server passes a secure one). */
+export function rollCrate(randInt) {
+  // Odds are in parts per ten thousand so the draw is exact
+  const roll = randInt(10000);
+  let acc = 0, rarity = 'legendary';
+  for (const [r, p] of Object.entries(CRATE.odds)) {
+    acc += Math.round(p * 10000);
+    if (roll < acc) { rarity = r; break; }
+  }
+  const pool = crateContents()[rarity];
+  return { rarity, skin: pool[randInt(pool.length)] };
 }

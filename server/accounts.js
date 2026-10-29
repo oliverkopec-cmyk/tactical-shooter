@@ -10,9 +10,9 @@ import bcrypt from 'bcrypt';
 import express from 'express';
 import { usernameError, passwordError } from '../shared/account.js';
 import { sanitizeSettings } from '../shared/settings.js';
-import { profileOf, configureProfile, ownedSkinsOf, equippedSkinsOf, equippedOperatorsOf, devToolsEnabled } from './profile.js';
+import { profileOf, configureProfile, ownsSkin, equippedSkinsOf, equippedOperatorsOf, devToolsEnabled } from './profile.js';
 import { OPERATORS as OPERATOR_DEFS } from '../shared/operators.js';
-import { SKINS, priceOf, featuredSkins, dayIndex, DAY_MS } from '../shared/skins.js';
+import { SKINS, CRATE, rollCrate } from '../shared/skins.js';
 import { WEAPONS } from '../shared/weapons.js';
 import { OPERATORS } from '../shared/operators.js';
 import { ownedOperatorIds } from '../shared/account.js';
@@ -173,7 +173,7 @@ export class Accounts {
       if (!found) return res.status(401).json({ error: 'Not logged in.' });
       const { weapon, skin } = req.body || {};
       if (!WEAPONS[weapon]) return res.status(400).json({ error: 'Unknown gun.' });
-      if (skin !== null && !(SKINS[skin] && ownedSkinsOf(found.row).includes(skin))) return res.status(403).json({ error: 'You don\'t own that skin.' });
+      if (skin !== null && !ownsSkin(found.row, weapon, skin)) return res.status(403).json({ error: 'You don\'t own that skin.' });
       const equipped = { ...equippedSkinsOf(found.row) };
       if (skin === null) delete equipped[weapon]; else equipped[weapon] = skin;
       const { rows } = await this.db.query('UPDATE accounts SET equipped_skins = $2 WHERE id = $1 RETURNING *', [found.row.id, JSON.stringify(equipped)]);
@@ -194,37 +194,34 @@ export class Accounts {
       res.json({ account: profileOf(rows[0]) });
     });
 
-    // ---------------------------------------------------------------- shop
+    // ---------------------------------------------------------------- crates
 
-    // Today's featured skins and when they change. Prices are fixed by rarity (shared/skins.js).
-    r.get('/shop', (_req, res) => {
-      const day = dayIndex();
-      res.json({ featured: featuredSkins(day), resetsAt: new Date((day + 1) * DAY_MS).toISOString() });
-    });
-
-    // Buy a skin. One statement checks the price and ownership and takes the Money, so two
-    // clicks at once can't spend the same Money twice or buy the same skin twice.
-    r.post('/shop/buy', async (req, res) => {
+    // Open a gun's crate. The server takes the Money, draws the skin and records it; the client only
+    // names the gun. A skin you already own for that gun refunds half the price instead.
+    r.post('/crates/open', async (req, res) => {
       const found = await this.fromCookie(req.headers.cookie);
       if (!found) return res.status(401).json({ error: 'Not logged in.' });
-      const skin = req.body?.skin;
-      const price = priceOf(skin);
-      if (price === null) return res.status(400).json({ error: SKINS[skin] ? 'That skin is free: you already own it.' : 'Unknown skin.' });
-      const { rows } = await this.db.query(
-        `UPDATE accounts SET money = money - $2, owned_skins = owned_skins || to_jsonb($3::text)
-         WHERE id = $1 AND money >= $2 AND NOT (owned_skins @> to_jsonb($3::text)) RETURNING *`,
-        [found.row.id, price, skin],
-      );
-      if (!rows[0]) {
-        const current = (await this.db.query('SELECT * FROM accounts WHERE id = $1', [found.row.id])).rows[0];
-        const owned = current && ownedSkinsOf(current).includes(skin);
-        return res.status(owned ? 409 : 402).json({
-          error: owned ? 'You already own that skin.' : `Not enough Money: ${SKINS[skin].name} costs ${price.toLocaleString()}.`,
-          account: current ? profileOf(current) : undefined,
-        });
-      }
-      this.refreshSocketLoadout(rows[0]);
-      res.json({ account: profileOf(rows[0]), bought: skin, price });
+      const weapon = req.body?.weapon;
+      if (!WEAPONS[weapon]) return res.status(400).json({ error: 'Unknown gun.' });
+      const out = await this.progression.withLock(found.row.id, async () => {
+        const row = (await this.db.query('SELECT * FROM accounts WHERE id = $1', [found.row.id])).rows[0];
+        if (!row) return { status: 404, body: { error: 'Account not found.' } };
+        if (row.money < CRATE.price) {
+          return { status: 402, body: { error: `Not enough Money: a crate costs ${CRATE.price.toLocaleString()}.`, account: profileOf(row) } };
+        }
+        const { rarity, skin } = rollCrate((n) => crypto.randomInt(n));
+        const duplicate = ownsSkin(row, weapon, skin);
+        const refund = duplicate ? CRATE.refund : 0;
+        const owned = Array.isArray(row.owned_skins) ? row.owned_skins : [];
+        const next = duplicate ? owned : [...owned, `${weapon}:${skin}`];
+        const { rows } = await this.db.query(
+          'UPDATE accounts SET money = money - $2 + $3, owned_skins = $4 WHERE id = $1 RETURNING *',
+          [row.id, CRATE.price, refund, JSON.stringify(next)],
+        );
+        return { status: 200, body: { account: profileOf(rows[0]), result: { weapon, skin, rarity, duplicate, refund, price: CRATE.price } } };
+      });
+      if (out.status === 200) this.refreshSocketLoadout(await this.progression.load(found.row.id));
+      res.status(out.status).json(out.body);
     });
 
     // Buy an operator. Same one-statement check as skins: price, Money and ownership together.

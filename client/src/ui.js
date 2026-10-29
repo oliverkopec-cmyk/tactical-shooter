@@ -7,6 +7,7 @@ import { operatorsFor, OPERATORS } from '../../shared/operators.js';
 import { settings, setSetting, setKeybinds, onSettingsChange } from './settings.js';
 import { fillKeys, keyFor } from './controls.js';
 import { rankIcon } from './rankIcon.js';
+import { operatorIcon } from './operatorIcons.js';
 import { mapChoices } from '../../shared/map.js';
 import { rankInfo, rankStep, xpForLevel } from '../../shared/progression.js';
 import { BIND_ACTIONS, DEFAULT_KEYBINDS, keyLabel, isBindableCode, RESERVED_CODES } from '../../shared/keybinds.js';
@@ -563,7 +564,7 @@ export class UI {
       }).join('');
       card.innerHTML = `
         <div class="op-color" style="background:#${op.color.toString(16).padStart(6, '0')}"></div>
-        <div class="op-name">${op.name}</div>
+        <div class="op-name"><span class="op-ico">${operatorIcon(op.id, 40)}</span>${op.name}</div>
         <div class="op-guns">${gunRow(op.weapons.primary, 1)}${gunRow(op.weapons.secondary, 2)}</div>
         <div class="op-stats"><span>SPEED ${pips(op.speed)}</span><span>ARMOR ${pips(op.armor)}</span></div>
         <div class="op-ab">${op.ability ? `<b>${op.ability.name}</b><br>${fillKeys(op.ability.desc)}` : '<i>No special ability</i>'}</div>
@@ -654,6 +655,16 @@ export class UI {
     $('round-label').textContent = label;
     $('score-attack-box').classList.toggle('mine', myTeam === 'attack');
     $('score-defense-box').classList.toggle('mine', myTeam === 'defense');
+  }
+
+  /** The operator icons by the scoreboard: your team on the left, the enemy on the right. Entries: { id, op, alive }. */
+  renderTopIcons(mine, enemy) {
+    const sig = JSON.stringify([mine, enemy]);
+    if (sig === this.lastTopIcons) return;
+    this.lastTopIcons = sig;
+    const draw = (list) => list.map((r) => `<span class="top-icon${r.alive ? '' : ' dead'}" title="${r.op ? escapeHtml(OPERATORS[r.op]?.name || '') : 'Unknown'}">${operatorIcon(r.op, 34, { dead: !r.alive })}</span>`).join('');
+    $('top-icons-mine').innerHTML = draw(mine);
+    $('top-icons-enemy').innerHTML = draw(enemy);
   }
 
   updateSpawnPicker(show, choice, spawns = []) {
