@@ -6,6 +6,7 @@
 
 import * as THREE from 'three';
 import { claymoreLines, UTIL_STATS } from '../../shared/utilities.js';
+import { barricadePlanks } from '../../shared/barricade.js';
 
 const shieldMat = new THREE.MeshStandardMaterial({
   color: 0x6fb8d8, transparent: true, opacity: 0.55, roughness: 0.2, metalness: 0.4, emissive: 0x1a4a66, emissiveIntensity: 0.6,
@@ -151,10 +152,13 @@ export class GadgetView {
       group = makeJammer();
       group.position.set(...rec.pos);
     } else if (rec.kind === 'barricade') {
-      // Wooden planks over a doorway or window, one box per breakable panel
+      // Wooden planks over a doorway or window; the server sends which planks still stand
       group = new THREE.Group();
       group.userData.meshes = new Map();
-      for (const p of rec.panels) {
+      const opening = this.world.map.openings.find((o) => o.id === rec.openingId);
+      const standing = new Set(rec.planks);
+      for (const p of opening ? barricadePlanks(opening) : []) {
+        if (!standing.has(p.i)) continue;
         const sx = p.max[0] - p.min[0], sy = p.max[1] - p.min[1], sz = p.max[2] - p.min[2];
         const m = new THREE.Mesh(new THREE.BoxGeometry(sx * 0.97, sy * 0.94, sz), woodMats[p.i % woodMats.length]);
         m.position.set(p.min[0] + sx / 2, p.min[1] + sy / 2, p.min[2] + sz / 2);

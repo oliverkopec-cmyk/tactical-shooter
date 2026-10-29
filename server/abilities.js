@@ -14,6 +14,7 @@ import { getEyePosition, forwardVec, eyeHeight, bodyHeight } from '../shared/mov
 import { aimDirection } from '../shared/weapons.js';
 import { raycastWorld } from '../shared/raycast.js';
 import { UTILITIES, UTIL_STATS, ABILITY_STATS, claymoreLines } from '../shared/utilities.js';
+import { barricadePlanks } from '../shared/barricade.js';
 
 export class Gadgets {
   constructor(game) {
@@ -33,9 +34,10 @@ export class Gadgets {
     this.shocks = new Map();           // Volt: id -> { id, owner, team, pos }
     this.heals = new Map();            // Tonic: id -> { id, owner, team, pos, until }
     this.sensors = new Map();          // Picket: id -> { id, owner, team, pos, dir, seen }
-    this.barricades = new Map();       // id -> { id, openingId, panels: [{ i, min, max, hp, alive }] }
+    this.barricades = new Map();       // id -> { id, openingId, hits, planks: [{ i, min, max, hp, alive }] }
     this.barricading = new Map();      // playerId -> { openingId, doneAt, x, z }
     this.barricadesLeft = BARRICADE.pool;
+    this.placeWindowBarricades();       // every window starts the round barricaded
   }
 
   get world() { return this.game.world; }
@@ -430,7 +432,8 @@ export class Gadgets {
   // ---------------------------------------------------------------- barricades (B)
 
   barricadeRecord(b) {
-    return { kind: 'barricade', id: b.id, openingId: b.openingId, panels: b.panels.filter((p) => p.alive).map((p) => ({ i: p.i, min: p.min, max: p.max })) };
+    // Only the opening and which planks still stand: the planks' shape comes from shared/barricade.js
+    return { kind: 'barricade', id: b.id, openingId: b.openingId, planks: b.planks.filter((p) => p.alive).map((p) => p.i) };
   }
 
   barricadeAt(openingId) {
@@ -480,64 +483,71 @@ export class Gadgets {
     }
   }
 
-  placeBarricade(o, ownerId) {
-    const t = BARRICADE.thickness / 2;
-    const cols = Math.max(1, Math.round((o.to - o.from) / BARRICADE.panel)), rows = Math.max(1, Math.round((o.y1 - o.y0) / BARRICADE.panel));
-    const pw = (o.to - o.from) / cols, ph = (o.y1 - o.y0) / rows;
+  /** Nail a barricade over an opening. `free` ones (the windows at round start) cost no one anything and aren't announced one by one. */
+  placeBarricade(o, ownerId, { free = false } = {}) {
     const bid = this.nextId++;
-    const panels = [];
-    for (let c = 0; c < cols; c++) {
-      for (let r = 0; r < rows; r++) {
-        const a0 = o.from + c * pw, y0 = o.y0 + r * ph;
-        const min = o.axis === 'x' ? [a0, y0, o.fixed - t] : [o.fixed - t, y0, a0];
-        const max = o.axis === 'x' ? [a0 + pw, y0 + ph, o.fixed + t] : [o.fixed + t, y0 + ph, a0 + pw];
-        const panel = { i: panels.length, min, max, hp: BARRICADE.hp, alive: true };
-        panels.push(panel);
-        this.world.addBox({ id: `bar-${bid}-${panel.i}`, kind: 'barricade', barricadeId: bid, panelIndex: panel.i, min, max });
-      }
-    }
-    const b = { id: bid, openingId: o.id, panels };
+    const planks = barricadePlanks(o).map((pl) => ({ ...pl, hp: BARRICADE.hp, alive: true }));
+    this.world.addBoxes(planks.map((pl) => ({ id: `bar-${bid}-${pl.i}`, kind: 'barricade', barricadeId: bid, panelIndex: pl.i, min: pl.min, max: pl.max })));
+    const b = { id: bid, openingId: o.id, planks, hits: 0 };
     this.barricades.set(bid, b);
+    if (free) return b;
     this.barricadesLeft--;
     const builder = this.game.players.get(ownerId);
     if (builder) builder.stats.barricades++;
     this.game.emitAll('gadgetAdd', this.barricadeRecord(b));
     this.game.emitAll('barricadesLeft', { left: this.barricadesLeft });
+    return b;
   }
 
-  /** Remove panels (bullets, melee or a blast) and tell everyone. */
+  /** Every window starts the round barricaded (doors don't). Called when the gadgets are reset for a new round. */
+  placeWindowBarricades() {
+    for (const o of this.game.map.openings) if (o.window) this.placeBarricade(o, null, { free: true });
+  }
+
+  /** Remove planks (bullets, melee or a blast) and tell everyone. */
   breakPanels(bid, indices) {
     const b = this.barricades.get(bid);
     if (!b) return;
     const gone = [];
     for (const i of indices) {
-      const panel = b.panels[i];
-      if (!panel || !panel.alive) continue;
-      panel.alive = false;
-      this.world.removeBox(`bar-${bid}-${i}`);
+      const plank = b.planks[i];
+      if (!plank || !plank.alive) continue;
+      plank.alive = false;
       gone.push(i);
     }
     if (!gone.length) return;
+    this.world.removeBoxes(gone.map((i) => `bar-${bid}-${i}`));
     this.game.emitAll('barricadeBroken', { id: bid, ids: gone });
-    if (!b.panels.some((p) => p.alive)) {
+    if (!b.planks.some((p) => p.alive)) {
       this.barricades.delete(bid);
       this.game.emitAll('gadgetRemove', { kind: 'barricade', id: bid });
     }
   }
 
+  /** A melee hit on a barricade: the third one breaks all of it. */
+  meleeBarricade(bid) {
+    const b = this.barricades.get(bid);
+    if (!b) return;
+    b.hits++;
+    const standing = b.planks.filter((p) => p.alive);
+    const pos = standing.length ? standing[Math.floor(standing.length / 2)] : null;
+    this.game.emitAll('barricadeHit', { id: bid, hits: b.hits, left: Math.max(0, BARRICADE.meleeHits - b.hits), pos: pos ? pos.min.map((v, i) => (v + pos.max[i]) / 2) : null });
+    if (b.hits >= BARRICADE.meleeHits) this.breakPanels(bid, b.planks.map((p) => p.i));
+  }
+
   damageBarricadePanel(bid, index, amount) {
-    const panel = this.barricades.get(bid)?.panels[index];
-    if (!panel || !panel.alive) return;
-    panel.hp -= amount;
-    if (panel.hp <= 0) this.breakPanels(bid, [index]);
+    const plank = this.barricades.get(bid)?.planks[index];
+    if (!plank || !plank.alive) return;
+    plank.hp -= amount;
+    if (plank.hp <= 0) this.breakPanels(bid, [index]);
   }
 
   /** A breach charge flattens every barricade it reaches, all at once. */
   blastBarricades(pos, radius) {
     for (const b of [...this.barricades.values()]) {
-      const near = b.panels.some((p) => p.alive && Math.hypot(
+      const near = b.planks.some((p) => p.alive && Math.hypot(
         (p.min[0] + p.max[0]) / 2 - pos[0], (p.min[1] + p.max[1]) / 2 - pos[1], (p.min[2] + p.max[2]) / 2 - pos[2]) <= radius);
-      if (near) this.breakPanels(b.id, b.panels.map((p) => p.i));
+      if (near) this.breakPanels(b.id, b.planks.map((p) => p.i));
     }
   }
 

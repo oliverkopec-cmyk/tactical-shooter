@@ -169,6 +169,11 @@ export class Game {
       for (const c of centers) this.effects.debris(c, 0x8a5a2b, 3);
       if (centers.length) this.sound.woodBreak(centers[0]);
     });
+    network.on('barricadeHit', ({ pos }) => {
+      if (!this.running || !pos) return;
+      this.effects.debris(pos, 0x8a5a2b, 1);
+      this.sound.woodBreak(pos);
+    });
     network.on('melee', ({ id }) => {
       const r = this.remotes.get(id);
       if (!r) return;
@@ -191,7 +196,7 @@ export class Game {
     network.on('gadgetAdd', (rec) => {
       if (!this.running) return;
       this.gadgets.add(rec);
-      this.sound.placed(rec.kind, gadgetPosition(rec));
+      this.sound.placed(rec.kind, gadgetPosition(rec, this.world.map));
     });
     network.on('gadgetRemove', ({ kind, id }) => this.gadgets.remove(kind, id));
     network.on('cameraDestroyed', ({ pos }) => {
@@ -897,11 +902,12 @@ export class Game {
 }
 
 /** A rough centre for any gadget record, for positioning its placement sound. */
-function gadgetPosition(rec) {
+function gadgetPosition(rec, map) {
   if (rec.pos) return rec.pos;
   if (rec.kind === 'wire') return [rec.x, rec.y + 0.2, rec.z];
-  const boxes = rec.kind === 'barricade' ? rec.panels : [rec];
-  const c = [0, 0, 0];
-  for (const b of boxes) for (let i = 0; i < 3; i++) c[i] += (b.min[i] + b.max[i]) / 2 / boxes.length;
-  return c;
+  if (rec.kind === 'barricade') {
+    const o = map.openings.find((x) => x.id === rec.openingId);
+    if (o) return o.axis === 'x' ? [(o.from + o.to) / 2, (o.y0 + o.y1) / 2, o.fixed] : [o.fixed, (o.y0 + o.y1) / 2, (o.from + o.to) / 2];
+  }
+  return [0, 0, 0];
 }
