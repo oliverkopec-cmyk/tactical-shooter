@@ -976,3 +976,14 @@ button.small { font-size: 12px; padding: 4px 10px; margin-top: 6px; }
 #runout-sub { font-size: 13px; opacity: 0.85; margin-top: 2px; }
 #runout.detected { border-color: #ff3030; background: rgba(60, 0, 0, 0.82); color: #ff6a6a; animation: runout-pulse 0.7s infinite alternate; }
 @keyframes runout-pulse { from { box-shadow: 0 0 0 rgba(255, 40, 40, 0); } to { box-shadow: 0 0 26px rgba(255, 40, 40, 0.8); } }
+
+/* Ping wheel and voice lines */
+#ping-wheel { position: absolute; left: 50%; top: 50%; width: 0; height: 0; z-index: 6; }
+#ping-wheel.hidden { display: none; }
+#ping-wheel .wheel-hub { position: absolute; transform: translate(-50%, -50%); width: 60px; height: 60px; border-radius: 50%; background: rgba(10, 14, 20, 0.75); border: 2px solid rgba(255, 255, 255, 0.25); display: grid; place-items: center; font-size: 11px; font-weight: 800; letter-spacing: 0.1em; color: #cfd6e0; }
+#ping-wheel .wheel-item { position: absolute; padding: 8px 12px; border-radius: 18px; background: rgba(10, 14, 20, 0.8); border: 2px solid var(--c); color: #fff; font-size: 13px; font-weight: 700; white-space: nowrap; }
+#ping-wheel .wheel-item.on { background: var(--c); color: #111; transform-origin: center; box-shadow: 0 0 16px var(--c); }
+#voice-feed { position: absolute; top: 210px; right: 16px; margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; align-items: flex-end; }
+#voice-feed li { background: rgba(10, 14, 20, 0.7); border-left: 3px solid #3bd16f; padding: 4px 10px; border-radius: 4px; font-size: 13px; transition: opacity 0.8s; }
+#voice-feed li.self { border-left-color: #8b95a3; }
+#voice-feed li.fade { opacity: 0; }

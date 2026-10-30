@@ -9,6 +9,8 @@ import { getMap, DEFAULT_MAP_ID } from '../../shared/map.js';
 import { getEyePosition, findVault, findRope } from '../../shared/movement.js';
 import { RopeView } from './ropes.js';
 import { DefuserView } from './defuserView.js';
+import { PingView, WHEEL } from './pings.js';
+import { VoicePlayer } from './voice.js';
 import { DEFUSER } from '../../shared/modes.js';
 import { currentSpread, aimDirection } from '../../shared/weapons.js';
 import { World } from '../../shared/world.js';
@@ -53,6 +55,9 @@ export class Game {
     this.audio = new Audio(settings.volume);
     this.sound = new Soundscape(this);
     this.drones = new DroneView(this.scene, this.effects, this.audio);
+    this.pings = new PingView(this.scene);
+    this.voice = new VoicePlayer(ui);
+    this.pingHold = null;              // the ping key is down: { start, dx, dy, open }
     this.mapId = null;
     this.loadMap(DEFAULT_MAP_ID);       // the map, world, destruction and gadget views follow the host's choice at match start
     this.picks = {};
@@ -171,6 +176,15 @@ export class Game {
     network.on('stats', (s) => { this.stats = s; });
     network.on('barricadeStart', ({ ms }) => { this.reinforcing = { section: null, start: performance.now(), ms, label: 'Barricading…' }; });
     network.on('runout', (r) => { this.runout = r; });
+    network.on('teamPing', (p) => {
+      if (!this.running) return;
+      this.pings.add(p);
+      this.sound.ping(p.pos, p.type);
+    });
+    network.on('voice', (e) => {
+      if (!this.running) return;
+      this.voice.say(e, this.listener(), e.id === this.network.id, this.members.get(e.id)?.name);
+    });
     network.on('defuserEvent', (e) => this.onDefuserEvent(e));
     network.on('swingIn', ({ pos }) => { if (this.running) { this.sound.swingIn(pos); this.effects.debris(pos, 0x3f7a2e, 3); } });
     network.on('barricadesLeft', ({ left }) => { this.barricadesLeft = left; });
@@ -343,6 +357,8 @@ export class Game {
       onDigit: (n) => this.pickSpawn(n),
       onAction: (type) => { if (type === 'melee') { this.viewModel.melee(); this.audio.beep(260, 0.08, 0.12, 'sawtooth'); } },
     });
+    this.local.onPing = (down) => this.onPingKey(down);
+    this.local.onWheelMove = (dx, dy) => this.onWheelMove(dx, dy);
     this.loadRound(payload, me);
 
     this.running = true;
@@ -513,6 +529,10 @@ export class Game {
   }
 
   stop() {
+    this.pings.clear();
+    this.closeWheel();
+    this.pingHold = null;
+    this.voice.stop();
     this.drones.clear();
     this.gadgets.clear();
     this.ui.showOperatorSelect(false);
@@ -678,6 +698,8 @@ export class Game {
 
   /** The match's game mode and the defuser's state at the start of a round. */
   setMode(payload) {
+    this.pings?.clear();
+    this.closeWheel();
     this.mode = payload.mode || 'standard';
     this.df = payload.defuser || null;
     this.defuserAct = null;
@@ -710,6 +732,52 @@ export class Game {
       case 'detonated': this.ui.banner('THE DEFUSER WENT OFF', 'The attackers win the round', 3200); this.sound.defuserBoom(pos); this.effects.explosion(pos); this.shake = 1.2; break;
       default:
     }
+  }
+
+  // ---------------------------------------------------------------- team pings
+
+  /** The ping key: a tap pings what you aim at, holding it opens the wheel. */
+  onPingKey(down) {
+    if (!this.running || !this.local?.alive) return;
+    if (down) { this.pingHold = { start: performance.now(), dx: 0, dy: 0, open: false }; return; }
+    const h = this.pingHold;
+    this.pingHold = null;
+    if (!h) return;
+    if (!h.open) { this.network.sendTeamPing('auto'); return; }
+    const choice = this.wheelChoice(h);
+    this.closeWheel();
+    if (choice) this.network.sendTeamPing(choice);
+  }
+
+  /** Called every frame: a held ping key opens the wheel after a moment. */
+  updatePingWheel() {
+    const h = this.pingHold;
+    if (!h || h.open || performance.now() - h.start < 220) return;
+    h.open = true;
+    if (this.local) this.local.lookFrozen = true;
+    this.ui.showWheel(WHEEL, null);
+  }
+
+  onWheelMove(dx, dy) {
+    const h = this.pingHold;
+    if (!h?.open) return;
+    h.dx += dx; h.dy += dy;
+    const len = Math.hypot(h.dx, h.dy);
+    if (len > 140) { h.dx *= 140 / len; h.dy *= 140 / len; }
+    this.ui.showWheel(WHEEL, this.wheelChoice(h));
+  }
+
+  /** The wheel choice the mouse points at (null near the middle). Choices go clockwise from the top. */
+  wheelChoice(h) {
+    if (Math.hypot(h.dx, h.dy) < 25) return null;
+    const angle = Math.atan2(h.dx, -h.dy);                  // 0 = up, clockwise
+    const step = (Math.PI * 2) / WHEEL.length;
+    return WHEEL[((Math.round(angle / step) % WHEEL.length) + WHEEL.length) % WHEEL.length];
+  }
+
+  closeWheel() {
+    if (this.local) this.local.lookFrozen = false;
+    this.ui?.hideWheel?.();
   }
 
   /** The planted defuser beeps, faster and faster as its time runs out. */
@@ -852,6 +920,7 @@ export class Game {
     this.ui.setSpectatorInfo(sp.target ? `Watching ${sp.target.name}` : 'Free camera');
     this.ui.renderBoard(this.boardOn, this.boardRows(), this.round.scores);
     this.defuserView.update(dt);
+    this.pings.update();
     this.drawRopes(null);
     this.drones.update(dt);
     this.gadgets.update(dt);
@@ -1112,6 +1181,8 @@ export class Game {
     });
     this.ui.updateSpawnPicker(noBody && local.alive, this.spawnChoice, this.mapDef.spawns.attack);
     this.defuserView.update(dt);
+    this.pings.update();
+    this.updatePingWheel();
     this.drawRopes(local);
     this.ui.setRunOut(local.alive && this.myTeam === 'defense' && this.round.phase === PHASE.ACTION ? this.runout : null);
     this.drones.update(dt);

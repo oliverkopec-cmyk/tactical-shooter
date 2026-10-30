@@ -3,8 +3,8 @@
 
 import { DEFAULT_KEYBINDS, sanitizeKeybinds } from './keybinds.js';
 
-export const SETTING_DEFAULTS = { sensitivity: 1, volume: 0.5, fov: 78 };
-export const SETTING_LIMITS = { sensitivity: [0.2, 3], volume: [0, 1], fov: [60, 100] };
+export const SETTING_DEFAULTS = { sensitivity: 1, volume: 0.5, fov: 78, voice: 0.8 };
+export const SETTING_LIMITS = { sensitivity: [0.2, 3], volume: [0, 1], fov: [60, 100], voice: [0, 1] };
 
 export function clampSetting(name, value) {
   const [lo, hi] = SETTING_LIMITS[name];

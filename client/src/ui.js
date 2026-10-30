@@ -13,6 +13,7 @@ import { rankInfo, rankStep, xpForLevel } from '../../shared/progression.js';
 import { BIND_ACTIONS, DEFAULT_KEYBINDS, keyLabel, isBindableCode, RESERVED_CODES } from '../../shared/keybinds.js';
 import { ownerTag, ownerTagEl } from './badge.js';
 import { MODES } from '../../shared/modes.js';
+import { PING_TYPES } from '../../shared/voiceLines.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -31,7 +32,7 @@ export class UI {
   // ---------------------------------------------------------------- settings
 
   bindSettings() {
-    const fmt = { sensitivity: (v) => `${Number(v).toFixed(2)}×`, volume: (v) => `${Math.round(v * 100)}%`, fov: (v) => `${Math.round(v)}°` };
+    const fmt = { sensitivity: (v) => `${Number(v).toFixed(2)}×`, volume: (v) => `${Math.round(v * 100)}%`, fov: (v) => `${Math.round(v)}°`, voice: (v) => (Number(v) <= 0 ? 'off' : `${Math.round(v * 100)}%`) };
     for (const name of Object.keys(fmt)) {
       const input = $(`set-${name}`);
       input.value = settings[name];
@@ -175,6 +176,37 @@ export class UI {
     el.classList.toggle('detected', !!runout.detected);
     const text = runout.detected ? 'DETECTED' : `LEAVING THE BUILDING · ${runout.left}`;
     if (text !== this.lastRunOut) { this.lastRunOut = text; $('runout-text').textContent = text; $('runout-sub').textContent = runout.detected ? 'Every attacker can see you. Get back inside!' : 'Get back inside or the attackers will see you'; }
+  }
+
+  /** The ping wheel: choices around a circle (clockwise from the top), the one pointed at highlighted. */
+  showWheel(choices, selected) {
+    const el = $('ping-wheel');
+    el.classList.remove('hidden');
+    const key = `${choices}|${selected}`;
+    if (key === this.lastWheel) return;
+    this.lastWheel = key;
+    el.innerHTML = '<div class="wheel-hub">PING</div>' + choices.map((c, i) => {
+      const a = (i / choices.length) * Math.PI * 2, x = Math.sin(a) * 92, y = -Math.cos(a) * 92;
+      const t = PING_TYPES[c];
+      return `<div class="wheel-item${c === selected ? ' on' : ''}" style="transform:translate(${x}px, ${y}px) translate(-50%, -50%);--c:${t.color}">${escapeHtml(t.label)}</div>`;
+    }).join('');
+  }
+
+  hideWheel() {
+    $('ping-wheel')?.classList.add('hidden');
+    this.lastWheel = '';
+  }
+
+  /** A voice line on screen, under the kill feed: "↖ Spark: Reloading!" */
+  addVoiceLine(text, self) {
+    const feed = $('voice-feed');
+    const li = document.createElement('li');
+    li.textContent = text;
+    if (self) li.classList.add('self');
+    feed.prepend(li);
+    while (feed.children.length > 3) feed.lastChild.remove();
+    setTimeout(() => li.classList.add('fade'), 3500);
+    setTimeout(() => li.remove(), 4300);
   }
 
   /** The admin spectator bar: what is being watched, and a button to stop. */
