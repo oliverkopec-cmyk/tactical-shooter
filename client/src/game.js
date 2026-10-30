@@ -689,6 +689,7 @@ export class Game {
       this.health = 0;
       const s = this.local.state;
       this.enterSpectate(`Eliminated by ${name(killer).name}`, { x: s.x, y: s.y, z: s.z, yaw: this.local.aimYaw });
+      if (this.pendingKillcam) { const k = this.pendingKillcam; this.pendingKillcam = null; this.startKillcam(k); }
     }
   }
 
@@ -747,7 +748,8 @@ export class Game {
 
   /** I died: replay it from the killer's eyes, then spectate as usual. */
   startKillcam(data) {
-    if (!this.running || !this.local || this.local.alive || !data?.trail?.length) return;
+    if (!this.running || !this.local || !data?.trail?.length) return;
+    if (this.local.alive) { this.pendingKillcam = data; return; }   // the kill message hasn't arrived yet: start it then
     this.killcam?.finish();
     this.killcam = new Killcam(this, data);
     const w = WEAPONS[data.weapon], skin = SKINS[data.skin], charm = CHARMS[data.charm];
@@ -992,7 +994,13 @@ export class Game {
       // Nobody to watch: look down at where we fell.
       const d = this.spectate.deathPos;
       if (d) {
-        this.camera.position.set(d.x + Math.sin(d.yaw) * 3, d.y + 3.5, d.z + Math.cos(d.yaw) * 3);
+        // Above and behind where we fell, but never inside a ceiling or a wall: stop short of whatever is in the way
+        const from = [d.x, d.y + 1.2, d.z];
+        const off = [Math.sin(d.yaw) * 3, 2.3, Math.cos(d.yaw) * 3];
+        const len = Math.hypot(...off), dir = off.map((v) => v / len);
+        const hit = raycastWorld(this.world, from, dir, len);
+        const t = hit ? Math.max(0.2, hit.t - 0.35) : len;
+        this.camera.position.set(from[0] + dir[0] * t, from[1] + dir[1] * t, from[2] + dir[2] * t);
         this.camera.lookAt(d.x, d.y + 0.5, d.z);
       }
       this.ui.setDeathSub('No teammates alive to spectate');

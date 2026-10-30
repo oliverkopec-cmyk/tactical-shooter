@@ -993,10 +993,10 @@ export class GameState {
     this.gadgets.cancelBarricade(victimId, 'You were eliminated.');
     this.destruction.cancelReinforce(victimId, 'You were eliminated.');
     this.defuser.onGone(victimId, victim);
-    // The victim gets a replay of the last seconds from the killer's eyes
+    this.emitAll('kill', { killer: killerId, victim: victimId, weapon: weaponId, head });
+    // Then the victim gets a replay of the last seconds from the killer's eyes (after the kill, so their client knows they died)
     const killerP = this.players.get(killerId);
     if (killerP && killerId !== victimId) this.io.to(victimId).emit('killcam', this.killcam.build(Date.now(), killerId, killerP, victimId, victim));
-    this.emitAll('kill', { killer: killerId, victim: victimId, weapon: weaponId, head });
     victim.deaths++;
     const killer = this.players.get(killerId);
     if (killer && killerId !== victimId) {
