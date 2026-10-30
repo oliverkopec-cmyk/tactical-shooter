@@ -12,7 +12,7 @@ import { createMapKit } from '../mapkit.js';
 
 export function buildEstate() {
   const kit = createMapKit({ T: 0.3 });
-  const { box, wall, door, win, stairs, prop, detail, boxes, barriers, openings, details } = kit;
+  const { box, wall, door, win, stairs, prop, detail, hatch, hatchHole, wallRope, hatchRope, boxes, barriers, openings, details, hatches, ropes } = kit;
   const T = kit.T;
 
   // Heights: walking level of each floor, and where each slab starts
@@ -114,11 +114,26 @@ export function buildEstate() {
   clearRect(2, C.x0 - 0.1, 9.6, C.x1 + 1.2, C.z1); clearRect(3, C.x0 - 0.1, 9.6, C.x1 + 2.2, C.z1);
 
   // First-floor slab (holes for stairs A and B), second-floor slab over the west wing (hole for C)
-  slab(SLAB2, F2, IX0, IZ0, IX1, IZ1, [[A.x0, A.z0, A.x1, A.z1], [B.x0, B.z0, B.x1, B.z1]]);
+  // Hatches: two in the first-floor slab (drop to the ground floor), three in the roofs (drop to the floor below)
+  const FLOOR_HATCHES = [[-17, -1], [9.5, 8]], ROOF_HATCHES = [[-5, 1], [10, 7]], WING_HATCH = [-18, 0];
+  slab(SLAB2, F2, IX0, IZ0, IX1, IZ1, [[A.x0, A.z0, A.x1, A.z1], [B.x0, B.z0, B.x1, B.z1], ...FLOOR_HATCHES.map((h) => hatchHole(...h))]);
+  for (const h of FLOOR_HATCHES) hatch(...h, SLAB2, F2);
   slab(SLAB3, F3, IX0, IZ0, -8 + T / 2, IZ1, [[C.x0, C.z0, C.x1, C.z1]]);
   // Roofs: flat over the centre and east, higher over the west wing
-  box(-8 + T / 2, CEIL2, BZ0, BX1, CEIL2 + 0.3, BZ1, 'roof');
-  box(BX0, CEIL3, BZ0, -8 + T / 2, CEIL3 + 0.2, BZ1, 'roof');
+  kit.slab(CEIL2, CEIL2 + 0.3, -8 + T / 2, BZ0, BX1, BZ1, ROOF_HATCHES.map((h) => hatchHole(...h)), 'roof');
+  kit.slab(CEIL3, CEIL3 + 0.2, BX0, BZ0, -8 + T / 2, BZ1, [hatchHole(...WING_HATCH)], 'roof');
+  const roofHatches = ROOF_HATCHES.map((h) => hatch(...h, CEIL2, CEIL2 + 0.3));
+  const wingHatch = hatch(...WING_HATCH, CEIL3, CEIL3 + 0.2);
+  // Ropes from the roof edges down every outside wall (the west wing roof is higher), and down each roof hatch
+  const LOW_TOP = CEIL2 + 0.3, HIGH_TOP = CEIL3 + 0.2;
+  for (const x of [-14]) wallRope('x', BZ0, x, -1, HIGH_TOP, 2.5);
+  for (const x of [-1, 14]) wallRope('x', BZ0, x, -1, LOW_TOP, 2.5);
+  for (const x of [-14]) wallRope('x', BZ1, x, 1, HIGH_TOP, 2.5);
+  for (const x of [8, 14]) wallRope('x', BZ1, x, 1, LOW_TOP, 2.5);
+  for (const z of [-8, 0, 8]) wallRope('z', BX0, z, -1, HIGH_TOP, 2.5);
+  for (const z of [2, 10]) wallRope('z', BX1, z, 1, LOW_TOP, 2.5);
+  ROOF_HATCHES.forEach((h, i) => hatchRope(roofHatches[i], ...h, LOW_TOP, F2, [0, 1.2]));
+  hatchRope(wingHatch, ...WING_HATCH, HIGH_TOP, F3, [0, 1.2]);
   // Railings where the stairs open onto the floor above
   box(A.x0, F2, A.z0 - 0.15, A.x1 - 0.5, F2 + 1.0, A.z0, 'rail');
   box(B.x0 + 0.5, F2, B.z0 - 0.15, B.x1, F2 + 1.0, B.z0, 'rail');
@@ -338,6 +353,14 @@ export function buildEstate() {
     barriers,
     openings,
     details,
+    hatches,
+    ropes,
+    // "In the building": the main footprint plus the two balconies
+    building: [
+      { x0: BX0 - 0.2, z0: BZ0 - 0.2, x1: BX1 + 0.2, z1: BZ1 + 0.2 },
+      { x0: BX1, z0: -9.2, x1: BX1 + 2.4, z1: -4.8 },
+      { x0: -4.2, z0: BZ1, x1: 0.2, z1: BZ1 + 2.4 },
+    ],
     objective: OBJECTIVE,
     sites: SITES,
     siteSpawns: SITE_SPAWNS,

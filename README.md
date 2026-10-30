@@ -2,7 +2,15 @@
 
 A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite on the client, Node.js + Socket.IO on an authoritative server. One Node process serves both the game client and the realtime server, so the whole thing deploys as a single Render web service.
 
-## Status: Stage 21 (gun rework and charms)
+## Status: Stage 22 (vaulting, rappelling, hatches and run-out detection)
+
+- **Vaulting:** press **Space** with a low obstacle (a crate, a counter, a window sill; up to 1.3 m) right in front of you and you hop over or through it with a short tucked hop (about half a second, you can't act during it). It needs room above the obstacle and a free place to land, so an **intact barricade blocks it**; a hole broken in a barricade doesn't. A "Press Space to vault" prompt shows when it will work. Others hear you.
+- **Rappelling** (everyone, outside walls only, action phase): a rope hangs from a steel anchor at the roof edge down every outside wall (Dockside 8, Meridian Hotel 11), and one hangs down each roof hatch once it is open. Press **N** (rebindable) to attach: at the foot of an outside wall while facing it, at the roof edge looking outward, or beside an open roof hatch. Then **W/S** climb and descend (at the top, W takes you up onto the roof; at the bottom, S steps you off), **A/D** move sideways along the wall, hold **M** to flip upside down (the camera turns over and drops low, to look in through a window from above), and **N** again lets go (you drop). **Space beside a window or door swings you in through it and breaks its barricade**, if it has one. You can shoot while hanging, with 2.2 times the spread. Ropes are drawn for everyone hanging on them, clipping on and sliding make a sound others can hear, and you can be shot. Not available during prep.
+- **Hatches:** square (1 m) wooden covers in floors and roofs, each one a single breakable panel. Dockside has one in the upper floor and one in the roof, the hotel two in the first-floor slab and three in the roofs. Bullets (150 damage), melee and breach charges break them (a hole you can see and drop through; players fall to the floor below), and defenders can **reinforce** one in prep like a wall (V; reinforced covers shrug off bullets, melee and basic charges, and only a heavy charge breaks them). **Drones can't fall in**: for them an open hatch is still floor. Every round they are back.
+- **Defender run-out detection** (action phase only): when a defender leaves the building's footprint (the hotel's balconies count as inside), a **3 second countdown** appears on their screen ("LEAVING THE BUILDING · 3"). If they are still outside at zero they are **detected**: their screen shows **DETECTED** and every attacker sees them highlighted red through walls. Being back inside for **1 second** clears it and resets the countdown. The server decides inside or outside from each map's building boundary (`building` in the map file) using its own copy of the player's position.
+- **Server and shared code:** movement lives in `shared/movement.js` (vault and rappel are part of the player state, predicted and checked like walking). The snapshot carries `vt` and `rk` only while a player is vaulting or on a rope.
+
+### Earlier: Stage 21 (gun rework and charms)
 
 - **Every gun rebuilt with far more detail**, all drawn in code (no image or model files), in `client/src/gunModels.js`: receiver, handguard, barrel, muzzle device, rails with teeth, stock, grip, trigger and trigger guard, magazine, sights or optics, ejection ports, vents, bolt and more (up to about 100 small shapes per gun). Eight original designs with their own silhouettes: assault rifle, SMG, shotgun (pump, shell loops, tube magazine), LMG (box magazine with belt, carry handle, bipod), marksman rifle (long scope, bipod), pistol, revolver (cylinder with six chambers, hammer) and machine pistol. Guns of the same type differ by their optic (red dot, scope or iron sights) and muzzle device (flash hider, compensator or suppressor), picked from the gun's id, so they don't all look alike. None copies a real branded gun.
 - **Named parts with roles:** every part has a name (`receiver.main`, `barrel.main`, `magazine.body`, `stock.tube`...) and a role: **body** (receiver, handguard, slide), **accent** (stock, grip, magazine, trigger guard), **steel** (barrel, muzzle, rails, bolt) and **trim** (sights, optic housing, vents), plus unchanging glass.
@@ -144,7 +152,7 @@ Six new operators, bought with Money in the Operators tab (the original eight an
 - Your profile shows your level, Money, Polish Money and rank points, and saves your settings
 - Create a room (4-letter code) or join one; your username is your name in the lobby and in matches
 - Pick Attack or Defense in the lobby (max 5 per team); the host starts the match
-- First-person movement: WASD, mouse look (pointer lock), Shift sprint, Space jump, C crouch, Z prone, Q/E lean (all rebindable)
+- First-person movement: WASD, mouse look (pointer lock), Shift sprint, Space jump (or vault), C crouch, Z prone, Q/E lean, N rappel, M flip (all rebindable)
 - Server-authoritative movement with client-side prediction, reconciliation and interpolation of other players
 - Two-storey map with interior and exterior stairs, a balcony, and the objective box
 - Hitscan weapons with recoil, spread, magazines and reload (R)
@@ -191,24 +199,6 @@ Six new operators, bought with Money in the Operators tab (the original eight an
 ## Planned: later stages
 
 Written down so they aren't forgotten (see Status for what is built). They are built one at a time, one PR each, and the next one starts once the previous is confirmed. Server memory must stay low enough for Render's 512 MB plan.
-
-### Stage 22 - Vaulting, rappelling, hatches and defender run-out detection
-
-- **Vault:** look at a low obstacle or an open or broken window and press Space to vault over or through it with a short animation. You can't vault through an intact barricade.
-- **Rappelling** (all players, outside walls only):
-  - Press a free (rebindable) key at the edge of the roof, or while facing an outside wall, to attach a rope.
-  - Climb up and down the wall with W/S and move sideways with A/D. At the top, climb onto the roof; at the bottom, drop off.
-  - You can shoot while rappelling, with more spread.
-  - Hold a key to flip upside down and look in through a window from above.
-  - Press Space at a window to swing in through it. This breaks a barricade if there is one.
-  - Rappelling is visible and audible to others, and you can be shot.
-- **Hatches:** square breakable panels in some floors and roofs. Covers that can be broken with melee or breach charges. Once open, players can drop through (drones can't fall in). Defenders can reinforce hatches during prep like walls.
-- Rope anchor points on the roof and hatches on all maps.
-- **Defender run-out detection** (action phase only):
-  - When a defender leaves the main building, a 3-second countdown with a warning appears on their screen.
-  - If they're still outside when it hits 0, they're "detected": every attacker sees them highlighted red through walls, and their own screen shows "DETECTED".
-  - It stops as soon as they're back inside (after a 1-second delay), and the countdown resets.
-  - The server decides inside/outside using a building boundary for each map, so it can't be cheated.
 
 ### Stage 23 - Defuser objective mode
 

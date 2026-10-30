@@ -19,6 +19,7 @@ const HOLD_BITS = {
   forward: KEY.FORWARD, back: KEY.BACK, left: KEY.LEFT, right: KEY.RIGHT,
   sprint: KEY.SPRINT, jump: KEY.JUMP, crouch: KEY.CROUCH,
   leanLeft: KEY.LEAN_LEFT, leanRight: KEY.LEAN_RIGHT, fire: KEY.FIRE, reload: KEY.RELOAD,
+  rappel: KEY.RAPPEL, flip: KEY.FLIP,
 };
 // One-shot actions sent to the server as events
 const EVENT_ACTIONS = new Set(['breach', 'reinforce', 'droneNext', 'ability', 'utility', 'camView', 'barricade']);
@@ -234,7 +235,7 @@ export class LocalPlayer {
   /** Run one input through movement + weapon. Effects only on the first (live) run. */
   simulate(input, live) {
     if (input.drone) {
-      if (this.droneState && !this.droneJammed) stepDrone(this.droneState, input, input.dt, this.world);
+      if (this.droneState && !this.droneJammed) stepDrone(this.droneState, input, input.dt, this.world.droneView);
       return;
     }
     this.state.gunMul = gunMobility(this.weapon);
@@ -292,6 +293,12 @@ export class LocalPlayer {
     s.fireDelay = serverState.fd || 0;
     s.jumpCd = serverState.jc || 0;
     s.sprinting = !!serverState.spr;
+    // vaulting and rappelling (sent only while they matter)
+    const vt = serverState.vt;
+    if (vt) { [s.vaultT, s.vax, s.vay, s.vaz, s.vbx, s.vby, s.vbz, s.vtop] = vt; } else s.vaultT = 0;
+    const rk = serverState.rk;
+    if (rk) { [s.rap, s.rapSide, s.rapFlip, s.rapPrev, s.rapCd] = rk; } else { s.rap = 0; s.rapSide = 0; s.rapFlip = 0; s.rapPrev = 0; s.rapCd = 0; }
+    s.swing = -1;
     if (serverState.w) Object.assign(this.weapon, serverState.w);
     if (serverState.sm) s.speedMul = serverState.sm;   // operator speed rating can change during select
     const ds = this.droneState;
@@ -370,6 +377,6 @@ export class LocalPlayer {
     }
     const eye = getEyePosition(this.state, this.world);
     this.camera.position.set(eye.x + this.smoothing.x, eye.y + this.smoothing.y, eye.z + this.smoothing.z);
-    this.camera.rotation.set(this.aimPitch, this.aimYaw, -eye.lean * LEAN_ROLL, 'YXZ');
+    this.camera.rotation.set(this.aimPitch, this.aimYaw, -eye.lean * LEAN_ROLL + (this.state.rapFlip || 0) * Math.PI, 'YXZ');   // upside down on a rope
   }
 }

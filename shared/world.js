@@ -20,6 +20,25 @@ export function getWallLayout(map) {
   const sections = [];
 
   for (const b of map.boxes) {
+    if (b.kind === 'hatch') {
+      // A hatch cover is one panel of its own (and its own reinforceable section): bullets, melee and charges break it
+      // like a wall panel, and defenders can reinforce it in prep.
+      const wall = { id: walls.length, axis: 'y', min: b.min, max: b.max, name: 'hatch', cols: 1, rows: 1, panelIds: [], sectionIds: [] };
+      walls.push(wall);
+      const section = { id: sections.length, wallId: wall.id, reinforceable: true, panelIds: [], min: [...b.min], max: [...b.max] };
+      sections.push(section);
+      wall.sectionIds.push(section.id);
+      const panel = {
+        id: panels.length, kind: 'panel', hatch: true, boxId: b.id, wallId: wall.id, sectionId: section.id, col: 0, row: 0,
+        min: [...b.min], max: [...b.max],
+        center: [(b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2, (b.min[2] + b.max[2]) / 2],
+      };
+      panel.panelId = panel.id;
+      panels.push(panel);
+      wall.panelIds.push(panel.id);
+      section.panelIds.push(panel.id);
+      continue;
+    }
     if (b.kind !== 'interior') { staticBoxes.push(b); continue; }
 
     const axis = b.wallAxis; // 'x': runs along x (thin in z); 'z': runs along z (thin in x)
@@ -80,6 +99,7 @@ export class World {
   }
 
   reset() {
+    this.hatchPanel = new Map(this.layout.panels.filter((p) => p.hatch).map((p) => [p.boxId, p.id]));   // map hatch box -> its panel
     this.extra = new Map();   // dynamic solid boxes (deployed shields), id -> box
     const { panels, sections } = this.layout;
     this.alive = new Uint8Array(panels.length).fill(1);
@@ -96,6 +116,9 @@ export class World {
     this.boxes = boxes;
     // What defenders collide with during prep: the map plus plugs in every exterior opening.
     this.barrierView = { boxes: boxes.concat(this.map.barriers) };
+    // Drones can't fall into an open hatch: for them its hole is still floor
+    const open = panels.filter((p) => p.hatch && !this.alive[p.id]);
+    this.droneView = open.length ? { boxes: boxes.concat(open.map((p) => ({ id: -1000 - p.id, kind: 'hatchGuard', min: p.min, max: p.max }))) } : this;
   }
 
   addBox(box) { this.extra.set(box.id, box); this.rebuild(); }

@@ -3,9 +3,13 @@
 // metres, +y is up. A map file creates a kit, adds boxes with it, and returns
 // the finished map with kit.finish().
 
+import { HATCH } from './constants.js';
+
 export function createMapKit({ T = 0.3 } = {}) {
   const boxes = [];
   const openings = [];   // every door and window gap in a wall (barricades go here)
+  const hatches = [];    // square breakable covers in floors and roofs (each is also a 'hatch' box)
+  const ropes = [];      // rope anchors: where players can rappel (see shared/movement.js)
   const barriers = [];   // invisible plugs in exterior openings; only defenders in prep collide with them
   const details = [];    // visual only (rugs, pictures, monitors, plants, car windows)
   let nextId = 1;
@@ -92,7 +96,53 @@ export function createMapKit({ T = 0.3 } = {}) {
     details.push({ min: [cx - w / 2, cy - h / 2, cz - d / 2], max: [cx + w / 2, cy + h / 2, cz + d / 2], color, emissive });
   }
 
-  return { T, box, wall, door, win, stairs, prop, detail, boxes, openings, barriers, details };
+  /** A floor or roof slab with rectangular holes ([x0, z0, x1, z1]) cut out of it. */
+  function slab(y0, y1, x0, z0, x1, z1, holes = [], kind = 'floor') {
+    let rects = [[x0, z0, x1, z1]];
+    for (const [hx0, hz0, hx1, hz1] of holes) {
+      const next = [];
+      for (const [a0, b0, a1, b1] of rects) {
+        if (hx1 <= a0 || hx0 >= a1 || hz1 <= b0 || hz0 >= b1) { next.push([a0, b0, a1, b1]); continue; }
+        if (hx0 > a0) next.push([a0, b0, hx0, b1]);
+        if (hx1 < a1) next.push([hx1, b0, a1, b1]);
+        const m0 = Math.max(a0, hx0), m1 = Math.min(a1, hx1);
+        if (hz0 > b0) next.push([m0, b0, m1, hz0]);
+        if (hz1 < b1) next.push([m0, hz1, m1, b1]);
+      }
+      rects = next;
+    }
+    for (const [a0, b0, a1, b1] of rects) box(a0, y0, b0, a1, y1, b1, kind);
+  }
+
+  /** The hole rectangle of a hatch centred at (cx, cz). */
+  const hatchHole = (cx, cz, size = HATCH.size) => [cx - size / 2, cz - size / 2, cx + size / 2, cz + size / 2];
+
+  /** A breakable hatch cover filling a hole in a slab (y0 to y1 is the slab's thickness). */
+  function hatch(cx, cz, y0, y1, kind = 'floor', size = HATCH.size) {
+    const [hx0, hz0, hx1, hz1] = hatchHole(cx, cz, size);
+    const b = box(hx0, y0, hz0, hx1, y1, hz1, 'hatch');
+    hatches.push({ boxId: b.id, x: cx, z: cz, y0, y1, size, on: kind });
+    return b;
+  }
+
+  /**
+   * A rope hanging down an outside wall from the roof edge. `axis` is the wall's running axis ('x' or 'z'),
+   * `fixed` its coordinate, `along` where on the wall the rope hangs, `sign` which way is outside (+1 or -1).
+   */
+  function wallRope(axis, fixed, along, sign, top, range = 2.5, bottom = 0) {
+    const out = fixed + sign * T / 2;
+    const r = axis === 'x'
+      ? { x: along, z: out, nx: 0, nz: sign, tx: 1, tz: 0, exit: [0, -sign * 1.0] }
+      : { x: out, z: along, nx: sign, nz: 0, tx: 0, tz: 1, exit: [-sign * 1.0, 0] };
+    ropes.push({ kind: 'wall', wallAxis: axis, wallFixed: fixed, top, bottom, range, ...r });
+  }
+
+  /** A rope hanging down through an open roof hatch (dropped into the room below, which has its floor at `bottom`). */
+  function hatchRope(hatchBox, x, z, top, bottom, exit = [0, 1.2]) {
+    ropes.push({ kind: 'hatch', hatchBox: hatchBox.id, x, z, nx: 0, nz: 0, tx: 0, tz: 0, range: 0, top, bottom, exit });
+  }
+
+  return { T, box, wall, door, win, stairs, prop, detail, slab, hatch, hatchHole, wallRope, hatchRope, boxes, openings, barriers, details, hatches, ropes };
 }
 
 /**

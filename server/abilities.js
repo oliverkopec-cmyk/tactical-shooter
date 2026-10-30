@@ -522,6 +522,12 @@ export class Gadgets {
     }
   }
 
+  /** A player swung through this opening on a rope: its barricade, if any, breaks completely. */
+  breakOpeningBarricade(openingId) {
+    const b = this.barricadeAt(openingId);
+    if (b) this.breakPanels(b.id, b.planks.map((p) => p.i));
+  }
+
   /**
    * A melee hit on a barricade, at `point` (where the swing met its plane). The first two hits
    * knock out the grid section at the aimed height (a third of the width, 2 planks tall), or, if it

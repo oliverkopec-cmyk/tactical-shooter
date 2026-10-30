@@ -6,6 +6,7 @@ import {
   BREACH, BARRICADE, CHARGE_REACH, REINFORCE_REACH, REINFORCE_TIME_MS, TEAM_REINFORCEMENTS, PHASE,
 } from '../shared/constants.js';
 import { PANEL_HP } from '../shared/world.js';
+import { HATCH } from '../shared/constants.js';
 import { getEyePosition } from '../shared/movement.js';
 import { aimDirection } from '../shared/weapons.js';
 import { raycastWorld } from '../shared/raycast.js';
@@ -14,7 +15,7 @@ export class Destruction {
   constructor(game) {
     this.game = game;
     this.world = game.world;
-    this.panelHp = new Float32Array(this.world.panels.length).fill(PANEL_HP);
+    this.panelHp = this.freshHp();
     this.charges = new Map();      // id -> { id, owner, type, pos, normal }
     this.nextChargeId = 1;
     this.reinforcing = new Map();  // playerId -> { sectionId, doneAt }
@@ -22,9 +23,14 @@ export class Destruction {
     this.pendingDestroyed = [];
   }
 
+  /** Full health for every panel (hatch covers are sturdier than plaster). */
+  freshHp() {
+    return Float32Array.from(this.world.panels, (p) => (p.hatch ? HATCH.hp : PANEL_HP));
+  }
+
   /** New round: every wall intact again, no charges, full reinforcement pool. */
   reset() {
-    this.panelHp.fill(PANEL_HP);
+    this.panelHp = this.freshHp();
     this.charges.clear();
     this.reinforcing.clear();
     this.reinforcementsLeft = TEAM_REINFORCEMENTS;
@@ -185,7 +191,7 @@ export class Destruction {
       this.world.reinforce(section.id);
       p.stats.reinforced++;
       if (r.personal) { p.ability.charges--; this.game.sendLoadout(id, p); } else this.reinforcementsLeft--;
-      for (const pid of section.panelIds) this.panelHp[pid] = PANEL_HP;
+      for (const pid of section.panelIds) this.panelHp[pid] = this.world.panels[pid].hatch ? HATCH.hp : PANEL_HP;
       this.emitAll('reinforced', { section: section.id, left: this.reinforcementsLeft });
     }
     this.flush();

@@ -14,6 +14,8 @@ export const BIND_ACTIONS = [
   { id: 'prone', label: 'Prone (toggle)', group: 'Movement', key: 'KeyZ' },
   { id: 'leanLeft', label: 'Lean left', group: 'Movement', key: 'KeyQ' },
   { id: 'leanRight', label: 'Lean right', group: 'Movement', key: 'KeyE' },
+  { id: 'rappel', label: 'Rappel: attach / let go', group: 'Movement', key: 'KeyN' },
+  { id: 'flip', label: 'Flip upside down (hold, rappelling)', group: 'Movement', key: 'KeyM' },
   { id: 'fire', label: 'Fire / drone ping', group: 'Combat', key: 'Mouse0' },
   { id: 'melee', label: 'Melee', group: 'Combat', key: 'Mouse2' },
   { id: 'reload', label: 'Reload', group: 'Combat', key: 'KeyR' },
