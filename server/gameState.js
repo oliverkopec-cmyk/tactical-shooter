@@ -11,7 +11,7 @@ import { UTILITIES } from '../shared/utilities.js';
 import { MIN_ROUNDS_TO_COUNT } from './progression.js';
 import { OPERATORS, defaultOperator, operatorsFor, speedMultiplier, damageMultiplier } from '../shared/operators.js';
 import { World } from '../shared/world.js';
-import { maskKeys, attackSpawnPoint, inObjectiveZone } from '../shared/rules.js';
+import { maskKeys, attackSpawnPoint, inObjectiveZone, inBuilding } from '../shared/rules.js';
 import {
   DRONE, DRONE_KEYS, createDroneState, stepDrone, droneEye,
 } from '../shared/drone.js';
@@ -20,7 +20,7 @@ import { aimDirection } from '../shared/weapons.js';
 import { raycastWorld } from '../shared/raycast.js';
 import {
   SNAPSHOT_RATE, MAX_INPUT_DT, MAX_TIME_BUDGET, KEY_MASK, MAX_HEALTH, BASIC_CHARGES, PHASE, CAPTURE_TIME,
-  SPOT_DURATION_MS, PING_COOLDOWN_MS, MELEE, BARRICADE,
+  SPOT_DURATION_MS, PING_COOLDOWN_MS, MELEE, BARRICADE, RUNOUT,
 } from '../shared/constants.js';
 import { PoseHistory, resolveShot } from './combat.js';
 import { Destruction } from './destruction.js';
@@ -528,6 +528,7 @@ export class GameState {
       p.stunUntil = 0;
       p.shockUntil = 0;
       p.camView = -1;
+      p.outT = 0; p.inT = 0; p.detected = false; p.runoutSent = '';
       p.opConfirmed = false;
       if (OPERATORS[p.operator]?.team !== team) p.operator = this.startingOperator(p.member);   // sides swapped
       this.applyOperator(p);
@@ -741,13 +742,14 @@ export class GameState {
         const drone = phase === PHASE.PREP ? this.activeDroneOf(p) : null;
         if (drone) {
           // Piloting a drone: inputs steer it, the operator's body stays put.
-          if (!drone.jammed) stepDrone(drone.state, { ...input, keys: input.keys & DRONE_KEYS }, input.dt, this.world);
+          if (!drone.jammed) stepDrone(drone.state, { ...input, keys: input.keys & DRONE_KEYS }, input.dt, this.world.droneView);
         } else {
           input.keys = maskKeys(input.keys, p.member.team, phase, p.camView >= 0);
           // Defenders can't leave the building during prep
           const solid = phase === PHASE.PREP && p.member.team === 'defense' ? this.world.barrierView : this.world;
           p.state.gunMul = gunMobility(p.weapon);
           stepPlayer(p.state, input, input.dt, solid);
+          if (p.state.swing >= 0) this.onSwingIn(id, p);
           if (stepWeapon(p.weapon, weaponInput(p.state, input), input.dt)) this.fire(id, p, input, wallNow);
         }
         p.lastSeq = input.seq;
@@ -755,6 +757,7 @@ export class GameState {
     }
 
     this.rounds.update(wallNow, realDt);
+    this.updateRunOut(realDt, phase);
     this.gadgets.update(realDt, wallNow);
     if ((phase === PHASE.PREP || phase === PHASE.ACTION) && this.tick % 6 === 0) this.updateSiteReveal();
     this.destruction.update(wallNow);
@@ -762,6 +765,49 @@ export class GameState {
     if (this.tick % 12 === 0 && (phase === PHASE.PREP || phase === PHASE.ACTION)) this.updateVision(wallNow);
     if (this.rosterDirty && wallNow - this.lastRoster >= 100) this.sendRoster();
     if (this.tick % Math.round(TICK_RATE / SNAPSHOT_RATE) === 0) this.broadcastSnapshot();
+  }
+
+  /** A rappelling player swung in through a window or door: its barricade breaks, and everyone hears it. */
+  onSwingIn(id, p) {
+    const opening = p.state.swing;
+    p.state.swing = -1;
+    this.gadgets.breakOpeningBarricade(opening);
+    this.emitAll('swingIn', { id, pos: [p.state.x, p.state.y + 1, p.state.z] });
+  }
+
+  /**
+   * Defenders who stay outside the building too long are detected. Action phase only. Leaving starts a
+   * countdown (RUNOUT.countdownS seconds of being outside); at zero the defender is detected, which shows them
+   * to every attacker through walls. Staying inside for RUNOUT.graceS seconds resets it all.
+   */
+  updateRunOut(dt, phase) {
+    for (const [id, p] of this.players) {
+      if (p.member.team !== 'defense') continue;
+      const active = phase === PHASE.ACTION && p.alive && p.spawned !== false;
+      if (!active) {
+        if (p.outT || p.detected) { p.outT = 0; p.inT = 0; p.detected = false; this.sendRunOut(id, p, true); }
+        continue;
+      }
+      if (inBuilding(this.map, p.state.x, p.state.z)) {
+        p.inT = (p.inT || 0) + dt;
+        if (p.inT >= RUNOUT.graceS && (p.outT > 0 || p.detected)) { p.outT = 0; p.detected = false; }
+      } else {
+        p.inT = 0;
+        p.outT = Math.min(RUNOUT.countdownS, (p.outT || 0) + dt);
+        if (p.outT >= RUNOUT.countdownS) p.detected = true;
+      }
+      this.sendRunOut(id, p);
+    }
+  }
+
+  /** Tell a defender about their countdown (only when it changes: once per displayed number). */
+  sendRunOut(id, p, force = false) {
+    const left = p.outT > 0 && !p.detected ? Math.ceil(RUNOUT.countdownS - p.outT) : null;
+    const key = `${left}|${p.detected ? 1 : 0}`;
+    if (!force && key === p.runoutSent) return;
+    p.runoutSent = key;
+    this.io.to(id).emit('runout', { left, detected: !!p.detected });
+    this.rosterDirty = true;
   }
 
   fire(shooterId, shooter, input, now) {
@@ -862,6 +908,10 @@ export class GameState {
         x: s.x, y: s.y, z: s.z, vx: s.vx, vy: s.vy, vz: s.vz,
         yaw: s.yaw, pitch: s.pitch, crouch: s.crouch, prone: s.prone || 0, lean: s.lean, onGround: s.onGround,
         w: { id: w.id, ammo: w.ammo, reserve: w.reserve, cooldown: w.cooldown, reload: w.reload, bloom: w.bloom, trigger: w.trigger, slot: w.slot, other: w.other },
+        // vaulting and rappelling: sent only while they matter (the client needs them to predict and to animate)
+        vt: s.vaultT > 0 ? [round2(s.vaultT), round2(s.vax), round2(s.vay), round2(s.vaz), round2(s.vbx), round2(s.vby), round2(s.vbz), round2(s.vtop)] : undefined,
+        rk: s.rap || s.rapPrev || s.rapCd > 0 || s.rapFlip > 0 ? [s.rap, round2(s.rapSide), round2(s.rapFlip), s.rapPrev, round2(s.rapCd)] : undefined,
+        det: p.detected ? 1 : undefined,
       });
     }
     const cap = { p: Math.min(1, this.rounds.capture / CAPTURE_TIME), c: this.rounds.contested };
@@ -877,7 +927,11 @@ export class GameState {
     const t = Date.now(), grenades = this.gadgets.snapshotGrenades();
     const forTeam = {};
     for (const team of ['attack', 'defense']) {
-      forTeam[team] = { t, players: players.map((e) => (this.canSee(team, this.players.get(e.id)) ? e : { ...e, o: undefined, w: undefined })), cap, drones, grenades };
+      // Detected defenders are marked for the attackers only
+      forTeam[team] = { t, players: players.map((e) => {
+        const shown = this.canSee(team, this.players.get(e.id)) ? e : { ...e, o: undefined, w: undefined };
+        return team === 'attack' || !e.det ? shown : { ...shown, det: undefined };
+      }), cap, drones, grenades };
     }
     for (const [id, p] of this.players) this.io.to(id).volatile.emit('snapshot', forTeam[p.member.team]);
     if (this.room.spectators.size) this.io.to(this.room.spectatorChannel).volatile.emit('snapshot', { t, players, cap, drones, grenades });

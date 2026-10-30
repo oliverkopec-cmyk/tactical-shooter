@@ -5,7 +5,7 @@ import { createMapKit } from '../mapkit.js';
 
 export function buildDockside() {
   const kit = createMapKit({ T: 0.3 });
-  const { box, wall, door, win, stairs, prop, detail, boxes, barriers, openings, details } = kit;
+  const { box, wall, door, win, stairs, prop, detail, slab, hatch, hatchHole, wallRope, hatchRope, boxes, barriers, openings, details, hatches, ropes } = kit;
   const T = kit.T;
   const GROUND_TOP = 0;
   const SLAB_BOTTOM = 3.0;  // ceiling of the ground floor
@@ -51,11 +51,19 @@ export function buildDockside() {
 
   // ---------------------------------------------------------------- upper floor slab (with stair hole)
   const HOLE_X0 = -10.5, HOLE_X1 = -4.9, HOLE_Z0 = 5.85;
-  box(IX0, SLAB_BOTTOM, IZ0, IX1, FLOOR2, HOLE_Z0, 'floor');
-  box(IX0, SLAB_BOTTOM, HOLE_Z0, HOLE_X0, FLOOR2, IZ1, 'floor');
-  box(HOLE_X1, SLAB_BOTTOM, HOLE_Z0, IX1, FLOOR2, IZ1, 'floor');
+  // A hatch in the upper floor (drops to the ground floor) and one in the roof (drops to the upper floor)
+  const FLOOR_HATCH = [6.5, -4.0], ROOF_HATCH = [5.5, -5.0];
+  slab(SLAB_BOTTOM, FLOOR2, IX0, IZ0, IX1, IZ1, [[HOLE_X0, HOLE_Z0, HOLE_X1, IZ1], hatchHole(...FLOOR_HATCH)], 'floor');
+  hatch(...FLOOR_HATCH, SLAB_BOTTOM, FLOOR2);
   // Roof
-  box(BX0, ROOF_BOTTOM, BZ0, BX1, ROOF_TOP, BZ1, 'roof');
+  slab(ROOF_BOTTOM, ROOF_TOP, BX0, BZ0, BX1, BZ1, [hatchHole(...ROOF_HATCH)], 'roof');
+  const roofHatch = hatch(...ROOF_HATCH, ROOF_BOTTOM, ROOF_TOP);
+  // Ropes hang from the roof edge down every outside wall; the open roof hatch has one down into the room below
+  for (const x of [-4, 4]) wallRope('x', BZ0, x, -1, ROOF_TOP, 2);
+  for (const x of [-8, 0]) wallRope('x', BZ1, x, 1, ROOF_TOP, 2.5);
+  for (const z of [-4, 3]) wallRope('z', BX0, z, -1, ROOF_TOP, 2);
+  for (const z of [-3, 4]) wallRope('z', BX1, z, 1, ROOF_TOP, 2);
+  hatchRope(roofHatch, ...ROOF_HATCH, ROOF_TOP, FLOOR2, [0, 1.2]);
 
   // Interior staircase in the west room, rising toward +x along the north wall.
   stairs('x', HOLE_X0, HOLE_Z0, IZ1, GROUND_TOP, 16, 0.2, 0.35);
@@ -239,6 +247,9 @@ export function buildDockside() {
     barriers,
     openings,
     details,
+    hatches,
+    ropes,
+    building: [{ x0: BX0 - 0.2, z0: BZ0 - 0.2, x1: BX1 + 0.2, z1: BZ1 + 0.2 }],   // inside this footprint a defender is "in the building"
     objective: OBJECTIVE,
     sites: SITES,
     siteSpawns: SITE_SPAWNS,

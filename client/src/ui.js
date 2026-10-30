@@ -165,6 +165,17 @@ export class UI {
     $('controls-hint').textContent = text;
   }
 
+  /** Defenders outside the building: a countdown, then DETECTED. runout: { left, detected } or null to hide. */
+  setRunOut(runout) {
+    const el = $('runout');
+    const show = !!runout && (runout.detected || runout.left !== null);
+    el.classList.toggle('hidden', !show);
+    if (!show) { this.lastRunOut = ''; return; }
+    el.classList.toggle('detected', !!runout.detected);
+    const text = runout.detected ? 'DETECTED' : `LEAVING THE BUILDING · ${runout.left}`;
+    if (text !== this.lastRunOut) { this.lastRunOut = text; $('runout-text').textContent = text; $('runout-sub').textContent = runout.detected ? 'Every attacker can see you. Get back inside!' : 'Get back inside or the attackers will see you'; }
+  }
+
   /** The admin spectator bar: what is being watched, and a button to stop. */
   setSpectatorBar(on) {
     $('spec-bar').classList.toggle('hidden', !on);

@@ -33,6 +33,9 @@ const SOUNDS = {
   placeWire: { noise: true, filter: 'highpass', cutoff: 3500, q: 0.8, dur: 0.18, gain: 0.45 },
   placeBeep: { wave: 'square', freq: 1500, freq2: 1500, filter: 'lowpass', cutoff: 4000, dur: 0.06, gain: 0.22 },
   placeClick: { wave: 'square', freq: 2600, freq2: 900, filter: 'lowpass', cutoff: 5000, dur: 0.04, gain: 0.24 },
+  ropeClip: { wave: 'square', freq: 1900, freq2: 700, filter: 'lowpass', cutoff: 3000, dur: 0.07, gain: 0.3 },
+  ropeSlide: { noise: true, filter: 'bandpass', cutoff: 2600, q: 1.2, dur: 0.12, gain: 0.3 },
+  vaultHop: { noise: true, filter: 'lowpass', cutoff: 700, q: 0.8, dur: 0.14, gain: 0.6 },
   hammer: { noise: true, filter: 'bandpass', cutoff: 1100, q: 1.4, dur: 0.06, gain: 0.7 },
 };
 
@@ -166,6 +169,11 @@ export class Soundscape {
   woodBreak(pos) { this.at('woodBreak', pos, 32); this.at('woodThud', pos, 32); }
 
   plasterBreak(pos) { this.at('crack', pos, 34); this.at('crackThud', pos, 34); }
+
+  ropeClip(pos) { this.at('ropeClip', pos, 30); }
+  ropeSlide(pos) { this.at('ropeSlide', pos, 20); }
+  vault(pos) { this.at('vaultHop', pos, 22); this.at('landThump', pos, 22, 0.6); }
+  swingIn(pos) { this.at('woodBreak', pos, 34); this.at('landThump', pos, 34); }
 
   melee(pos) { this.at('whoosh', pos, 14); }
 }

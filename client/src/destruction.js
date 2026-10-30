@@ -6,6 +6,7 @@ import * as THREE from 'three';
 
 const PANEL_COLOR = new THREE.Color(0xe4ddd0);
 const REINFORCED_COLOR = new THREE.Color(0x4b535e);
+const HATCH_COLOR = new THREE.Color(0x8a6a3c);   // hatch covers are wooden
 const HIDDEN = new THREE.Matrix4().makeScale(0, 0, 0);
 
 export class DestructionView {
@@ -50,7 +51,7 @@ export class DestructionView {
     const c = new THREE.Color();
     for (const p of this.world.panels) {
       this.mesh.setMatrixAt(p.id, this.world.alive[p.id] ? this.matrices[p.id] : HIDDEN);
-      c.copy(this.world.reinforced[p.sectionId] ? REINFORCED_COLOR : PANEL_COLOR).multiplyScalar(this.shade[p.id]);
+      c.copy(this.world.reinforced[p.sectionId] ? REINFORCED_COLOR : p.hatch ? HATCH_COLOR : PANEL_COLOR).multiplyScalar(this.shade[p.id]);
       this.mesh.setColorAt(p.id, c);
     }
     this.mesh.instanceMatrix.needsUpdate = true;

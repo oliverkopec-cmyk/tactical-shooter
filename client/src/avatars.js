@@ -147,6 +147,17 @@ export class RemotePlayer {
     this.marker.visible = false;
     this.root.add(this.marker);
     this.spotted = false;
+    // A defender who stayed outside too long: a red glow through walls (only attackers are told)
+    this.detected = false;
+    this.glow = new THREE.Mesh(
+      new THREE.BoxGeometry(0.75, 1.9, 0.55),
+      new THREE.MeshBasicMaterial({ color: 0xff2a2a, transparent: true, opacity: 0.45, depthTest: false, depthWrite: false }),
+    );
+    this.glow.position.y = 0.95;
+    this.glow.renderOrder = 15;
+    this.glow.visible = false;
+    this.root.add(this.glow);
+    this.rap = 0; this.rapFlip = 0; this.vaulting = false;   // on a rope (rope number), how upside down, hopping over something
 
     // Held weapon: a scaled-down copy of the first-person model
     this.gunMount = new THREE.Group();
@@ -212,6 +223,10 @@ export class RemotePlayer {
     if (s.w) this.setWeapon(s.w.id);
     if (s.o) this.setOperator(s.o);
     this.reloading = !!(s.w && s.w.reload > 0);
+    this.detected = !!s.det;
+    this.rap = s.rk ? s.rk[0] : 0;
+    this.rapFlip = s.rk ? s.rk[2] : 0;
+    this.vaulting = !!s.vt;
     // Coming back to life: don't interpolate from the death spot to the spawn.
     // (attackers have no body during prep: u = not spawned yet)
     const present = s.alive !== false && !s.u;
@@ -230,6 +245,7 @@ export class RemotePlayer {
     if (this.gun) animateGun(this.gun, { kick: Math.max(0, this.flashTime) / 0.05, reloadFrac: this.reloading ? ((performance.now() / 1000) % 2.4) / 2.4 : -1 });
     this.root.visible = this.alive && !this.hiddenForSpectate;
     this.marker.visible = this.spotted && this.alive;
+    this.glow.visible = this.detected && this.alive;
     const buf = this.buffer;
     if (!buf.length) return;
     let a = buf[0], b = buf[0];
@@ -265,6 +281,12 @@ export class RemotePlayer {
     // head in front (the server's prone hitbox in shared/raycast.js matches this).
     this.lean.rotation.x = -Math.PI / 2 * prone;
     this.lean.position.set(0, 0.17 * prone, PRONE_BODY.max[2] * prone);
+    if (this.rap) {
+      // Hanging on a rope: leaning back against the wall, or flipped head down (the body turns about the feet, then is lifted so the hips stay put)
+      const flip = this.rapFlip, back = 0.5;
+      this.lean.rotation.x = back + flip * (Math.PI - back);
+      this.lean.position.y = flip * 1.8;
+    }
     // Body pose height: crouch height upright, straightening out as the body lies down
     const upright = bodyHeight(crouch);
     const h = upright + (STAND_HEIGHT - upright) * prone;

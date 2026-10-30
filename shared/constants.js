@@ -54,8 +54,19 @@ export const KEY = {
   RELOAD: 512,
   JUMP: 1024,
   PRONE: 2048,
+  RAPPEL: 4096,     // attach to / let go of a rope (a press)
+  FLIP: 8192,       // hold: hang upside down while rappelling
 };
-export const KEY_MASK = 4095;
+export const KEY_MASK = 16383;
+
+// Vaulting: Space at a low obstacle (a crate, a sill) hops over it
+export const VAULT = { maxRise: 1.3, time: 0.55, clear: 1.12, maxDepth: 2.1, cooldown: 0.4 };
+// Rappelling on the outside walls (m/s)
+export const RAPPEL = { up: 1.6, down: 2.4, side: 1.8, flipSpeed: 3, eyeDrop: 1.5, wallOffset: 0.45, spreadMul: 2.2, hang: 0.9 };
+// Defenders who stay outside the building too long are spotted
+export const RUNOUT = { countdownS: 3, graceS: 1 };
+// Square hatch covers in floors and roofs
+export const HATCH = { size: 1.0, hp: 150 };
 
 // Combat
 export const MAX_HEALTH = 100;

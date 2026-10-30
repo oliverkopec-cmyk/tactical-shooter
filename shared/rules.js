@@ -11,7 +11,7 @@ export function maskKeys(keys, team, phase, viewingCamera = false) {
   if (viewingCamera) return 0;   // watching a camera: the body stands still
   switch (phase) {
     case PHASE.ACTION: return keys;
-    case PHASE.PREP: return team === 'defense' ? keys : keys & KEY.RELOAD;
+    case PHASE.PREP: return team === 'defense' ? keys & ~(KEY.RAPPEL | KEY.FLIP) : keys & KEY.RELOAD;   // the building is sealed in prep: no rappelling
     default: return keys & KEY.RELOAD;
   }
 }
@@ -32,4 +32,10 @@ export function attackSpawnPoint(map, choice, slot = 0, count = 1) {
 export function inObjectiveZone(objective, state) {
   const dx = state.x - objective.x, dz = state.z - objective.z;
   return Math.hypot(dx, dz) <= objective.zoneRadius && Math.abs(state.y - objective.y) < 2.2;
+}
+
+/** Is this spot inside the main building's footprint (any floor, or the roof)? Used by the defenders' run-out detection. */
+export function inBuilding(map, x, z) {
+  for (const r of map.building || []) if (x >= r.x0 && x <= r.x1 && z >= r.z0 && z <= r.z1) return true;
+  return false;
 }

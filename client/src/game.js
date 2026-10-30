@@ -6,7 +6,8 @@ import {
 } from '../../shared/constants.js';
 import { maskKeys } from '../../shared/rules.js';
 import { getMap, DEFAULT_MAP_ID } from '../../shared/map.js';
-import { getEyePosition } from '../../shared/movement.js';
+import { getEyePosition, findVault, findRope } from '../../shared/movement.js';
+import { RopeView } from './ropes.js';
 import { currentSpread, aimDirection } from '../../shared/weapons.js';
 import { World } from '../../shared/world.js';
 import { raycastWorld, rayPlayer } from '../../shared/raycast.js';
@@ -103,6 +104,7 @@ export class Game {
       if (name === 'volume') this.audio.setVolume(v);
     });
     this.stats = {};
+    this.runout = { left: null, detected: false };   // the defenders' run-out countdown
     this.boardOn = false;
     window.addEventListener('keydown', (e) => this.onKeyDown(e));
     window.addEventListener('keyup', (e) => { if (actionFor(e.code) === 'scoreboard') this.boardOn = false; });
@@ -163,6 +165,8 @@ export class Game {
     network.on('loadout', (l) => { this.loadout = l; this.abilityCdEnd = performance.now() + (l.ability?.cdLeft || 0); });
     network.on('stats', (s) => { this.stats = s; });
     network.on('barricadeStart', ({ ms }) => { this.reinforcing = { section: null, start: performance.now(), ms, label: 'Barricading…' }; });
+    network.on('runout', (r) => { this.runout = r; });
+    network.on('swingIn', ({ pos }) => { if (this.running) { this.sound.swingIn(pos); this.effects.debris(pos, 0x3f7a2e, 3); } });
     network.on('barricadesLeft', ({ left }) => { this.barricadesLeft = left; });
     network.on('barricadeBroken', ({ id, ids }) => {
       if (!this.running) return;
@@ -294,6 +298,8 @@ export class Game {
     this.mapDef = def;
     this.mapView = buildMap(this.scene, def);
     this.world = new World(def);
+    this.ropeView?.dispose();
+    this.ropeView = new RopeView(this.scene, def);
     this.destruction = new DestructionView(this.scene, this.world, this.effects, this.audio);
     this.gadgets = new GadgetView(this.scene, this.world);
     const c = this.sun.shadow.camera;
@@ -348,6 +354,7 @@ export class Game {
     this.health = me.health ?? MAX_HEALTH;
     this.loadout = { ...this.loadout, op: me.operator, charges: me.charges ?? 0, placed: !!me.placed };
     this.reinforcing = null;
+    this.runout = { left: null, detected: false };
     this.picks = payload.picks || {};
     if (payload.roster) { this.roster = payload.roster; this.renderRoster(); }
     this.siteIndex = payload.site ?? null;
@@ -438,7 +445,7 @@ export class Game {
     if (!this.local.alive) return `Click to switch teammate · ${tail}`;
     if (watching) return `${k('camView')} next camera · mouse pans the feed · you can't move while watching`;
     if (inDrone) return `Drone: ${move} drive · ${k('sprint')} fast · ${k('jump')} hop · ${k('fire')} ping enemy · ${k('droneNext')} switch · 1/2/3 spawn point · ${k('scoreboard')} scoreboard`;
-    const base = `${move} move · ${k('sprint')} sprint · ${k('jump')} jump · ${k('crouch')} crouch · ${k('prone')} prone · ${k('leanLeft')}/${k('leanRight')} lean · ${k('reload')} reload · ${k('primary')}/${k('secondary')} guns · ${k('utility')} utility · ${k('melee')} melee`;
+    const base = `${move} move · ${k('sprint')} sprint · ${k('jump')} jump · ${k('crouch')} crouch · ${k('prone')} prone · ${k('leanLeft')}/${k('leanRight')} lean · ${k('reload')} reload · ${k('primary')}/${k('secondary')} guns · ${k('utility')} utility · ${k('melee')} melee · ${k('rappel')} rappel · ${k('jump')} vault`;
     const f = OPERATORS[this.loadout.op]?.ability ? ` · ${k('ability')} ability` : '';
     if (attack) return phase === PHASE.PREP ? 'Fly your drone to find the objective · 1/2/3 choose where you appear' : `${base}${f} · ${k('breach')} breach charge · ${tail}`;
     return `${base}${f} · ${phase === PHASE.PREP ? `${k('reinforce')} reinforce · ${k('barricade')} barricade · ` : ''}${k('camView')} cameras · ${tail}`;
@@ -530,9 +537,24 @@ export class Game {
     for (const p of players) if (p.id !== this.network.id && !this.remotes.has(p.id)) this.addRemote(p);
   }
 
+  /** Other players starting a vault or clipping onto a rope make a sound you can hear. */
+  noticeMoves(snap) {
+    for (const p of snap.players) {
+      if (p.id === this.network.id) continue;
+      const r = this.remotes.get(p.id);
+      if (!r) continue;
+      const rap = p.rk ? p.rk[0] : 0, vaulting = !!p.vt;
+      if (rap && !r.rap) this.sound.ropeClip([p.x, p.y + 1, p.z]);
+      if (vaulting && !r.vaulting) this.sound.vault([p.x, p.y + 0.5, p.z]);
+      if (rap && Math.abs(p.y - (r.lastRopeY ?? p.y)) > 0.25) { this.sound.ropeSlide([p.x, p.y + 1, p.z]); r.lastRopeY = p.y; }
+      if (!rap) r.lastRopeY = undefined;
+    }
+  }
+
   onSnapshot(snap) {
     if (!this.running) return;
     if (snap.cap) this.capture = snap.cap;
+    this.noticeMoves(snap);
     const myId = this.network.id;
     const drones = snap.drones || [];
     this.drones.sync(drones, myId);
@@ -635,6 +657,16 @@ export class Game {
   exitSpectate() {
     if (this.spectate.target) this.spectate.target.hiddenForSpectate = false;
     this.spectate = { index: 0, target: null, deathPos: null };
+  }
+
+  /** Draw a rope for everyone hanging on one (you included). */
+  drawRopes(local) {
+    const rv = this.ropeView;
+    if (!rv) return;
+    rv.begin();
+    if (local?.alive && local.state.rap) rv.draw(local.state.rap, local.state.x, local.state.y, local.state.z);
+    for (const r of this.remotes.values()) if (r.alive && r.rap) rv.draw(r.rap, r.pose.x, r.pose.y, r.pose.z);
+    rv.end();
   }
 
   // ---------------------------------------------------------------- admin spectator
@@ -754,6 +786,7 @@ export class Game {
       : 'Free camera: WASD move · Space/C up/down · Shift fast · click: follow a player · Backspace: stop spectating');
     this.ui.setSpectatorInfo(sp.target ? `Watching ${sp.target.name}` : 'Free camera');
     this.ui.renderBoard(this.boardOn, this.boardRows(), this.round.scores);
+    this.drawRopes(null);
     this.drones.update(dt);
     this.gadgets.update(dt);
     this.sound.update(dt);
@@ -828,6 +861,14 @@ export class Game {
       const eye = getEyePosition(local.state, this.world);
       const o = findOpening(this.mapDef, [eye.x, eye.y, eye.z], aimDirection(local.aimYaw, local.aimPitch), BARRICADE.reach);
       if (o && !this.gadgets.hasBarricade(o.id)) prompt = `Press ${keyFor('barricade')} to barricade (${this.barricadesLeft} left)`;
+    }
+    // Rope and vault prompts (action phase, nothing more important on screen)
+    if (!prompt && local.alive && this.round.phase === PHASE.ACTION && !this.camView && !this.reinforcing) {
+      const st = local.state;
+      if (st.rap) prompt = `${keyFor('forward')}/${keyFor('back')} climb · ${keyFor('left')}/${keyFor('right')} sideways · ${keyFor('jump')} at a window swings in · ${keyFor('flip')} flip · ${keyFor('rappel')} let go`;
+      else if (st.vaultT > 0) prompt = '';
+      else if (findRope(st, this.world)) prompt = `Press ${keyFor('rappel')} to rappel`;
+      else if (st.onGround && findVault(st, this.world)) prompt = `Press ${keyFor('jump')} to vault`;
     }
     this.ui.setPrompt(prompt);
 
@@ -989,6 +1030,8 @@ export class Game {
       timeText: `${left}s`, onPick: (opId) => this.network.pickOperator(opId), onUtility: (id) => this.network.pickUtility(id),
     });
     this.ui.updateSpawnPicker(noBody && local.alive, this.spawnChoice, this.mapDef.spawns.attack);
+    this.drawRopes(local);
+    this.ui.setRunOut(local.alive && this.myTeam === 'defense' && this.round.phase === PHASE.ACTION ? this.runout : null);
     this.drones.update(dt);
     this.gadgets.update(dt);
     this.ui.setDroneHud(
