@@ -129,6 +129,7 @@ export class LocalPlayer {
 
   /** A bound key or mouse button went down or up. */
   applyAction(action, down, repeat) {
+    if (action === 'ping') { if (!repeat) this.onPing?.(down); return; }
     if (action === 'fire' && this.droneState) {
       // Piloting a drone: fire pings the enemy under the crosshair instead.
       if (down && !repeat) this.sendAction('ping');
@@ -156,6 +157,7 @@ export class LocalPlayer {
   // Mouse look: free movement when the pointer is locked, click-and-drag otherwise.
   handleMouse(e) {
     if (!this.pointerLocked && !this.dragging) return;
+    if (this.lookFrozen) { this.onWheelMove?.(e.movementX, e.movementY); return; }   // the ping wheel is open: the mouse picks a choice
     const k = MOUSE_SENSITIVITY * settings.sensitivity;
     this.yaw = wrapAngle(this.yaw - e.movementX * k);
     this.pitch = clampPitch(this.pitch - e.movementY * k);

@@ -129,6 +129,8 @@ io.on('connection', (socket) => {
     if (type === 'breach' || type === 'reinforce' || type === 'droneNext' || type === 'ping' || type === 'ability' || type === 'utility' || type === 'camView' || type === 'barricade' || type === 'melee') socket.data.room?.handleAction(socket.id, type);
   });
 
+  socket.on('teamPing', (type) => socket.data.room?.game?.teamPing(socket.id, String(type)));
+
   socket.on('pickOperator', (opId) => socket.data.room?.game?.pickOperator(socket.id, String(opId)));
 
   socket.on('pickUtility', (id) => socket.data.room?.game?.pickUtility(socket.id, String(id)));

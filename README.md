@@ -2,7 +2,19 @@
 
 A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite on the client, Node.js + Socket.IO on an authoritative server. One Node process serves both the game client and the realtime server, so the whole thing deploys as a single Render web service.
 
-## Status: Stage 23 (Defuser mode)
+## Status: Stage 24 (pings and voice lines)
+
+- **Team pings:** the **middle mouse button** (rebindable: "Ping (tap) / ping wheel (hold)") in prep or action.
+  - **Tap:** pings what you aim at, for **your team only**, for **5 seconds**: a coloured diamond with a label and your name, seen through walls, with a chirp from where it landed. The server traces your aim itself. If an **enemy in plain view** is under the crosshair it becomes an "Enemy" ping and that enemy is **marked for 2 seconds** (the usual red arrow); behind a wall they are not. Otherwise the ping names what it hit: Claymore, Jammer, Shock trap, Barbed wire, Breach charge, Shield, Barricade, Hatch / Reinforced hatch, Soft wall / Reinforced wall, Wall, or just "Ping". Defenders' hidden cameras are only named for defenders.
+  - **Hold:** opens the **ping wheel** (the view stops turning); move the mouse towards **Enemy here, Go here, Danger, Need help** or **Defending here** and let go. Letting go in the middle cancels. Each choice has its own colour; enemy and danger pings sound an alarm tone.
+  - Limits: one ping every 0.6 s, at most two of yours showing at once (the oldest goes).
+- **Operator voice lines:** operators speak short lines with the browser's speech synthesis, each operator with their own voice pitch and speed: using the ability or utility, reloading, pinging (one line per wheel choice), getting a kill, spotting an enemy (drone ping or a ping on an enemy), planting and disabling the defuser.
+  - Only your team hears them, quieter with distance (out to 40 m). The browser's speech can't be placed in 3D, so each line also appears on screen under the kill feed with an **arrow pointing to the speaker** ("↖ Spark: Reloading!").
+  - The server decides when someone speaks, with cooldowns so it never spams (1.8 s between any two lines from one player, 6 s before the same kind again).
+  - **Settings → Voice lines** sets their volume; at 0 they are off (the on-screen line still shows).
+  - **All the text is in one file, `shared/voiceLines.js`**, with a note on how to swap in recorded audio files later.
+
+### Earlier: Stage 23 (Defuser mode)
 
 - **Game mode picker:** the host chooses **Secure the objective** (the original mode) or **Defuser** in the room lobby, above the map choice. It is locked once the match starts.
 - **Defuser mode:**
@@ -212,13 +224,6 @@ Six new operators, bought with Money in the Operators tab (the original eight an
 
 Written down so they aren't forgotten (see Status for what is built). They are built one at a time, one PR each, and the next one starts once the previous is confirmed. Server memory must stay low enough for Render's 512 MB plan.
 
-### Stage 24 - Ping system and voice lines
-
-- Middle mouse (rebindable) places a ping where you aim, visible to your team only, lasting 5 seconds. Pinging an enemy marks them with a short marker if they're in your view. Pinging a gadget or wall labels it.
-- A ping wheel (hold the ping key): "Enemy here", "Go here", "Danger", "Need help", "Defending here".
-- Operator voice lines using the browser's speech synthesis, with a different voice pitch per operator: for abilities, utilities, reloading, pings, getting a kill, spotting enemies, planting and disabling. Short lines, with a cooldown so they don't spam. Teammates hear them with direction. A setting turns voice lines off.
-- All voice line text lives in one file so recorded audio can be swapped in later.
-
 ### Stage 25 - Killcam
 
 - After you die, a 4-second replay of your death from the killer's view (their position, aim and shots), then spectating. Skippable.
@@ -284,6 +289,7 @@ shared/            Code used by BOTH client and server
   account.js       username/password rules, which operators an account owns
   settings.js      setting defaults and limits (the server cleans saved settings with these)
   keybinds.js      rebindable actions, default keys, key names, keybind cleaning
+  voiceLines.js    every voice line, operator voices, ping types
   modes.js         the game modes and the Defuser numbers (7 s, 7 s, 45 s)
   progression.js   rank ladder, level maths, daily quest definitions
   skins.js         gun skin catalog: rarities, colours, patterns

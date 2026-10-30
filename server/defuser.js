@@ -67,6 +67,7 @@ export class Defuser {
     this.acts.set(id, { kind, start: now });
     const ms = (kind === 'plant' ? DEFUSER.plantS : DEFUSER.disableS) * 1000;
     this.game.io.to(id).emit('defuserEvent', { type: 'actStart', kind, ms });
+    this.game.voice(id, p, kind === 'plant' ? 'plant' : 'disable', now);
     // The other side is warned
     const other = p.member.team === 'attack' ? 'defense' : 'attack';
     this.emitTeam(other, 'defuserEvent', { type: kind === 'plant' ? 'planting' : 'disabling', by: p.member.name });

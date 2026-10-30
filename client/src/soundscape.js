@@ -33,6 +33,8 @@ const SOUNDS = {
   placeWire: { noise: true, filter: 'highpass', cutoff: 3500, q: 0.8, dur: 0.18, gain: 0.45 },
   placeBeep: { wave: 'square', freq: 1500, freq2: 1500, filter: 'lowpass', cutoff: 4000, dur: 0.06, gain: 0.22 },
   placeClick: { wave: 'square', freq: 2600, freq2: 900, filter: 'lowpass', cutoff: 5000, dur: 0.04, gain: 0.24 },
+  pingChirp: { wave: 'sine', freq: 1300, freq2: 1800, dur: 0.12, gain: 0.35 },
+  pingAlarm: { wave: 'square', freq: 900, freq2: 600, filter: 'lowpass', cutoff: 3000, dur: 0.18, gain: 0.3 },
   defuserBeep: { wave: 'square', freq: 1500, freq2: 1500, filter: 'lowpass', cutoff: 4200, dur: 0.07, gain: 0.5 },
   defuserPlanted: { wave: 'square', freq: 880, freq2: 440, filter: 'lowpass', cutoff: 3000, dur: 0.5, gain: 0.7 },
   defuserDisabled: { wave: 'sine', freq: 520, freq2: 1040, dur: 0.4, gain: 0.7 },
@@ -173,6 +175,9 @@ export class Soundscape {
   woodBreak(pos) { this.at('woodBreak', pos, 32); this.at('woodThud', pos, 32); }
 
   plasterBreak(pos) { this.at('crack', pos, 34); this.at('crackThud', pos, 34); }
+
+  /** A team ping: a short chirp from where it was placed (an alarm tone for enemy and danger). */
+  ping(pos, type) { this.at(type === 'enemy' || type === 'danger' ? 'pingAlarm' : 'pingChirp', pos, 200); }
 
   /** urgency 0..1: the beep climbs in pitch as the time runs out. */
   defuserBeep(pos, urgency = 0) { this.at('defuserBeep', pos, 60); if (urgency > 0.7) this.at('defuserBeep', pos, 60, 0.6); }

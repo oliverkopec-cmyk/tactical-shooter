@@ -29,6 +29,7 @@ export const BIND_ACTIONS = [
   { id: 'reinforce', label: 'Reinforce wall (defense)', group: 'Gadgets', key: 'KeyV' },
   { id: 'barricade', label: 'Barricade (defense)', group: 'Gadgets', key: 'KeyB' },
   { id: 'camView', label: 'Cameras (defense)', group: 'Gadgets', key: 'KeyT' },
+  { id: 'ping', label: 'Ping (tap) / ping wheel (hold)', group: 'Interface', key: 'Mouse1' },
   { id: 'scoreboard', label: 'Scoreboard (hold)', group: 'Interface', key: 'Tab' },
   { id: 'toggleHint', label: 'Show / hide key hints', group: 'Interface', key: 'KeyH' },
 ];

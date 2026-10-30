@@ -25,6 +25,7 @@ import {
 import { PoseHistory, resolveShot } from './combat.js';
 import { Destruction } from './destruction.js';
 import { Defuser } from './defuser.js';
+import { VOICE_LINES, VOICE_COOLDOWN, PING_TYPES, PING } from '../shared/voiceLines.js';
 import { RoundManager } from './rounds.js';
 import { Gadgets } from './abilities.js';
 
@@ -144,8 +145,12 @@ export class GameState {
     else if (type === 'reinforce') this.destruction.startReinforce(id, p);
     else if (type === 'droneNext') this.cycleDrone(p);
     else if (type === 'ping') this.pingFromDrone(id, p, Date.now());
-    else if (type === 'ability') this.gadgets.use(id, p);
-    else if (type === 'utility') this.gadgets.useUtility(id, p);
+    else if (type === 'ability' || type === 'utility') {
+      // Speak only if it actually happened (charges, cooldown or utility count changed)
+      const before = `${p.ability?.charges}|${p.ability?.cdUntil}|${p.ability?.deployed}|${p.utility?.charges}`;
+      if (type === 'ability') this.gadgets.use(id, p); else this.gadgets.useUtility(id, p);
+      if (before !== `${p.ability?.charges}|${p.ability?.cdUntil}|${p.ability?.deployed}|${p.utility?.charges}`) this.voice(id, p, type);
+    }
     else if (type === 'barricade') this.gadgets.startBarricade(id, p);
     else if (type === 'melee') this.melee(id, p, Date.now());
     else if (type === 'camView') this.gadgets.cycleCamera(id, p);
@@ -228,6 +233,7 @@ export class GameState {
     p.pingReadyAt = now + PING_COOLDOWN_MS;
     const hit = this.pingFrom(p, droneEye(drone.state), aimDirection(drone.state.yaw, drone.state.pitch), now);
     this.io.to(id).emit('pingResult', { hit });
+    if (hit) this.voice(id, p, 'spot');
   }
 
   /**
@@ -256,6 +262,95 @@ export class GameState {
   }
 
   // ---------------------------------------------------------------- operators
+
+  // ---------------------------------------------------------------- voice lines and team pings
+
+  /**
+   * An operator says a line (see shared/voiceLines.js): their team hears it, from where they stand.
+   * Each player waits a little between lines and longer before repeating the same kind, so it never spams.
+   */
+  voice(id, p, key, now = Date.now()) {
+    if (!VOICE_LINES[key] || !p?.alive) return;
+    p.voiceAt ||= {};
+    if (now < (p.voiceAt.any || 0) || now < (p.voiceAt[key] || 0)) return;
+    p.voiceAt.any = now + VOICE_COOLDOWN.any;
+    p.voiceAt[key] = now + VOICE_COOLDOWN.sameKey;
+    const payload = { id, key, op: p.operator, pos: [round2(p.state.x), round2(p.state.y + 1.6), round2(p.state.z)] };
+    for (const [qid, q] of this.players) if (q.member.team === p.member.team) this.io.to(qid).emit('voice', payload);
+  }
+
+  /**
+   * The ping key: mark where the player aims, for their team, for a few seconds. The server traces the
+   * aim itself. An enemy in view under the crosshair is marked briefly for the team; a gadget or wall
+   * under it is named. type: 'auto' (a quick tap) or one of the wheel's choices.
+   */
+  teamPing(id, type, now = Date.now()) {
+    const p = this.players.get(id);
+    const phase = this.rounds.phase;
+    if (!p || !p.alive || !PING_TYPES[type] || (phase !== PHASE.PREP && phase !== PHASE.ACTION)) return;
+    if (now < (p.teamPingAt || 0)) return;
+    p.teamPingAt = now + PING.cooldownMs;
+    const drone = phase === PHASE.PREP ? this.activeDroneOf(p) : null;
+    if (!drone && p.spawned === false) return;
+    const eye = drone ? droneEye(drone.state) : (() => { const e = getEyePosition(p.state, this.world); return [e.x, e.y, e.z]; })();
+    const aim = drone ? aimDirection(drone.state.yaw, drone.state.pitch) : aimDirection(p.state.yaw, p.state.pitch);
+    const wall = raycastWorld(this.world, eye, aim, PING.range);
+    let dist = wall ? wall.t : PING.range;
+    let enemy = null;
+    // An enemy close to the aim line, in plain view
+    for (const [qid, q] of this.players) {
+      if (!q.alive || q.spawned === false || q.member.team === p.member.team) continue;
+      for (const h of [1.55, 1.0, 0.4]) {
+        const v = [q.state.x - eye[0], q.state.y + h - eye[1], q.state.z - eye[2]];
+        const d = Math.hypot(...v);
+        if (d > PING.range || d < 0.2) continue;
+        const dir = v.map((c) => c / d);
+        if (Math.acos(Math.min(1, dir[0] * aim[0] + dir[1] * aim[1] + dir[2] * aim[2])) > 0.06) continue;
+        const block = raycastWorld(this.world, eye, dir, d);
+        if (block && block.t < d - 0.3) continue;
+        if (!enemy || d < enemy.d) enemy = { id: qid, q, d, h };
+      }
+    }
+    let label = null, pos, enemyId = null;
+    if (enemy) {
+      enemy.q.spottedUntil = Math.max(enemy.q.spottedUntil || 0, now + PING.markMs);
+      pos = [enemy.q.state.x, enemy.q.state.y + 1.9, enemy.q.state.z];
+      label = 'Enemy';
+      enemyId = enemy.id;
+    } else {
+      pos = eye.map((c, i) => c + aim[i] * Math.max(0, dist - 0.05));
+      label = this.pingLabel(p, pos, wall);
+    }
+    const t = PING_TYPES[type];
+    const effective = type === 'auto' && enemy ? 'enemy' : type;
+    const text = type === 'auto' ? label || t.label : `${t.label}${label && label !== 'Here' ? ` · ${label}` : ''}`;
+    p.pingCount = (p.pingCount || 0) + 1;
+    const ping = { id: `${id}:${p.pingCount}`, from: id, by: p.member.name, type: effective, text, pos: pos.map(round2), ms: PING.ms, enemy: enemyId };
+    for (const [qid, q] of this.players) if (q.member.team === p.member.team) this.io.to(qid).emit('teamPing', ping);
+    this.voice(id, p, enemy ? 'pingEnemy' : PING_TYPES[effective].voice, now);
+  }
+
+  /** What a ping landed on, as the pinger's team may know it. */
+  pingLabel(p, pos, wall) {
+    const near = (q, r) => Math.hypot(q[0] - pos[0], q[1] - pos[1], q[2] - pos[2]) <= r;
+    const g = this.gadgets;
+    if (p.member.team === 'defense') for (const c of g.cameras.values()) if (near(c.pos, 0.7)) return 'Camera';   // attackers never learn of hidden cameras this way
+    for (const c of g.claymores.values()) if (near(c.pos, 0.7)) return 'Claymore';
+    for (const j of g.jammers.values()) if (near(j.pos, 0.8)) return 'Jammer';
+    for (const s of g.shocks?.values?.() || []) if (near(s.pos, 0.8)) return 'Shock trap';
+    for (const w of g.wires.values()) if (Math.hypot(w.x - pos[0], w.z - pos[2]) <= 1.2 && Math.abs(w.y - pos[1]) < 1) return 'Barbed wire';
+    for (const c of this.destruction.charges.values()) if (near(c.pos, 0.6)) return 'Breach charge';
+    const kind = wall?.box.kind;
+    if (kind === 'shield' || String(wall?.box.id).startsWith('shield')) return 'Shield';
+    if (kind === 'barricade') return 'Barricade';
+    if (kind === 'panel') {
+      const panel = this.world.panels[wall.box.id];
+      if (panel?.hatch) return this.world.isReinforcedPanel(panel.id) ? 'Reinforced hatch' : 'Hatch';
+      return this.world.isReinforcedPanel(wall.box.id) ? 'Reinforced wall' : 'Soft wall';
+    }
+    if (kind === 'exterior') return 'Wall';
+    return 'Here';
+  }
 
   /** Give a player their operator's weapon, ratings and ability stock. */
   applyOperator(p) {
@@ -757,7 +852,9 @@ export class GameState {
           p.state.gunMul = gunMobility(p.weapon);
           stepPlayer(p.state, input, input.dt, solid);
           if (p.state.swing >= 0) this.onSwingIn(id, p);
+          const wasReloading = p.weapon.reload > 0;
           if (stepWeapon(p.weapon, weaponInput(p.state, input), input.dt)) this.fire(id, p, input, wallNow);
+          if (!wasReloading && p.weapon.reload > 0) this.voice(id, p, 'reload', wallNow);
         }
         p.lastSeq = input.seq;
       }
@@ -895,6 +992,7 @@ export class GameState {
     const killer = this.players.get(killerId);
     if (killer && killerId !== victimId) {
       killer.kills++;
+      if (killer.member.team !== victim.member.team) this.voice(killerId, killer, 'kill');
       if (head) killer.stats.headshots++;
     }
     this.emitAll('stats', this.statsPayload());

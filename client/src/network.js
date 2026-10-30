@@ -81,6 +81,10 @@ export class Network {
     this.socket.emit('action', type);
   }
 
+  sendTeamPing(type) {
+    this.socket.emit('teamPing', type);
+  }
+
   leaveRoom() {
     this.socket.emit('leaveRoom');
   }
