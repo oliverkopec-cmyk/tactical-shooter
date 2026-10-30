@@ -84,7 +84,8 @@ export class Game {
     window.addEventListener('resize', () => this.resize());
     canvas.addEventListener('click', () => {
       if (!this.running) return;
-      if (this.local && !this.local.alive) this.cycleSpectate();
+      if (this.spec) this.cycleSpec();
+      else if (this.local && !this.local.alive) this.cycleSpectate();
       else if (!document.pointerLockElement) this.lockPointer();
     });
     // Ctrl+click is a right-click on macOS; don't let crouch-firing open a menu.
@@ -305,6 +306,7 @@ export class Game {
   start(payload) {
     this.stop();
     this.loadMap(payload.mapId);
+    if (payload.spectator) return this.startSpectator(payload);
     const myId = this.network.id;
     const me = payload.players.find((p) => p.id === myId);
     if (!me) return;
@@ -313,7 +315,7 @@ export class Game {
     this.mySkins = me.skins || {};   // my equipped gun skins, drawn on my own gun
     this.myOwned = me.owned || [];   // operators I own (the select screen locks the others)
     this.members.clear();
-    for (const p of payload.players) this.members.set(p.id, { name: p.name, team: p.team });
+    for (const p of payload.players) this.members.set(p.id, { name: p.name, team: p.team, owner: !!p.owner });
 
     this.local = new LocalPlayer({
       id: myId, team: me.team, state: me.state, weapon: me.weapon, world: this.world,
@@ -381,12 +383,18 @@ export class Game {
 
   /** A new round begins: fresh map, everyone back at spawn, sides possibly swapped. */
   newRound(payload) {
+    if (this.spec && this.running) {
+      this.members.clear();
+      for (const p of payload.players) this.members.set(p.id, { name: p.name, team: p.team, owner: !!p.owner });
+      this.loadRoundSpectator(payload);
+      return;
+    }
     if (!this.running || !this.local) return;
     const me = payload.players.find((p) => p.id === this.network.id);
     if (!me) return;
     this.myTeam = me.team;
     this.members.clear();
-    for (const p of payload.players) this.members.set(p.id, { name: p.name, team: p.team });
+    for (const p of payload.players) this.members.set(p.id, { name: p.name, team: p.team, owner: !!p.owner });
     this.local.setDrone(null);
     this.drones.clear();
     this.local.respawn(me.state, me.weapon, me.team);
@@ -407,6 +415,7 @@ export class Game {
     if (!this.running) return;
     if (e.code === 'Escape' && this.ui.settingsOpen && this.ui.settingsInGame) { this.ui.closeSettings(); this.ui.onSettingsClosed(); return; }
     if (e.repeat || e.target instanceof HTMLInputElement) return;
+    if (this.spec && this.onSpecKey(e)) return;
     const action = actionFor(e.code);
     if (action === 'scoreboard') e.preventDefault();
     this.onUiAction(action, true);
@@ -441,9 +450,9 @@ export class Game {
       const me = id === this.network.id;
       const r = this.remotes.get(id);
       rows.push({
-        id, me, name: m.name, team: m.team,
+        id, me, name: m.name, owner: m.owner, team: m.team,
         k: this.stats[id]?.k ?? 0, d: this.stats[id]?.d ?? 0,
-        alive: me ? this.local.alive : (r ? r.alive : true),
+        alive: me ? !!this.local?.alive : (r ? r.alive : true),
         op: m.team === this.myTeam ? this.picks[id]?.op : null,
       });
     }
@@ -491,6 +500,7 @@ export class Game {
     this.ui.hideRoundEnd();
     this.ui.hideDeath();
     this.running = false;
+    this.stopSpectating();
     this.local?.dispose();
     this.local = null;
     for (const r of this.remotes.values()) r.dispose();
@@ -510,7 +520,7 @@ export class Game {
 
   /** Keep the avatar list in sync with room membership. */
   syncRoster(players) {
-    for (const p of players) this.members.set(p.id, { name: p.name, team: p.team });
+    for (const p of players) this.members.set(p.id, { name: p.name, team: p.team, owner: !!p.owner });
     if (!this.running) return;
     const ids = new Set(players.map((p) => p.id));
     for (const [id, r] of this.remotes) {
@@ -624,6 +634,133 @@ export class Game {
   exitSpectate() {
     if (this.spectate.target) this.spectate.target.hiddenForSpectate = false;
     this.spectate = { index: 0, target: null, deathPos: null };
+  }
+
+  // ---------------------------------------------------------------- admin spectator
+
+  /** An admin watching invisibly: no body, a free camera, and a click to follow any player. */
+  startSpectator(payload) {
+    this.myTeam = 'attack';
+    this.members.clear();
+    for (const p of payload.players) this.members.set(p.id, { name: p.name, team: p.team, owner: !!p.owner });
+    this.local = null;
+    const site = this.mapDef.sites[payload.site ?? 0];
+    this.spec = {
+      free: { x: site?.x ?? 0, y: (site?.y ?? 0) + 6, z: site?.z ?? 0, yaw: 0, pitch: -0.5 },
+      target: null, index: -1, keys: new Set(), speed: 8,
+    };
+    if (!this.specListeners) {
+      this.specListeners = {
+        keydown: (e) => { if (this.spec) this.spec.keys.add(e.code); },
+        keyup: (e) => { if (this.spec) this.spec.keys.delete(e.code); },
+        mousemove: (e) => {
+          if (!this.spec || !document.pointerLockElement || this.spec.target) return;
+          const k = 0.0022 * settings.sensitivity, f = this.spec.free;
+          f.yaw -= e.movementX * k;
+          f.pitch = Math.max(-1.5, Math.min(1.5, f.pitch - e.movementY * k));
+        },
+      };
+      for (const [name, fn] of Object.entries(this.specListeners)) window.addEventListener(name, fn);
+    }
+    this.loadRoundSpectator(payload);
+    this.running = true;
+    this.lastFrame = performance.now();
+    this.ui.setPointerLocked(!!document.pointerLockElement);
+    this.ui.setSpectatorBar(true);
+    this.ui.hideRoundEnd();
+    this.ui.clearKillfeed();
+    this.lockPointer();
+    requestAnimationFrame((t) => this.frame(t));
+  }
+
+  /** A round's worth of state for the spectator: same as a player's, but everyone is a remote and nothing is hidden. */
+  loadRoundSpectator(payload) {
+    this.round = payload.round || this.round;
+    this.capture = { p: 0, c: false };
+    this.picks = payload.picks || {};
+    if (payload.roster) { this.roster = payload.roster; this.renderRoster(); }
+    this.siteIndex = payload.site ?? null;
+    if (payload.stats) this.stats = payload.stats;
+    const d = payload.destruction || {};
+    this.world.applySnapshot(d.world);
+    this.gadgets.clear();
+    for (const rec of payload.gadgets || []) this.gadgets.add(rec);
+    this.destruction.syncAll();
+    this.destruction.clearCharges();
+    for (const c of d.charges || []) this.destruction.addCharge(c);
+    this.effects.clearDecals();
+    for (const r of this.remotes.values()) r.dispose();
+    this.remotes.clear();
+    if (this.spec) this.spec.target = null;
+    for (const p of payload.players) this.addRemote(p);
+    this.ui.hideDeath();
+  }
+
+  stopSpectating() {
+    if (!this.spec) return;
+    this.spec = null;
+    this.ui.setSpectatorBar(false);
+    for (const [name, fn] of Object.entries(this.specListeners || {})) window.removeEventListener(name, fn);
+    this.specListeners = null;
+  }
+
+  /** Click: follow the next living player (after the last one, back to the free camera). */
+  cycleSpec() {
+    const list = [...this.remotes.values()].filter((r) => r.alive);
+    if (this.spec.target) this.spec.target.hiddenForSpectate = false;
+    this.spec.index++;
+    if (this.spec.index >= list.length) { this.spec.index = -1; this.spec.target = null; return; }
+    this.spec.target = list[this.spec.index];
+    this.spec.target.hiddenForSpectate = true;
+  }
+
+  onSpecKey(e) {
+    if (e.code === 'Backspace') { this.onSpectateExit?.(); return true; }
+    if (e.code === 'KeyF') {   // back to the free camera
+      if (this.spec.target) this.spec.target.hiddenForSpectate = false;
+      const t = this.spec.target;
+      if (t) Object.assign(this.spec.free, { x: t.pose.x, y: t.pose.y + 1.6, z: t.pose.z, yaw: t.pose.yaw, pitch: t.pose.pitch });
+      this.spec.target = null; this.spec.index = -1;
+      return true;
+    }
+    return false;
+  }
+
+  spectatorFrame(now, dt) {
+    const sp = this.spec;
+    const rt = this.network.renderTime();
+    for (const r of this.remotes.values()) r.update(rt, dt);
+    if (sp.target && !sp.target.alive) { sp.target.hiddenForSpectate = false; sp.target = null; sp.index = -1; }
+    if (sp.target) {
+      const eye = getEyePosition(sp.target.pose, this.world);
+      this.camera.position.set(eye.x, eye.y, eye.z);
+      this.camera.rotation.set(sp.target.pose.pitch, sp.target.pose.yaw, 0, 'YXZ');
+    } else {
+      const f = sp.free, k = sp.keys;
+      const speed = (k.has('ShiftLeft') ? 3 : 1) * sp.speed * dt;
+      const fx = -Math.sin(f.yaw), fz = -Math.cos(f.yaw), rx = Math.cos(f.yaw), rz = -Math.sin(f.yaw);
+      const mv = (k.has('KeyW') ? 1 : 0) - (k.has('KeyS') ? 1 : 0), st = (k.has('KeyD') ? 1 : 0) - (k.has('KeyA') ? 1 : 0);
+      f.x += (fx * mv + rx * st) * speed;
+      f.z += (fz * mv + rz * st) * speed;
+      f.y += ((k.has('Space') ? 1 : 0) - (k.has('KeyC') || k.has('ControlLeft') ? 1 : 0)) * speed;
+      this.camera.position.set(f.x, f.y, f.z);
+      this.camera.rotation.set(f.pitch, f.yaw, 0, 'YXZ');
+    }
+    this.viewModel.visible = false;
+    this.gadgets.watchCamera(null);
+    this.ui.setHint(sp.target
+      ? `Watching ${sp.target.name} · click: next player · F: free camera · ${keyFor('scoreboard')} scoreboard · Backspace: stop spectating`
+      : 'Free camera: WASD move · Space/C up/down · Shift fast · click: follow a player · Backspace: stop spectating');
+    this.ui.setSpectatorInfo(sp.target ? `Watching ${sp.target.name}` : 'Free camera');
+    this.ui.renderBoard(this.boardOn, this.boardRows(), this.round.scores);
+    this.drones.update(dt);
+    this.gadgets.update(dt);
+    this.sound.update(dt);
+    this.updateRoundHud();
+    this.destruction.update(dt);
+    this.effects.update(dt);
+    this.renderer.render(this.scene, this.camera);
+    requestAnimationFrame((t) => this.frame(t));
   }
 
   // ---------------------------------------------------------------- spectating
@@ -812,6 +949,7 @@ export class Game {
     if (!this.running) return;
     const dt = Math.min(0.25, (now - this.lastFrame) / 1000);
     this.lastFrame = now;
+    if (this.spec) return this.spectatorFrame(now, dt);
     const local = this.local;
 
     local.update(dt);

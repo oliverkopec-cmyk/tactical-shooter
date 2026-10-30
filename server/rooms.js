@@ -3,6 +3,7 @@
 import { TEAMS, MAX_PER_TEAM, ROOM_CODE_LENGTH, MAX_NAME_LENGTH } from '../shared/constants.js';
 import { GameState } from './gameState.js';
 import { DEFAULT_MAP_ID, MAP_IDS } from '../shared/map.js';
+import { isOwner } from './roles.js';
 
 // No I or O, so codes can't be confused with 1 / 0.
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -56,7 +57,8 @@ class Room {
     this.code = code;
     this.onEmpty = onEmpty;
     this.channel = `room:${code}`;
-    this.members = new Map(); // socketId -> { id, accountId, name, team }
+    this.members = new Map(); // socketId -> { id, accountId, name, team, owner }
+    this.spectators = new Map(); // socketId -> socket: admins watching invisibly (not members, never listed)
     this.hostId = null;
     this.mapId = DEFAULT_MAP_ID;   // chosen by the host in the lobby
     this.phase = 'lobby';     // 'lobby' | 'match'
@@ -73,11 +75,11 @@ class Room {
     return this.members.size >= MAX_PER_TEAM * 2;
   }
 
-  add(socket) {
-    // Fill the smaller team first
-    const team = this.teamCount(TEAMS.ATTACK) <= this.teamCount(TEAMS.DEFENSE) ? TEAMS.ATTACK : TEAMS.DEFENSE;
+  /** `forceTeam` (admins joining as a player) picks the side; otherwise the smaller team is filled first. */
+  add(socket, forceTeam = null) {
+    const team = forceTeam || (this.teamCount(TEAMS.ATTACK) <= this.teamCount(TEAMS.DEFENSE) ? TEAMS.ATTACK : TEAMS.DEFENSE);
     const { id: accountId, username } = socket.data.account;
-    const member = { id: socket.id, accountId, name: cleanName(username), team, ...loadoutFrom(socket) };
+    const member = { id: socket.id, accountId, name: cleanName(username), owner: isOwner(username), team, ...loadoutFrom(socket) };
     this.members.set(socket.id, member);
     if (!this.hostId) this.hostId = socket.id;
     socket.join(this.channel);
@@ -91,6 +93,34 @@ class Room {
     this.broadcastState();
     this.social?.presenceChanged(accountId);
     return member;
+  }
+
+  get spectatorChannel() { return `${this.channel}:spectators`; }
+
+  /** An admin watches a running match without being a member: nobody sees them in lists, scoreboards or counts. */
+  addSpectator(socket) {
+    if (this.phase !== 'match' || !this.game) return { error: 'That room has not started a match yet.' };
+    this.spectators.set(socket.id, socket);
+    socket.join(this.channel);               // match events (kills, gadgets, destruction...) reach them like anyone
+    socket.join(this.spectatorChannel);      // plus the full snapshot, with nothing hidden
+    socket.data.spectating = this;
+    socket.emit('matchStart', { ...this.game.startPayload('spectator'), spectator: true });
+    return {};
+  }
+
+  removeSpectator(socket) {
+    if (!this.spectators.delete(socket.id)) return;
+    socket.leave(this.channel);
+    socket.leave(this.spectatorChannel);
+    if (socket.data.spectating === this) socket.data.spectating = null;
+  }
+
+  /** Everyone watching is sent back to the menu (the match ended or the room closed). */
+  dismissSpectators(message) {
+    for (const s of [...this.spectators.values()]) {
+      this.removeSpectator(s);
+      s.emit('spectateEnd', { message });
+    }
   }
 
   remove(socket) {
@@ -166,7 +196,7 @@ class Room {
       hostId: this.hostId,
       phase: this.phase,
       mapId: this.mapId,
-      players: [...this.members.values()].map(({ id, name, team, skins }) => ({ id, name, team, skins })),
+      players: [...this.members.values()].map(({ id, name, team, skins, owner }) => ({ id, name, team, skins, owner })),
     };
   }
 
@@ -178,6 +208,7 @@ class Room {
   endMatch(notice = '') {
     if (this.game) this.game.stop();
     this.game = null;
+    this.dismissSpectators('The match has ended.');
     this.phase = 'lobby';
     for (const m of this.members.values()) m.team = m.startTeam || m.team;
     if (notice) this.io.to(this.channel).emit('notice', { message: notice });
@@ -186,6 +217,7 @@ class Room {
   }
 
   destroy() {
+    this.dismissSpectators('The room was closed.');
     if (this.game) this.game.stop();
     this.game = null;
     this.onEmpty();

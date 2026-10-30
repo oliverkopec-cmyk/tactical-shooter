@@ -9,6 +9,7 @@ import { RoomManager } from './rooms.js';
 import { openDatabase } from './db.js';
 import { Accounts } from './accounts.js';
 import { sharedCodeVersion } from './sharedVersion.js';
+import { Admin } from './admin.js';
 
 // Local secrets (e.g. DATABASE_URL) can live in a .env file, which git ignores.
 try { process.loadEnvFile(); } catch { /* no .env file */ }
@@ -35,6 +36,7 @@ const io = new Server(server, {
 
 const rooms = new RoomManager(io, accounts.progression, accounts.social);
 const social = accounts.social;
+const admin = new Admin({ db, accounts, rooms, social });
 const SHARED_VERSION = sharedCodeVersion();
 // Pages built from different shared code would mispredict movement: send them back to reload.
 // ('dev' is the Vite dev server, which always runs the current files.)
@@ -56,6 +58,7 @@ io.on('connection', (socket) => {
       return reply(ack, { ok: false, error: 'Only the party leader can create a room for the party. Leave the party to make your own.' });
     }
     if (socket.data.room) socket.data.room.remove(socket);
+    socket.data.spectating?.removeSpectator(socket);
     const room = rooms.createRoom();
     room.add(socket);
     const joined = [], busy = [];
@@ -88,9 +91,15 @@ io.on('connection', (socket) => {
     if (!room) return reply(ack, { ok: false, error: 'No room with that code.' });
     if (room.isFull()) return reply(ack, { ok: false, error: 'That room is full.' });
     if (socket.data.room) socket.data.room.remove(socket);
+    socket.data.spectating?.removeSpectator(socket);
     room.add(socket);
     reply(ack, { ok: true, code: room.code, id: socket.id });
   });
+
+  // ---- admin tools (each one re-checks the caller's role on the server)
+  socket.on('adminOnline', async (ack) => { try { reply(ack, await admin.online(socket)); } catch (err) { console.error('Admin list failed:', err.message); reply(ack, { error: 'Server error.' }); } });
+  socket.on('adminMatches', (ack) => reply(ack, admin.matches(socket)));
+  socket.on('adminJoin', (req, ack) => reply(ack, admin.join(socket, req && typeof req === 'object' ? { code: String(req.code || ''), mode: String(req.mode || '') } : {})));
 
   socket.on('setTeam', (team, ack) => {
     const room = socket.data.room;
@@ -124,8 +133,8 @@ io.on('connection', (socket) => {
   socket.on('spawnChoice', (n) => socket.data.room?.game?.setSpawnChoice(socket.id, n));
 
   socket.on('netPing', (ack) => reply(ack));
-  socket.on('leaveRoom', () => socket.data.room?.remove(socket));
-  socket.on('disconnect', () => socket.data.room?.remove(socket));
+  socket.on('leaveRoom', () => { socket.data.room?.remove(socket); socket.data.spectating?.removeSpectator(socket); });
+  socket.on('disconnect', () => { socket.data.room?.remove(socket); socket.data.spectating?.removeSpectator(socket); });
 });
 
 server.listen(PORT, () => {

@@ -74,6 +74,7 @@ export class RoundManager {
       const team = this.game.players.get(id).member.team;
       this.game.io.to(id).emit('roundStart', { ...this.game.startPayload(team), round: this.info() });
     }
+    if (this.game.room.spectators.size) this.game.io.to(this.game.room.spectatorChannel).emit('roundStart', { ...this.game.startPayload('spectator'), round: this.info() });
   }
 
   setPhase(phase, duration, now) {

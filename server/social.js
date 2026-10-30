@@ -4,6 +4,8 @@
 // worked out from the live connections, and parties are kept in memory only (a party lasts
 // until its members leave or disconnect), so nothing here grows with time.
 
+import { isOwner } from './roles.js';
+
 export const MAX_FRIENDS = 100;
 export const MAX_PENDING = 20;       // outgoing friend requests waiting for an answer
 export const PARTY_MAX = 5;          // a team has five players
@@ -67,7 +69,7 @@ export class Social {
        WHERE f.requester = $1 OR f.addressee = $1 ORDER BY a.username_lower`, [id]);
     const out = { friends: [], incoming: [], outgoing: [] };
     for (const r of rows) {
-      const who = { id: r.other, username: r.username };
+      const who = { id: r.other, username: r.username, owner: isOwner(r.username) };
       if (r.status === 'accepted') out.friends.push({ ...who, rankPoints: r.rank_points, level: r.level, status: this.statusOf(r.other) });
       else if (r.requester === id) out.outgoing.push(who);
       else out.incoming.push(who);
@@ -91,7 +93,7 @@ export class Social {
       const other = f.requester === id ? f.addressee : f.requester;
       relation.set(other, f.status === 'accepted' ? 'friend' : f.requester === id ? 'outgoing' : 'incoming');
     }
-    return rows.map((r) => ({ id: r.id, username: r.username, relation: relation.get(r.id) || 'none' }));
+    return rows.map((r) => ({ id: r.id, username: r.username, owner: isOwner(r.username), relation: relation.get(r.id) || 'none' }));
   }
 
   async request(id, username) {
@@ -153,7 +155,7 @@ export class Social {
     if (!party) return null;
     return {
       id: party.id, leader: party.leader,
-      members: party.members.map((m) => ({ id: m, username: this.nameOf(m), status: this.statusOf(m) })),
+      members: party.members.map((m) => ({ id: m, username: this.nameOf(m), owner: isOwner(this.nameOf(m)), status: this.statusOf(m) })),
     };
   }
 

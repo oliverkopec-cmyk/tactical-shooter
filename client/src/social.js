@@ -4,6 +4,7 @@
 
 import { getFriends, searchPlayers, sendFriendRequest, answerFriendRequest, removeFriend } from './account.js';
 import { rankIcon } from './rankIcon.js';
+import { ownerTag } from './badge.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -99,16 +100,16 @@ export class Social {
     const results = this.results === null ? '' : `
       <div class="detail-sub">Search results</div>
       ${this.results.length ? this.results.map((r) => `
-        <div class="friend-row"><span class="friend-name">${esc(r.username)}</span>
+        <div class="friend-row"><span class="friend-name">${esc(r.username)}${r.owner ? ownerTag : ''}</span>
           ${r.relation === 'none' ? `<button type="button" data-add="${esc(r.username)}">Add friend</button>`
             : `<span class="muted">${{ friend: 'Already friends', outgoing: 'Request sent', incoming: 'Wants to be your friend' }[r.relation]}</span>`}</div>`).join('') : '<div class="muted">No players found.</div>'}`;
     const requests = incoming.length || outgoing.length ? `
       <div class="detail-sub">Friend requests</div>
-      ${incoming.map((r) => `<div class="friend-row"><span class="friend-name">${esc(r.username)}</span><span><button type="button" class="primary" data-accept="${r.id}">Accept</button> <button type="button" data-decline="${r.id}">Decline</button></span></div>`).join('')}
-      ${outgoing.map((r) => `<div class="friend-row"><span class="friend-name">${esc(r.username)} <span class="muted">· waiting</span></span><button type="button" class="ghost" data-remove="${r.id}">Cancel</button></div>`).join('')}` : '';
+      ${incoming.map((r) => `<div class="friend-row"><span class="friend-name">${esc(r.username)}${r.owner ? ownerTag : ''}</span><span><button type="button" class="primary" data-accept="${r.id}">Accept</button> <button type="button" data-decline="${r.id}">Decline</button></span></div>`).join('')}
+      ${outgoing.map((r) => `<div class="friend-row"><span class="friend-name">${esc(r.username)}${r.owner ? ownerTag : ''} <span class="muted">· waiting</span></span><button type="button" class="ghost" data-remove="${r.id}">Cancel</button></div>`).join('')}` : '';
     const list = friends.length ? friends.map((f) => {
       const st = STATUS[f.status];
-      return `<div class="friend-row"><span class="friend-who"><span class="dot ${st.cls}"></span>${rankIcon(f.rankPoints, 22)}<span><span class="friend-name">${esc(f.username)}</span><span class="muted friend-status">${st.label}</span></span></span>
+      return `<div class="friend-row"><span class="friend-who"><span class="dot ${st.cls}"></span>${rankIcon(f.rankPoints, 22)}<span><span class="friend-name">${esc(f.username)}${f.owner ? ownerTag : ''}</span><span class="muted friend-status">${st.label}</span></span></span>
         <span>${canInvite(f) ? `<button type="button" data-invite="${f.id}">Invite to party</button> ` : inParty(f.id) ? '<span class="muted">In your party </span>' : ''}<button type="button" class="ghost" data-remove="${f.id}" title="Remove friend">Remove</button></span></div>`;
     }).join('') : '<div class="muted">No friends yet. Search for a username above.</div>';
     $('friends-main').innerHTML = `
@@ -168,7 +169,7 @@ export class Social {
     const leader = p.leader === me;
     $('party-panel').innerHTML = `
       <div class="shop-head"><h2>Party</h2><span class="muted">${p.members.length} / 5</span></div>
-      ${p.members.map((m) => `<div class="friend-row"><span class="friend-who"><span class="dot ${STATUS[m.status].cls}"></span><span class="friend-name">${esc(m.username)}${m.id === p.leader ? ' <span class="crown" title="Party leader">♛</span>' : ''}${m.id === me ? ' <span class="muted">(you)</span>' : ''}</span></span><span class="muted">${STATUS[m.status].label}</span></div>`).join('')}
+      ${p.members.map((m) => `<div class="friend-row"><span class="friend-who"><span class="dot ${STATUS[m.status].cls}"></span><span class="friend-name">${esc(m.username)}${m.owner ? ownerTag : ''}${m.id === p.leader ? ' <span class="crown" title="Party leader">♛</span>' : ''}${m.id === me ? ' <span class="muted">(you)</span>' : ''}</span></span><span class="muted">${STATUS[m.status].label}</span></div>`).join('')}
       ${leader ? `<button type="button" class="primary" data-party-room ${p.members.length < 2 ? 'disabled' : ''}>Create room for the party</button>` : '<p class="muted small-note">Waiting for the party leader to create a room.</p>'}
       <button type="button" class="ghost" data-party-leave>Leave party</button>`;
   }

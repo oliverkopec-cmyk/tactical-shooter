@@ -7,6 +7,7 @@ import { DAILY_MONEY_CAP, earnedToday } from './progression.js';
 import { SKINS } from '../shared/skins.js';
 import { WEAPONS } from '../shared/weapons.js';
 import { OPERATORS } from '../shared/operators.js';
+import { isOwner, isAdmin } from './roles.js';
 
 // Developer switches (see Accounts): UNLOCK_ALL_SKINS=1 unlocks every skin, and on a local
 // test database there is a button that adds Money so the shop can be tried.
@@ -85,6 +86,8 @@ export function profileOf(row) {
   return {
     id: row.id,
     username: row.username,
+    owner: isOwner(row.username),
+    admin: isAdmin(row.username),   // only decides whether the Admin tab is shown; the server checks again on every admin action
     level: row.level,
     xp: row.xp,
     money: row.money,
