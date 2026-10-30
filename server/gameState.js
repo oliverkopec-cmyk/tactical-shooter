@@ -811,10 +811,10 @@ export class GameState {
     }
   }
 
-  applyDamage(victimId, attackerId, amount, { head = false, weapon, from }) {
+  applyDamage(victimId, attackerId, amount, { head = false, weapon, from, lethal = false }) {
     const victim = this.players.get(victimId);
     if (!victim || !victim.alive || victim.spawned === false) return;
-    const dealt = Math.max(1, Math.round(amount * damageMultiplier(OPERATORS[victim.operator])));
+    const dealt = lethal ? victim.health : Math.max(1, Math.round(amount * damageMultiplier(OPERATORS[victim.operator])));   // lethal: kills outright, armour or not
     victim.health = Math.max(0, victim.health - dealt);
     const killed = victim.health === 0;
     this.gadgets.exitCamera(victimId, victim);   // getting shot pulls you out of a camera feed

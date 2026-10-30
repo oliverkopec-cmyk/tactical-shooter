@@ -341,10 +341,8 @@ export class Gadgets {
       if (!victims.some((v) => v.pid === toucher)) victims.push({ pid: toucher, dist: C.touch });   // whoever tripped it is always caught
       this.removeClaymore(c.id);
       this.game.emitAll('claymoreBlast', { id: c.id, pos: c.pos, dir: c.dir });
-      for (const { pid, dist } of victims) {
-        const amount = C.damage * (1 - (1 - C.minDamage) * Math.min(1, dist / C.blastRange));
-        this.game.applyDamage(pid, c.owner, amount, { weapon: 'claymore', from: [c.pos[0], c.pos[2]] });
-      }
+      // The blast kills outright: health and armour don't matter
+      for (const { pid } of victims) this.game.applyDamage(pid, c.owner, Infinity, { weapon: 'claymore', from: [c.pos[0], c.pos[2]], lethal: true });
     }
   }
 
