@@ -11,6 +11,10 @@ import { RopeView } from './ropes.js';
 import { DefuserView } from './defuserView.js';
 import { PingView, WHEEL } from './pings.js';
 import { VoicePlayer } from './voice.js';
+import { Killcam } from './killcam.js';
+import { WEAPONS } from '../../shared/weapons.js';
+import { SKINS } from '../../shared/skins.js';
+import { CHARMS } from '../../shared/charms.js';
 import { DEFUSER } from '../../shared/modes.js';
 import { currentSpread, aimDirection } from '../../shared/weapons.js';
 import { World } from '../../shared/world.js';
@@ -92,7 +96,8 @@ export class Game {
     window.addEventListener('resize', () => this.resize());
     canvas.addEventListener('click', () => {
       if (!this.running) return;
-      if (this.spec) this.cycleSpec();
+      if (this.killcam) this.skipKillcam();
+      else if (this.spec) this.cycleSpec();
       else if (this.local && !this.local.alive) this.cycleSpectate();
       else if (!document.pointerLockElement) this.lockPointer();
     });
@@ -176,6 +181,7 @@ export class Game {
     network.on('stats', (s) => { this.stats = s; });
     network.on('barricadeStart', ({ ms }) => { this.reinforcing = { section: null, start: performance.now(), ms, label: 'Barricading…' }; });
     network.on('runout', (r) => { this.runout = r; });
+    network.on('killcam', (data) => this.startKillcam(data));
     network.on('teamPing', (p) => {
       if (!this.running) return;
       this.pings.add(p);
@@ -449,6 +455,7 @@ export class Game {
     if (e.code === 'Escape' && this.ui.settingsOpen && this.ui.settingsInGame) { this.ui.closeSettings(); this.ui.onSettingsClosed(); return; }
     if (e.repeat || e.target instanceof HTMLInputElement) return;
     if (this.spec && this.onSpecKey(e)) return;
+    if (this.killcam && (e.code === 'Space' || e.code === 'Enter')) { e.preventDefault(); this.skipKillcam(); return; }
     const action = actionFor(e.code);
     if (action === 'scoreboard') e.preventDefault();
     this.onUiAction(action, true);
@@ -529,6 +536,7 @@ export class Game {
   }
 
   stop() {
+    this.skipKillcam();
     this.pings.clear();
     this.closeWheel();
     this.pingHold = null;
@@ -681,6 +689,7 @@ export class Game {
       this.health = 0;
       const s = this.local.state;
       this.enterSpectate(`Eliminated by ${name(killer).name}`, { x: s.x, y: s.y, z: s.z, yaw: this.local.aimYaw });
+      if (this.pendingKillcam) { const k = this.pendingKillcam; this.pendingKillcam = null; this.startKillcam(k); }
     }
   }
 
@@ -698,6 +707,7 @@ export class Game {
 
   /** The match's game mode and the defuser's state at the start of a round. */
   setMode(payload) {
+    this.skipKillcam?.();
     this.pings?.clear();
     this.closeWheel();
     this.mode = payload.mode || 'standard';
@@ -732,6 +742,30 @@ export class Game {
       case 'detonated': this.ui.banner('THE DEFUSER WENT OFF', 'The attackers win the round', 3200); this.sound.defuserBoom(pos); this.effects.explosion(pos); this.shake = 1.2; break;
       default:
     }
+  }
+
+  // ---------------------------------------------------------------- killcam
+
+  /** I died: replay it from the killer's eyes, then spectate as usual. */
+  startKillcam(data) {
+    if (!this.running || !this.local || !data?.trail?.length) return;
+    if (this.local.alive) { this.pendingKillcam = data; return; }   // the kill message hasn't arrived yet: start it then
+    this.killcam?.finish();
+    this.killcam = new Killcam(this, data);
+    const w = WEAPONS[data.weapon], skin = SKINS[data.skin], charm = CHARMS[data.charm];
+    this.ui.showKillcam({
+      name: data.name, op: OPERATORS[data.op]?.name || 'Unknown', team: data.team, health: data.health,
+      gun: w ? w.name : '', skin: skin ? skin.name : 'Default', charm: charm ? charm.name : null,
+      skipKey: 'Click or Space to skip',
+    });
+  }
+
+  skipKillcam() {
+    if (!this.killcam) return;
+    this.killcam.finish();
+    this.killcam = null;
+    this.ui.hideKillcam();
+    this.viewModel.visible = false;
   }
 
   // ---------------------------------------------------------------- team pings
@@ -960,7 +994,13 @@ export class Game {
       // Nobody to watch: look down at where we fell.
       const d = this.spectate.deathPos;
       if (d) {
-        this.camera.position.set(d.x + Math.sin(d.yaw) * 3, d.y + 3.5, d.z + Math.cos(d.yaw) * 3);
+        // Above and behind where we fell, but never inside a ceiling or a wall: stop short of whatever is in the way
+        const from = [d.x, d.y + 1.2, d.z];
+        const off = [Math.sin(d.yaw) * 3, 2.3, Math.cos(d.yaw) * 3];
+        const len = Math.hypot(...off), dir = off.map((v) => v / len);
+        const hit = raycastWorld(this.world, from, dir, len);
+        const t = hit ? Math.max(0.2, hit.t - 0.35) : len;
+        this.camera.position.set(from[0] + dir[0] * t, from[1] + dir[1] * t, from[2] + dir[2] * t);
         this.camera.lookAt(d.x, d.y + 0.5, d.z);
       }
       this.ui.setDeathSub('No teammates alive to spectate');
@@ -1148,6 +1188,9 @@ export class Game {
     const rt = this.network.renderTime();
     for (const r of this.remotes.values()) r.update(rt, dt);
     if (!local.alive) this.updateSpectateCamera(now);
+    const replaying = this.killcam ? this.killcam.update(dt) : false;
+    if (this.killcam && !replaying) this.skipKillcam();
+    if (replaying) for (const r of this.remotes.values()) r.root.visible = false;   // only the replay is shown
 
     // View model and HUD
     const s = local.state;
@@ -1160,7 +1203,7 @@ export class Game {
       this.camera.rotation.set(0, sp.yaw, 0, 'YXZ');
     }
     const watching = !!this.camView && local.alive;
-    this.viewModel.visible = local.alive && !inDrone && !noBody && !this.camView;
+    this.viewModel.visible = replaying || (local.alive && !inDrone && !noBody && !this.camView);
     this.gadgets.watchCamera(watching ? this.camView.rec.id : null);
     if (watching) this.applyCamView();
 
@@ -1197,9 +1240,9 @@ export class Game {
     this.ui.setHint(this.hintText(watching, inDrone));
     this.ui.renderBoard(this.boardOn, this.boardRows(), this.round.scores);
 
-    this.viewModel.setWeapon(local.weapon.id, this.mySkins[local.weapon.id], this.myCharms?.[local.weapon.id]);
     const w = local.weaponDef;
-    this.viewModel.update(dt, {
+    if (!replaying) this.viewModel.setWeapon(local.weapon.id, this.mySkins[local.weapon.id], this.myCharms?.[local.weapon.id]);
+    if (!replaying) this.viewModel.update(dt, {
       speed: Math.hypot(s.vx, s.vz),
       sprinting: local.sprinting,
       crouch: Math.max(s.crouch, s.prone || 0),
