@@ -44,6 +44,7 @@ export class GameState {
     this.mode = room.mode || 'standard';
     this.killcam = new KillcamRecorder();   // last few seconds of everyone, for the killcam
     this.bots = new BotBrains(this);        // drives any bot players (server/bots.js)
+    this.withBots = room.hasBots;
     this.defuser = new Defuser(this);
     this.rounds = new RoundManager(this);
     this.gadgets = new Gadgets(this);
@@ -70,6 +71,7 @@ export class GameState {
 
   emitAll(event, payload) {
     this.io.to(this.room.channel).emit(event, payload);
+    if (this.withBots) this.bots.onEvent(event, payload);     // bots hear explosions and notice deaths
   }
 
   addPlayer(member) {
@@ -842,7 +844,7 @@ export class GameState {
     const wallNow = Date.now();
 
     const phase = this.rounds.phase;
-    if (this.room.hasBots) this.bots.update(wallNow, realDt);   // bots write their inputs first, then everyone is simulated alike
+    if (this.withBots) this.bots.update(wallNow, realDt);   // bots write their inputs first, then everyone is simulated alike
     for (const [id, p] of this.players) {
       if (!p.alive) continue;
       p.timeBudget = Math.min(MAX_TIME_BUDGET, p.timeBudget + realDt);
@@ -946,6 +948,7 @@ export class GameState {
     // The gun is named only to teams that know who the shooter is (otherwise it would give the operator away)
     const ends = shot.pellets.map((p) => p.end.map(round2));
     this.killcam.shot(shooterId, now, ends);
+    if (this.withBots) this.bots.onShot(shooterId, shooter);
     for (const [pid, q] of this.players) {
       if (pid === shooterId) continue;
       this.io.to(pid).emit('shot', { id: shooterId, w: this.canSee(q.member.team, shooter) ? shooter.weapon.id : null, ends });
@@ -978,6 +981,7 @@ export class GameState {
     if (!victim || !victim.alive || victim.spawned === false) return;
     const dealt = lethal ? victim.health : Math.max(1, Math.round(amount * damageMultiplier(OPERATORS[victim.operator])));   // lethal: kills outright, armour or not
     victim.health = Math.max(0, victim.health - dealt);
+    if (this.withBots && victim.member.bot) this.bots.onHurt(victimId, attackerId);
     const killed = victim.health === 0;
     this.gadgets.exitCamera(victimId, victim);   // getting shot pulls you out of a camera feed
 
