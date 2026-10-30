@@ -411,7 +411,7 @@ export class GameState {
 
   /** Can a player on `viewerTeam` know this player's operator? (Their own team always; enemies once seen.) */
   canSee(viewerTeam, p) {
-    return p.member.team === viewerTeam || this.revealed[viewerTeam].has(p.member.id);
+    return viewerTeam === 'spectator' || p.member.team === viewerTeam || this.revealed[viewerTeam].has(p.member.id);   // admin spectators see everything
   }
 
   reveal(viewerTeam, playerId) {
@@ -468,6 +468,7 @@ export class GameState {
     this.lastRoster = Date.now();
     const lists = { attack: this.rosterFor('attack'), defense: this.rosterFor('defense') };
     for (const [id, p] of this.players) this.io.to(id).emit('roster', lists[p.member.team]);
+    if (this.room.spectators.size) this.io.to(this.room.spectatorChannel).emit('roster', this.rosterFor('spectator'));
   }
 
   sendLoadout(id, p) {
@@ -879,6 +880,7 @@ export class GameState {
       forTeam[team] = { t, players: players.map((e) => (this.canSee(team, this.players.get(e.id)) ? e : { ...e, o: undefined, w: undefined })), cap, drones, grenades };
     }
     for (const [id, p] of this.players) this.io.to(id).volatile.emit('snapshot', forTeam[p.member.team]);
+    if (this.room.spectators.size) this.io.to(this.room.spectatorChannel).volatile.emit('snapshot', { t, players, cap, drones, grenades });
   }
 
   /** Everything a client needs to (re)build the round. Hidden gadgets are filtered by team. */
@@ -886,14 +888,14 @@ export class GameState {
     return {
       stats: this.statsPayload(),
       // Defenders always know the site; attackers only once it has been found
-      site: this.site !== null && (team === 'defense' || this.siteFound) ? this.site : null,
+      site: this.site !== null && (team === 'defense' || team === 'spectator' || this.siteFound) ? this.site : null,
       siteVotes: team === 'defense' && this.rounds.phase === PHASE.INTRO ? { counts: this.siteCounts(), mine: null } : null,
       barricadesLeft: this.gadgets.barricadesLeft,
       gadgets: this.gadgets.list(team),
       picks: this.picksFor(team),
       mapId: this.map.id, mapName: this.map.name,
       players: [...this.players.entries()].map(([id, p]) => ({
-        id, name: p.member.name, team: p.member.team, skins: p.member.skins || {}, owned: p.member.owned || [], state: p.state,
+        id, name: p.member.name, owner: !!p.member.owner, team: p.member.team, skins: p.member.skins || {}, owned: p.member.owned || [], state: p.state,
         weapon: this.canSee(team, p) ? p.weapon : null, health: p.health, alive: p.alive,
         charges: p.charges, placed: !!p.placedCharge, spawnChoice: p.spawnChoice, operator: this.canSee(team, p) ? p.operator : null,
       })),

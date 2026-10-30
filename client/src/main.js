@@ -7,6 +7,7 @@ import { getSession, signUp, logIn, logOut, syncSettingsToAccount } from './acco
 import { applyAccountSettings } from './settings.js';
 import { Menu } from './menu.js';
 import { Social } from './social.js';
+import { AdminPanel } from './admin.js';
 import { usernameError, passwordError } from '../../shared/account.js';
 
 const network = new Network();
@@ -23,10 +24,12 @@ ui.bindCopyCode();
 function setAccount(profile) {
   account = profile;
   ui.renderProfile(profile);
+  document.querySelector('[data-tab=admin]').classList.toggle('hidden', !profile.admin);
   menu.refresh();
 }
+const admin = new AdminPanel({ network });
 const social = new Social({ network, getAccount: () => account, onCreateRoom: () => createRoom() });
-const menu = new Menu({ getAccount: () => account, setAccount, onSettings: () => ui.openSettings(false), onTab: (tab) => social.setVisible(tab === 'friends') });
+const menu = new Menu({ getAccount: () => account, setAccount, onSettings: () => ui.openSettings(false), onTab: (tab) => { social.setVisible(tab === 'friends'); admin.setVisible(tab === 'admin'); } });
 ui.onShow = (screen) => menu.setActive(screen === 'home');
 syncSettingsToAccount(() => !!account);
 
@@ -127,6 +130,18 @@ network.on('matchStart', (payload) => {
 });
 
 network.on('matchStart', () => ui.lobbyError(''));
+
+// An admin watching a match leaves back to the menu (their own button, or the match ending)
+function stopWatching(message = '') {
+  network.leaveRoom();
+  room = null;
+  game.stop();
+  ui.show('home');
+  if (message) ui.homeError(message);
+}
+game.onSpectateExit = () => stopWatching();
+document.getElementById('spec-leave').addEventListener('click', () => stopWatching());
+network.on('spectateEnd', ({ message }) => { room = null; game.stop(); ui.show('home'); if (message) ui.homeError(message); });
 network.on('notice', ({ message }) => ui.lobbyError(message));
 
 // The server pays out rewards and rank changes itself and tells us the new numbers.
@@ -134,7 +149,7 @@ network.on('profile', (profile) => {
   if (!account) return;
   setAccount({ ...account, ...profile });
 });
-network.on('matchSummary', (summary) => ui.showMatchSummary(summary));
+network.on('matchSummary', (summary) => ui.showMatchSummary({ ...summary, name: account?.username, owner: !!account?.owner }));
 
 network.on('sessionReplaced', () => { replaced = true; });
 

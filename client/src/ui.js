@@ -11,6 +11,7 @@ import { operatorIcon } from './operatorIcons.js';
 import { mapChoices } from '../../shared/map.js';
 import { rankInfo, rankStep, xpForLevel } from '../../shared/progression.js';
 import { BIND_ACTIONS, DEFAULT_KEYBINDS, keyLabel, isBindableCode, RESERVED_CODES } from '../../shared/keybinds.js';
+import { ownerTag, ownerTagEl } from './badge.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -164,6 +165,16 @@ export class UI {
     $('controls-hint').textContent = text;
   }
 
+  /** The admin spectator bar: what is being watched, and a button to stop. */
+  setSpectatorBar(on) {
+    $('spec-bar').classList.toggle('hidden', !on);
+    $('hud').classList.toggle('spectating', on);
+  }
+
+  setSpectatorInfo(text) {
+    if (text !== this.lastSpecInfo) { this.lastSpecInfo = text; $('spec-info').textContent = text; }
+  }
+
   toggleHint() {
     $('controls-hint').classList.toggle('off');
   }
@@ -191,7 +202,7 @@ export class UI {
       const list = rows.filter((r) => r.team === team).sort((a, b) => b.k - a.k || a.d - b.d);
       const body = list.map((r) => `
         <tr class="${r.me ? 'me' : ''}${r.alive ? '' : ' dead'}">
-          <td class="nm">${escapeHtml(r.name)}</td><td class="opn">${r.op ? escapeHtml(OPERATORS[r.op]?.name || '') : '—'}</td>
+          <td class="nm">${escapeHtml(r.name)}${r.owner ? ownerTag : ''}</td><td class="opn">${r.op ? escapeHtml(OPERATORS[r.op]?.name || '') : '—'}</td>
           <td>${r.k}</td><td>${r.d}</td></tr>`).join('');
       return `<div class="board-team ${team}"><h3>${title} <span>${score}</span></h3>
         <table><thead><tr><th>Player</th><th>Operator</th><th>K</th><th>D</th></tr></thead><tbody>${body}</tbody></table></div>`;
@@ -244,7 +255,7 @@ export class UI {
   clearPassword() { $('auth-password').value = ''; }
 
   renderProfile(p) {
-    $('profile-name').textContent = p.username;
+    $('profile-name').innerHTML = `${escapeHtml(p.username)}${p.owner ? ownerTag : ''}`;
     $('profile-level').textContent = `· Level ${p.level} (${(p.xp - xpForLevel(p.level)).toLocaleString()} / ${(xpForLevel(p.level + 1) - xpForLevel(p.level)).toLocaleString()} XP)`;
     $('profile-money').textContent = p.money.toLocaleString();
     $('profile-polish').textContent = p.polishMoney.toLocaleString();
@@ -292,7 +303,7 @@ export class UI {
       $('summary-title').textContent = 'MATCH OVER';
       $('summary-title').className = 'summary-title';
       $('summary-score').textContent = '';
-      body.innerHTML = `<p class="muted center">${escapeHtml(s.reason || '')}</p>`;
+      body.innerHTML = `<div class="summary-name">${escapeHtml(s.name || '')}${s.owner ? ownerTag : ''}</div><p class="muted center">${escapeHtml(s.reason || '')}</p>`;
       return;
     }
     $('summary-title').textContent = s.won ? 'VICTORY' : 'DEFEAT';
@@ -319,6 +330,7 @@ export class UI {
       ? `<div class="sum-sub">Quests completed</div>${s.money.quests.map((q) => `<div class="sum-line quest-done"><span>✔ ${escapeHtml(q.label)}</span><b>+${q.reward}</b></div>`).join('')}` : '';
     const leveled = s.xp.levelAfter > s.xp.levelBefore ? `<div class="levelup">LEVEL UP! You are now level ${s.xp.levelAfter}</div>` : '';
     body.innerHTML = `
+      <div class="summary-name">${escapeHtml(s.name || '')}${s.owner ? ownerTag : ''}</div>
       ${rankBlock}
       <div class="sum-sub">Money earned</div>
       ${lines}${quests}
@@ -376,6 +388,7 @@ export class UI {
         const name = document.createElement('span');
         name.textContent = p.name;
         li.appendChild(name);
+        if (p.owner) li.appendChild(ownerTagEl());
         if (p.id === room.hostId) {
           const tag = document.createElement('span');
           tag.className = 'tag';
@@ -464,10 +477,12 @@ export class UI {
     if (mine) li.classList.add('mine');
     const k = document.createElement('span');
     k.className = killer.team; k.textContent = killer.name;
+    if (killer.owner) k.appendChild(ownerTagEl());
     const w = document.createElement('span');
     w.className = 'weapon'; w.textContent = `${WEAPONS[weapon]?.name || UTILITIES[weapon]?.name || weapon}${head ? ' · head' : ''}`;
     const v = document.createElement('span');
     v.className = victim.team; v.textContent = victim.name;
+    if (victim.owner) v.appendChild(ownerTagEl());
     li.append(k, w, v);
     const feed = $('killfeed');
     feed.prepend(li);

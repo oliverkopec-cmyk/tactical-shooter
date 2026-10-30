@@ -16,3 +16,9 @@ services:
       # Render dashboard under Environment, never in this file.
       - key: DATABASE_URL
         sync: false
+      # The owner's username and any extra admins (comma-separated). Set them
+      # in the Render dashboard; there is no way to become one from inside the game.
+      - key: OWNER_USERNAME
+        sync: false
+      - key: ADMIN_USERNAMES
+        sync: false

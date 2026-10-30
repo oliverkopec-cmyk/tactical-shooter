@@ -940,3 +940,26 @@ button.small { font-size: 12px; padding: 4px 10px; margin-top: 6px; }
 .invite-buttons { display: flex; gap: 8px; }
 .invite-buttons button { flex: 1; }
 #social-toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 80; padding: 10px 16px; border-radius: 10px; background: rgba(20, 24, 30, 0.97); border: 1px solid var(--line); font-size: 14px; }
+
+/* The owner's gold tag, next to their name wherever names appear */
+.owner-tag {
+  display: inline-block; margin-left: 6px; padding: 0 5px; border-radius: 3px;
+  font-size: 10px; font-weight: 800; letter-spacing: 0.08em; line-height: 16px; vertical-align: middle;
+  color: #3a2800; background: linear-gradient(180deg, #ffe27a, #e0a800); box-shadow: 0 0 6px rgba(255, 200, 40, 0.45);
+}
+.summary-name { text-align: center; font-weight: 700; margin-bottom: 8px; }
+
+/* Admin tab */
+.admin-match { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; }
+.admin-match-head { margin-bottom: 6px; }
+.admin-team { font-size: 13px; margin: 2px 0; }
+.admin-team span { display: inline-block; width: 62px; text-transform: uppercase; font-size: 11px; letter-spacing: 0.06em; }
+.admin-team.attack span { color: var(--attack); }
+.admin-team.defense span { color: var(--defense); }
+.admin-actions { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+
+/* Admin spectator */
+#spec-bar { position: absolute; top: 52px; left: 50%; transform: translateX(-50%); display: flex; gap: 12px; align-items: center; background: rgba(14, 18, 24, 0.85); border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; pointer-events: auto; z-index: 5; }
+#spec-bar.hidden { display: none; }
+#spec-bar .spec-badge { color: #ffd23c; font-weight: 700; font-size: 11px; letter-spacing: 0.08em; }
+#hud.spectating #crosshair, #hud.spectating #hitmarker, #hud.spectating #health-box, #hud.spectating #ammo-box { display: none; }

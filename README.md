@@ -2,7 +2,18 @@
 
 A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite on the client, Node.js + Socket.IO on an authoritative server. One Node process serves both the game client and the realtime server, so the whole thing deploys as a single Render web service.
 
-## Status: Stage 19 (finishing up) + barricade X design
+## Status: Stage 20 (owner and admin tools)
+
+- **Owner and admins come from environment variables**, never from inside the game: `OWNER_USERNAME` (one username) and `ADMIN_USERNAMES` (comma-separated, optional). The owner is automatically an admin. Usernames are matched ignoring upper/lower case. See "Owner and admins" below for how to set them.
+- **Owner badge:** a gold **OWNER** tag next to the owner's name in the menu top bar, the room lobby, the Tab scoreboard, the kill feed, the end-of-match screen and the Friends tab (friends, search results, requests and the party). The server tells clients who the owner is; nobody else can get the tag.
+- **Admin tab** (only admins see it; the server checks the caller's role again on every admin request):
+  - **Online:** everyone online with username, rank, level and whether they're in the menu, a lobby or a match (with the room code). Refreshes every 3 seconds while the tab is open.
+  - **Matches:** every room with its code, map, players on each team, round and score. Each has three buttons:
+    - **Spectate (invisible):** a free camera you fly with WASD (Space/C up and down, Shift fast). Click to follow each living player in turn (first person), **F** goes back to the free camera, **Backspace** or the "Stop spectating" button leaves. You see everyone's operator and gun and nothing is hidden. You aren't a member of the room: you never appear in the lobby, the scoreboard, the player counts or the friends' "in a match" status. When the match ends you are sent back to the menu.
+    - **Join attack / Join defense:** join as a player on that side if it has space (5 per team). Joining mid-match works like any late joiner (you play from the next round).
+- The spectator uses almost no extra server memory: one more copy of the snapshot per tick, only while someone is watching.
+
+### Earlier: Stage 19 (finishing up) + barricade X design
 
 - **X design:** a barricade is now **7 thinner horizontal planks** (same overall size) with **two diagonal planks forming an X** over the front (the side facing away from the map centre). Doors keep the low gap at the bottom for drones. The X planks have no collision of their own: they are drawn in pieces, one per plank segment, so they break together with the section they cross.
 - **Melee grid:** 3 columns by the height you aim at. Each hit breaks a hole a third of the width and **2 planks tall** at the aimed height (with 7 thin planks the holes are smaller than before), through both layers. If that section is already broken, the nearest section that still has two planks standing breaks instead. The 3rd hit still breaks everything. Bullets and explosives work as before.
@@ -169,16 +180,6 @@ Six new operators, bought with Money in the Operators tab (the original eight an
 
 Written down so they aren't forgotten (see Status for what is built). They are built one at a time, one PR each, and the next one starts once the previous is confirmed. Server memory must stay low enough for Render's 512 MB plan.
 
-### Stage 20 - Owner, admin tools
-
-- The owner is set with the `OWNER_USERNAME` environment variable on Render and extra admins with `ADMIN_USERNAMES` (comma-separated). There is no way to become owner or admin from inside the game. The owner is automatically an admin.
-- **Owner badge:** a gold "OWNER" tag next to the owner's name everywhere names appear (menu top bar, lobby, scoreboard, kill feed, end-of-match screen, friends list). Nobody else can get it.
-- The server checks admin status on every admin action.
-- **Admin tab** (only visible to admins):
-  - All online accounts: username, rank, level, and whether they're in the menu, a lobby or a match.
-  - All active matches: room code, map, players on each team, score, round.
-  - Join any match as an invisible spectator (free camera, can follow any player), or join it as a player on either team if there's space.
-
 ### Stage 21 - Gun rework and charms
 
 - Rebuild every gun model with much more detail, built from many shapes in code (no external assets): receiver, barrel, handguard, stock, grip, trigger guard, magazine, sights/optic, muzzle, rails, and details like bolts and vents. Each gun gets a recognisable silhouette for its type (assault rifle, SMG, shotgun, LMG, marksman rifle, pistol, revolver, machine pistol). Original designs, not copies of real branded guns.
@@ -291,6 +292,8 @@ shared/            Code used by BOTH client and server
   skins.js         gun skin catalog: rarities, colours, patterns
 server/
   index.js         Express static hosting + Socket.IO events
+  roles.js         owner and admin lookup from the environment variables
+  admin.js         the admin tools: online list, matches, join as spectator or player
   db.js            Postgres connection (DATABASE_URL) or local PGlite fallback, table setup
   accounts.js      sign-up/log-in API, session cookies, socket login check
   profile.js       what an account's profile looks like to its owner
@@ -332,6 +335,19 @@ client/
 - The page and the server must run the same `shared/` code, or prediction disagrees with the server and things jitter. `npm run build` stamps the page with a fingerprint of `shared/*.js` (`server/sharedVersion.js`); the server rejects a connection with a different one, and the page reloads once (or shows a message). After changing shared code locally, rebuild **and** restart `npm start`. `npm run dev` skips the check.
 - Keybinds live in `settings.keybinds` (action → `KeyboardEvent.code` or `MouseN`). The server cleans them with `sanitizeKeybinds()`: unknown actions are dropped, bad codes reset, and duplicates unbound. Esc can't be rebound. Keys 1-3 also choose the entry point while an attacker is in prep, whatever they're bound to (1/2/4 are the default weapon and utility keys). Binding a key that's already used swaps the two actions.
 - Hints, prompts and ability descriptions use `keyFor(action)` / `{action}` placeholders, so they show the player's own keys.
+
+## Owner and admins
+
+Set two environment variables on the server:
+
+- `OWNER_USERNAME`: the owner's username (one name).
+- `ADMIN_USERNAMES`: extra admins, comma-separated (for example `Anna, Ben`). Optional.
+
+**On Render:** open the `breachline` service, then **Environment**, then **Add Environment Variable**. Add `OWNER_USERNAME` with your username as the value, and (if you want) `ADMIN_USERNAMES`. Save, and Render redeploys. **Create your account in the game first, then set the variable**: whoever registers that username owns the role, so don't leave it unregistered.
+
+**Locally:** put `OWNER_USERNAME=yourname` (and optionally `ADMIN_USERNAMES=...`) in the `.env` file in the project folder (git ignores it), then restart the server.
+
+There is no in-game way to become owner or admin. Roles are worked out on the server from the username stored at login (`server/roles.js`), and each admin action (`server/admin.js`) checks again.
 
 ## Accounts
 
