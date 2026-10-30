@@ -34,6 +34,16 @@ const claymoreMat = new THREE.MeshStandardMaterial({ color: 0x4a5a3a, roughness:
 const smokeGeo = new THREE.SphereGeometry(1, 12, 9);
 const wireGeo = new THREE.BoxGeometry(1, 1, 1);
 
+/** A tripwire's material: clearest next to the device and fading to almost nothing at the far end (local +z is the far end). */
+function tripwireMaterial(color) {
+  return new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false,
+    uniforms: { uColor: { value: new THREE.Color(color) }, uOpacity: { value: 0.2 } },
+    vertexShader: 'varying float vAlong; void main() { vAlong = position.z + 0.5; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    fragmentShader: 'uniform vec3 uColor; uniform float uOpacity; varying float vAlong; void main() { gl_FragColor = vec4(uColor, uOpacity * (1.0 - 0.92 * vAlong)); }',
+  });
+}
+
 function makeWire(half) {
   const g = new THREE.Group();
   const size = half * 2;
@@ -204,7 +214,7 @@ export class GadgetView {
       item.born = performance.now();
       item.armMs = rec.kind === 'claymore' ? UTIL_STATS.claymore.arm * 1000 : 0;
       item.lines = [0, 1, 2].map(() => {
-        const m = new THREE.Mesh(wireGeo, new THREE.MeshBasicMaterial({ color: rec.kind === 'sensor' ? 0x4dff88 : 0xff3030, transparent: true, opacity: 0.4, depthWrite: false }));
+        const m = new THREE.Mesh(wireGeo, tripwireMaterial(rec.kind === 'sensor' ? 0x4dff88 : 0xff3030));
         m.visible = false;
         this.scene.add(m);
         return m;
@@ -380,16 +390,16 @@ export class GadgetView {
       if (!it.lines) continue;
       const armed = performance.now() - it.born >= it.armMs;
       const lines = armed ? claymoreLines(this.world, it.rec.pos, it.rec.dir) : null;
-      const pulse = 0.32 + 0.1 * Math.sin(this.t * 6);
+      const pulse = 0.5 + 0.1 * Math.sin(this.t * 6);
       it.lines.forEach((mesh, i) => {
         mesh.visible = !!lines;
         if (!lines) return;
         const { from, to, len } = lines[i];
         mesh.visible = len > 0.05;
         mesh.position.set((from[0] + to[0]) / 2, from[1], (from[2] + to[2]) / 2);
-        mesh.scale.set(0.012, 0.012, len);
+        mesh.scale.set(0.006, 0.006, len);
         mesh.lookAt(to[0], to[1], to[2]);
-        mesh.material.opacity = pulse;
+        mesh.material.uniforms.uOpacity.value = pulse;
       });
     }
     const on = this.t % 1.2 < 0.25;

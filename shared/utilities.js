@@ -43,7 +43,7 @@ export const UTIL_STATS = {
     lineHeight: 0.12,  // lines sit this far above the point it was stuck to
     touch: 0.4,        // an enemy within this distance of a line (in the floor plane) sets it off
     blastRange: 3.4,   // the blast reaches enemies in front of the claymore up to this far
-    damage: 85, minDamage: 0.5, reach: 3,
+    reach: 3,          // the blast kills outright, so there is no damage number
     hitHalf: [0.16, 0.1, 0.16],   // box that bullets and melee must hit to destroy it
   },
   cooldown: 0.8,          // seconds between uses
