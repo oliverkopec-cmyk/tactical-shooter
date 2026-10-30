@@ -6,7 +6,7 @@
 
 import * as THREE from 'three';
 import { claymoreLines, UTIL_STATS } from '../../shared/utilities.js';
-import { barricadePlanks } from '../../shared/barricade.js';
+import { barricadePlanks, barricadeFront } from '../../shared/barricade.js';
 import { BARRICADE } from '../../shared/constants.js';
 
 const shieldMat = new THREE.MeshStandardMaterial({
@@ -18,22 +18,9 @@ const darkMat = new THREE.MeshStandardMaterial({ color: 0x1b1e23, roughness: 0.5
 const greenLed = new THREE.MeshBasicMaterial({ color: 0x4dff88 });
 const redLed = new THREE.MeshBasicMaterial({ color: 0xff2a2a });
 const camBodyMat = new THREE.MeshStandardMaterial({ color: 0xd9dce0, roughness: 0.45, metalness: 0.3 });
-// Green painted planks with two yellow straps and a yellow cross, like a prepared window panel
+// Green painted planks with a diagonal X of plain wood over the front
 const woodMats = [0x3f7a2e, 0x387028, 0x468533].map((c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.85 }));
-const strapMat = new THREE.MeshStandardMaterial({ color: 0xd9c42a, roughness: 0.7 });
-let crossMat = null;
-function getCrossMat() {
-  if (crossMat) return crossMat;
-  const c = document.createElement('canvas');
-  c.width = c.height = 128;
-  const g = c.getContext('2d');
-  g.strokeStyle = '#e6d32a';
-  g.lineWidth = 20;
-  g.lineCap = 'round';
-  g.beginPath(); g.moveTo(16, 16); g.lineTo(112, 112); g.moveTo(112, 16); g.lineTo(16, 112); g.stroke();
-  crossMat = new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthWrite: false });
-  return crossMat;
-}
+const xMat = new THREE.MeshStandardMaterial({ color: 0xb58a4a, roughness: 0.9 });
 const grenadeMat = new THREE.MeshStandardMaterial({ color: 0xe8e8ff, emissive: 0x9999ff, emissiveIntensity: 0.8, roughness: 0.3 });
 // One look per thrown grenade type, so you can tell what is flying at you
 const GRENADE_LOOK = { stun: null, flash: null, frag: 0x3f5a3a, impact: 0xd2502f, smoke: 0x9aa0a6 };
@@ -175,6 +162,7 @@ export class GadgetView {
       const standing = new Set(rec.planks);
       group.userData.segs = new Map();
       group.userData.splinters = new Map();
+      group.userData.xPieces = new Map();
       group.userData.axis = opening ? opening.axis : 'x';
       for (const p of opening ? barricadePlanks(opening) : []) {
         group.userData.segs.set(p.i, p);
@@ -185,9 +173,9 @@ export class GadgetView {
         m.castShadow = true;
         group.add(m);
         group.userData.meshes.set(p.i, m);
+        group.userData.xPieces.set(p.i, xPieces(group, opening, p));
         this.world.addBox({ id: `bar-${rec.id}-${p.i}`, kind: 'barricade', barricadeId: rec.id, panelIndex: p.i, min: p.min, max: p.max });
       }
-      if (opening) group.add(group.userData.deco = barricadeDecor(opening, standing.size === 6));
     } else if (rec.kind === 'claymore') {
       group = makeClaymore();
       group.position.set(...rec.pos);
@@ -241,7 +229,7 @@ export class GadgetView {
     const it = this.items.get(`barricade:${id}`);
     if (!it) return [];
     const centers = [];
-    const { meshes, segs, splinters } = it.group.userData;
+    const { meshes, segs, splinters, xPieces } = it.group.userData;
     for (const i of ids) {
       const m = meshes.get(i);
       if (!m) continue;
@@ -250,6 +238,8 @@ export class GadgetView {
       meshes.delete(i);
       for (const s of splinters.get(i) || []) it.group.remove(s);   // the splinters of a piece that is gone
       splinters.delete(i);
+      for (const x of xPieces.get(i) || []) it.group.remove(x);   // the X planks break with the section they cross
+      xPieces.delete(i);
       this.world.removeBox(`bar-${id}-${i}`);
     }
     // Jagged, splintered edges on the planks that now border a hole
@@ -264,7 +254,6 @@ export class GadgetView {
         splinters.set(j, [...(splinters.get(j) || []), ...list]);
       }
     }
-    if (it.group.userData.deco) it.group.userData.deco.visible = false;   // straps and cross go once the panel is damaged
     return centers;
   }
 
@@ -437,26 +426,33 @@ function addSplinters(group, mesh, seg, dir, axis) {
   return out;
 }
 
-/** Two yellow straps and a cross on both faces of a barricade panel. */
-function barricadeDecor(o, intact) {
-  const g = new THREE.Group();
-  g.visible = intact;
-  const bottom = o.y0 + (o.window ? 0 : BARRICADE.gap), h = o.y1 - bottom, w = o.to - o.from;
-  const cx = (o.from + o.to) / 2, cy = bottom + h / 2, t = BARRICADE.thickness / 2 + 0.01;
-  const flat = o.axis === 'x';                       // wall runs along x: faces point along z
-  const put = (mesh, along, y, face) => {
-    mesh.position.set(flat ? along : o.fixed + face * t, y, flat ? o.fixed + face * t : along);
-    mesh.rotation.y = flat ? (face < 0 ? Math.PI : 0) : face * Math.PI / 2;
-    g.add(mesh);
-  };
-  for (const face of [-1, 1]) {
-    for (const f of [0.12, 0.88]) {
-      const strap = new THREE.Mesh(new THREE.PlaneGeometry(Math.min(0.12, w * 0.08), h), strapMat);
-      put(strap, o.from + w * f, cy, face);
-    }
-    const size = Math.min(w * 0.6, h * 0.85);
-    const cross = new THREE.Mesh(new THREE.PlaneGeometry(size, size), getCrossMat());
-    put(cross, cx, cy, face);
+/**
+ * The parts of the two diagonal X planks that cross one plank segment, as meshes added to `group`.
+ * The X is cut up per segment so a hole in the planks goes cleanly through the X as well.
+ */
+function xPieces(group, o, seg) {
+  const flat = o.axis === 'x';
+  const bottom = o.y0 + (o.window ? 0 : BARRICADE.gap), H = o.y1 - bottom, W = o.to - o.from, k = H / W;
+  const a0 = flat ? seg.min[0] : seg.min[2], a1 = flat ? seg.max[0] : seg.max[2], y0 = seg.min[1], y1 = seg.max[1];
+  const front = barricadeFront(o), out = [];
+  for (const slope of [1, -1]) {
+    // along-coordinate range (from o.from) where this diagonal is inside the segment's height band
+    const lo = slope > 0 ? (y0 - bottom) / k : (bottom + H - y1) / k, hi = slope > 0 ? (y1 - bottom) / k : (bottom + H - y0) / k;
+    const A = Math.max(a0, o.from + lo), B = Math.min(a1, o.from + hi);
+    if (B - A < 0.02) continue;
+    const yAt = (a) => slope > 0 ? bottom + (a - o.from) * k : bottom + H - (a - o.from) * k;
+    const da = B - A, dy = yAt(B) - yAt(A), len = Math.hypot(da, dy) + 0.05;
+    const m = new THREE.Mesh(new THREE.BoxGeometry(len, 0.11, 0.035), xMat);
+    m.rotation.z = Math.atan2(dy, da);
+    m.position.z = (BARRICADE.thickness / 2 + 0.02) * (flat ? front : -front);
+    m.castShadow = true;
+    const holder = new THREE.Group();
+    const mid = (A + B) / 2, my = (yAt(A) + yAt(B)) / 2;
+    holder.position.set(flat ? mid : o.fixed, my, flat ? o.fixed : mid);
+    holder.rotation.y = flat ? 0 : -Math.PI / 2;
+    holder.add(m);
+    group.add(holder);
+    out.push(holder);
   }
-  return g;
+  return out;
 }
