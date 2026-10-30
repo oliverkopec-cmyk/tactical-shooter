@@ -8,6 +8,7 @@ import { SKINS } from '../shared/skins.js';
 import { WEAPONS } from '../shared/weapons.js';
 import { OPERATORS } from '../shared/operators.js';
 import { isOwner, isAdmin } from './roles.js';
+import { CHARMS, charmsFromLevel } from '../shared/charms.js';
 
 // Developer switches (see Accounts): UNLOCK_ALL_SKINS=1 unlocks every skin, and on a local
 // test database there is a button that adds Money so the shop can be tried.
@@ -60,6 +61,26 @@ export function equippedSkinsOf(row) {
   return out;
 }
 
+/**
+ * The charms the account owns: the ones earned by levelling up (worked out from the level, so nothing is
+ * stored for them) plus the ones won from the charm crate (`owned_charms`).
+ */
+export function ownedCharmsOf(row) {
+  const won = (Array.isArray(row.owned_charms) ? row.owned_charms : []).filter((id) => typeof id === 'string' && CHARMS[id]);
+  return [...new Set([...charmsFromLevel(row.level), ...won])];
+}
+
+export const ownsCharm = (row, id) => !!CHARMS[id] && ownedCharmsOf(row).includes(id);
+
+/** { weaponId: charmId }, with anything unknown or not owned dropped. */
+export function equippedCharmsOf(row) {
+  const out = {};
+  for (const [weapon, charm] of Object.entries(row.equipped_charms || {})) {
+    if (WEAPONS[weapon] && ownsCharm(row, charm)) out[weapon] = charm;
+  }
+  return out;
+}
+
 /** { attack, defense, menu }: the operators the account chose to play and to show in the menu. */
 export function equippedOperatorsOf(row) {
   const owned = new Set(ownedOperatorIds(row.owned_operators));
@@ -96,6 +117,8 @@ export function profileOf(row) {
     ownedOperators: ownedOperatorIds(row.owned_operators),
     ownedSkins: ownedSkinsByGun(row),
     equippedSkins: equippedSkinsOf(row),
+    ownedCharms: ownedCharmsOf(row),
+    equippedCharms: equippedCharmsOf(row),
     equippedOperators: equippedOperatorsOf(row),
     skinsUnlocked: unlockAll,
     dailyMoney: { earned: earnedToday(row.stats), limit: DAILY_MONEY_CAP },

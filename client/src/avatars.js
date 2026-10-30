@@ -4,7 +4,8 @@ import * as THREE from 'three';
 import { TEAM_COLORS, LEAN_OFFSET, STAND_EYE, STAND_HEIGHT } from '../../shared/constants.js';
 import { PRONE_BODY } from '../../shared/raycast.js';
 import { bodyHeight } from '../../shared/movement.js';
-import { makeGunModel } from './weapons.js';
+import { makeGunModel, animateGun } from './weapons.js';
+import { attachCharm } from './charmModels.js';
 import { OPERATORS } from '../../shared/operators.js';
 
 const LEAN_ANGLE = Math.atan2(LEAN_OFFSET, STAND_EYE);
@@ -58,9 +59,10 @@ function makeMarker() {
 }
 
 export class RemotePlayer {
-  constructor(scene, { id, name, team, skins }, isTeammate) {
+  constructor(scene, { id, name, team, skins, charms }, isTeammate) {
     this.id = id;
     this.skins = skins || {};   // gun skins this player has equipped: { weaponId: skinId }
+    this.charms = charms || {}; // charms hanging from their guns: { weaponId: charmId }
     this.name = name;
     this.team = team;
     this.buffer = []; // [{ t, s }]
@@ -183,6 +185,8 @@ export class RemotePlayer {
     gun.scale.multiplyScalar(1.3);   // keeps the gun's own size
     gun.traverse((o) => { if (o.isMesh) o.castShadow = true; });
     this.gunMount.add(gun);
+    attachCharm(gun, this.charms[id]);
+    this.gun = gun;
     this.muzzle = gun.userData.muzzle;
     this.muzzle.add(this.flash);
   }
@@ -222,6 +226,8 @@ export class RemotePlayer {
   update(renderTime, dt = 0) {
     this.flashTime -= dt;
     this.flash.visible = this.flashTime > 0;
+    // The slide or bolt kicks back with each shot; a reload drops the magazine
+    if (this.gun) animateGun(this.gun, { kick: Math.max(0, this.flashTime) / 0.05, reloadFrac: this.reloading ? ((performance.now() / 1000) % 2.4) / 2.4 : -1 });
     this.root.visible = this.alive && !this.hiddenForSpectate;
     this.marker.visible = this.spotted && this.alive;
     const buf = this.buffer;
@@ -247,6 +253,13 @@ export class RemotePlayer {
     p.crouch = crouch; p.prone = prone; p.lean = L('lean');
     this.root.position.set(p.x, p.y, p.z);
     this.root.rotation.y = p.yaw;
+    // The charm swings with the player's movement (seen from the player's own side) and with each shot
+    const charm = this.gun?.userData.charm;
+    if (charm) {
+      if (this.flashTime > 0.045) charm.push(0.5 * (Math.random() - 0.5), 1.4);
+      const c = Math.cos(p.yaw), s = Math.sin(p.yaw);
+      charm.update(dt, { x: p.x * c - p.z * s, y: p.y, z: p.x * s + p.z * c });
+    }
     this.lean.rotation.z = -p.lean * LEAN_ANGLE;
     // Prone: the whole body tips forward around the feet to lie flat, feet behind,
     // head in front (the server's prone hitbox in shared/raycast.js matches this).

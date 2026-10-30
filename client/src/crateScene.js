@@ -8,6 +8,7 @@
 
 import * as THREE from 'three';
 import { makeGunModel } from './weapons.js';
+import { makeCharmModel } from './charmModels.js';
 import { menuAudio } from './menuAudio.js';
 
 const RARITY_ORDER = ['common', 'rare', 'epic', 'legendary'];
@@ -59,8 +60,17 @@ export class CrateSequence {
     scene.add(this.group);
 
     // The gun that rises out of the crate
-    this.gun = makeGunModel(result.weapon, result.skin);
-    this.gun.scale.multiplyScalar(1.9);
+    if (result.charm) {
+      // a charm crate: the charm is tiny, so it is shown much bigger
+      this.gun = new THREE.Group();
+      const charm = makeCharmModel(result.charm);
+      charm.scale.setScalar(26);
+      charm.position.y = 0.95;
+      this.gun.add(charm);
+    } else {
+      this.gun = makeGunModel(result.weapon, result.skin);
+      this.gun.scale.multiplyScalar(1.9);
+    }
     this.gunHolder = new THREE.Group();
     this.gunHolder.add(this.gun);
     this.gunHolder.position.set(0, 0.7, 0);

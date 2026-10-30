@@ -8,6 +8,10 @@ import { applyAccountSettings } from './settings.js';
 import { Menu } from './menu.js';
 import { Social } from './social.js';
 import { AdminPanel } from './admin.js';
+import * as THREE from 'three';
+import { makeGunModel, animateGun } from './gunModels.js';
+import { sheet } from './gunSheet.js';
+import { makeCharmModel, attachCharm } from './charmModels.js';
 import { usernameError, passwordError } from '../../shared/account.js';
 
 const network = new Network();
@@ -202,4 +206,4 @@ window.addEventListener('beforeunload', (e) => {
 });
 
 // ?debug exposes internals in the console for testing.
-if (new URLSearchParams(location.search).has('debug')) window.breachline = { game, network, ui, menu };
+if (new URLSearchParams(location.search).has('debug')) window.breachline = { game, network, ui, menu, guns: { makeGunModel, animateGun, THREE, sheet, makeCharmModel, attachCharm } };
