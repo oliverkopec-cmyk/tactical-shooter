@@ -2,7 +2,19 @@
 
 A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite on the client, Node.js + Socket.IO on an authoritative server. One Node process serves both the game client and the realtime server, so the whole thing deploys as a single Render web service.
 
-## Status: Stage 22 (vaulting, rappelling, hatches and run-out detection)
+## Status: Stage 23 (Defuser mode)
+
+- **Game mode picker:** the host chooses **Secure the objective** (the original mode) or **Defuser** in the room lobby, above the map choice. It is locked once the match starts.
+- **Defuser mode:**
+  - **The carrier:** when the action phase starts, one random attacker carries the defuser. A yellow arrow shows who it is over their head to their teammates (through walls), and they see "You carry the defuser". Defenders are only told when the carrier goes down. If the carrier dies or leaves, the defuser drops where they fell, with a yellow beacon only attackers can see, and **any attacker who walks over it picks it up**.
+  - **Planting:** the carrier holds **Y** (rebindable: "Plant / disable the defuser") for **7 seconds**, standing still inside the defenders' chosen objective zone. Letting go, moving, leaving the zone or dying cancels it. Defenders get a warning ("The defuser is being planted!") the moment it starts.
+  - **Planted:** a device with a blinking light sits at the site, visible to everyone. It counts down **45 seconds**; the round clock turns into the countdown, the light blinks and it beeps faster and faster. Eliminating every attacker after the plant does **not** end the round.
+  - **Disabling:** any defender holds Y for **7 seconds**, standing still inside the zone beside it. The attackers are warned.
+  - **Winning:** defenders win by disabling it, by eliminating all attackers before it is planted, or by running out the timer before a plant. Attackers win when the countdown finishes ("The defuser went off") or by eliminating all defenders at any time.
+  - **Feedback:** banners and sounds for the carrier, a drop, planting started, planted, disabling started, disabled and the explosion; a progress bar and a ticking sound while you plant or disable; prompts for the carrier and the defenders.
+- **Server:** `server/defuser.js` decides everything (the client only sends the held key bit `KEY.INTERACT`, and draws what the snapshot's `df` field says). Attackers' snapshots carry the carrier and the dropped position, everyone's carry the planted device and its time left. Everything resets each round. Standard mode is unchanged.
+
+### Earlier: Stage 22 (vaulting, rappelling, hatches and run-out detection)
 
 - **Vaulting:** press **Space** with a low obstacle (a crate, a counter, a window sill; up to 1.3 m) right in front of you and you hop over or through it with a short tucked hop (about half a second, you can't act during it). It needs room above the obstacle and a free place to land, so an **intact barricade blocks it**; a hole broken in a barricade doesn't. A "Press Space to vault" prompt shows when it will work. Others hear you.
 - **Rappelling** (everyone, outside walls only, action phase): a rope hangs from a steel anchor at the roof edge down every outside wall (Dockside 8, Meridian Hotel 11), and one hangs down each roof hatch once it is open. Press **N** (rebindable) to attach: at the foot of an outside wall while facing it, at the roof edge looking outward, or beside an open roof hatch. Then **W/S** climb and descend (at the top, W takes you up onto the roof; at the bottom, S steps you off), **A/D** move sideways along the wall, hold **M** to flip upside down (the camera turns over and drops low, to look in through a window from above), and **N** again lets go (you drop). **Space beside a window or door swings you in through it and breaks its barricade**, if it has one. You can shoot while hanging, with 2.2 times the spread. Ropes are drawn for everyone hanging on them, clipping on and sliding make a sound others can hear, and you can be shot. Not available during prep.
@@ -200,14 +212,6 @@ Six new operators, bought with Money in the Operators tab (the original eight an
 
 Written down so they aren't forgotten (see Status for what is built). They are built one at a time, one PR each, and the next one starts once the previous is confirmed. Server memory must stay low enough for Render's 512 MB plan.
 
-### Stage 23 - Defuser objective mode
-
-- A new game mode the host picks in the lobby, alongside the current one.
-- One random attacker carries the defuser (shown on teammates' screens). If they die, it drops and any attacker can pick it up.
-- Attackers plant it at the defenders' chosen site (hold a key for 7 seconds). Once planted, it counts down 45 seconds.
-- Defenders win by disabling it (hold a key for 7 seconds), eliminating all attackers before it's planted, or running out the timer before a plant. Attackers win if the countdown finishes, or by eliminating all defenders.
-- Clear sounds and on-screen alerts for planting, planted and disabling.
-
 ### Stage 24 - Ping system and voice lines
 
 - Middle mouse (rebindable) places a ping where you aim, visible to your team only, lasting 5 seconds. Pinging an enemy marks them with a short marker if they're in your view. Pinging a gadget or wall labels it.
@@ -280,11 +284,13 @@ shared/            Code used by BOTH client and server
   account.js       username/password rules, which operators an account owns
   settings.js      setting defaults and limits (the server cleans saved settings with these)
   keybinds.js      rebindable actions, default keys, key names, keybind cleaning
+  modes.js         the game modes and the Defuser numbers (7 s, 7 s, 45 s)
   progression.js   rank ladder, level maths, daily quest definitions
   skins.js         gun skin catalog: rarities, colours, patterns
   charms.js        the 30 gun charms, level rewards and the charm crate odds
 server/
   index.js         Express static hosting + Socket.IO events
+  defuser.js       the Defuser mode: carrier, drop, plant, countdown, disable
   roles.js         owner and admin lookup from the environment variables
   admin.js         the admin tools: online list, matches, join as spectator or player
   db.js            Postgres connection (DATABASE_URL) or local PGlite fallback, table setup

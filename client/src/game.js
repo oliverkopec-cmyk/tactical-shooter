@@ -8,6 +8,8 @@ import { maskKeys } from '../../shared/rules.js';
 import { getMap, DEFAULT_MAP_ID } from '../../shared/map.js';
 import { getEyePosition, findVault, findRope } from '../../shared/movement.js';
 import { RopeView } from './ropes.js';
+import { DefuserView } from './defuserView.js';
+import { DEFUSER } from '../../shared/modes.js';
 import { currentSpread, aimDirection } from '../../shared/weapons.js';
 import { World } from '../../shared/world.js';
 import { raycastWorld, rayPlayer } from '../../shared/raycast.js';
@@ -105,6 +107,9 @@ export class Game {
     });
     this.stats = {};
     this.runout = { left: null, detected: false };   // the defenders' run-out countdown
+    this.mode = 'standard';                          // game mode of this match
+    this.df = null;                                  // defuser state from the server: { c: carrier, d: dropped, p: planted }
+    this.defuserAct = null;                          // my plant / disable in progress: { kind, start, ms }
     this.boardOn = false;
     window.addEventListener('keydown', (e) => this.onKeyDown(e));
     window.addEventListener('keyup', (e) => { if (actionFor(e.code) === 'scoreboard') this.boardOn = false; });
@@ -166,6 +171,7 @@ export class Game {
     network.on('stats', (s) => { this.stats = s; });
     network.on('barricadeStart', ({ ms }) => { this.reinforcing = { section: null, start: performance.now(), ms, label: 'Barricading…' }; });
     network.on('runout', (r) => { this.runout = r; });
+    network.on('defuserEvent', (e) => this.onDefuserEvent(e));
     network.on('swingIn', ({ pos }) => { if (this.running) { this.sound.swingIn(pos); this.effects.debris(pos, 0x3f7a2e, 3); } });
     network.on('barricadesLeft', ({ left }) => { this.barricadesLeft = left; });
     network.on('barricadeBroken', ({ id, ids }) => {
@@ -302,6 +308,8 @@ export class Game {
     this.ropeView = new RopeView(this.scene, def);
     this.destruction = new DestructionView(this.scene, this.world, this.effects, this.audio);
     this.gadgets = new GadgetView(this.scene, this.world);
+    this.defuserView?.dispose();
+    this.defuserView = new DefuserView(this.scene);
     const c = this.sun.shadow.camera;
     const e = def.shadowExtent || 40;
     c.left = -e; c.right = e; c.top = e; c.bottom = -e;
@@ -355,6 +363,7 @@ export class Game {
     this.loadout = { ...this.loadout, op: me.operator, charges: me.charges ?? 0, placed: !!me.placed };
     this.reinforcing = null;
     this.runout = { left: null, detected: false };
+    this.setMode(payload);
     this.picks = payload.picks || {};
     if (payload.roster) { this.roster = payload.roster; this.renderRoster(); }
     this.siteIndex = payload.site ?? null;
@@ -472,7 +481,10 @@ export class Game {
     if (info.phase === PHASE.PREP) {
       this.ui.banner('Prep phase', this.myTeam === 'attack' ? 'Find the objective with your drones, and choose where you appear (1/2/3)' : 'Reinforce, barricade and set up your gadgets');
     } else if (info.phase === PHASE.ACTION) {
-      this.ui.banner('Action!', this.myTeam === 'attack' ? 'Hold the objective for 10 s, or eliminate every defender' : 'Stop them until the clock runs out');
+      const defuser = this.mode === 'defuser';
+      this.ui.banner('Action!', this.myTeam === 'attack'
+        ? (defuser ? 'Plant the defuser at the objective, or eliminate every defender' : 'Hold the objective for 10 s, or eliminate every defender')
+        : (defuser ? 'Stop the defuser being planted, and disable it if it is' : 'Stop them until the clock runs out'));
     }
     if (info.phase === PHASE.PREP && this.myTeam === 'defense') this.ui.toast('Prep: the building exits are sealed until the action phase');
     if (info.phase === PHASE.ACTION) this.audio.beep(990, 0.25, 0.2, 'square');
@@ -555,6 +567,11 @@ export class Game {
     if (!this.running) return;
     if (snap.cap) this.capture = snap.cap;
     this.noticeMoves(snap);
+    if (this.mode === 'defuser' && snap.df !== undefined) {
+      this.df = snap.df;
+      this.defuserView.set(snap.df);
+      for (const r of this.remotes.values()) r.carrier = snap.df?.c === r.id;
+    }
     const myId = this.network.id;
     const drones = snap.drones || [];
     this.drones.sync(drones, myId);
@@ -659,6 +676,53 @@ export class Game {
     this.spectate = { index: 0, target: null, deathPos: null };
   }
 
+  /** The match's game mode and the defuser's state at the start of a round. */
+  setMode(payload) {
+    this.mode = payload.mode || 'standard';
+    this.df = payload.defuser || null;
+    this.defuserAct = null;
+    this.defuserView?.set(this.df);
+    this.nextBeep = 0;
+  }
+
+  /** Server events for the Defuser mode: who carries it, planting, disabling, going off. */
+  onDefuserEvent(e) {
+    if (!this.running) return;
+    const myId = this.network.id, name = (id) => this.members.get(id)?.name || 'Someone';
+    const pos = (e.pos || [0, 0, 0]);
+    switch (e.type) {
+      case 'carrier':
+        if (e.carrier === myId) this.ui.banner('You carry the defuser', `Take it to the objective and hold ${keyFor('interact')} to plant it`, 3200);
+        else this.ui.toast(`${name(e.carrier)} ${e.pickedUp ? 'picked up' : 'carries'} the defuser`);
+        if (e.pickedUp) this.audio.beep(900, 0.1, 0.2, 'triangle');
+        break;
+      case 'dropped': this.ui.banner('Defuser dropped', 'Pick it up: walk over it (the yellow beacon)', 3000); this.audio.beep(300, 0.25, 0.25, 'sawtooth'); break;
+      case 'carrierDown': this.ui.toast('The defuser carrier is down'); break;
+      case 'planting': this.ui.banner('The defuser is being planted!', `${e.by} is planting it at the objective`, 2600); this.audio.beep(1100, 0.2, 0.3, 'square'); break;
+      case 'disabling': this.ui.banner('They are disabling the defuser!', `${e.by} is disabling it`, 2600); this.audio.beep(1100, 0.2, 0.3, 'square'); break;
+      case 'actStart': this.defuserAct = { kind: e.kind, start: performance.now(), ms: e.ms }; this.nextTick = 0; break;
+      case 'actEnd': this.defuserAct = null; break;
+      case 'planted':
+        this.ui.banner('DEFUSER PLANTED', `${e.by} planted it. Defenders have ${Math.round(e.ms / 1000)} seconds to disable it`, 3600);
+        this.sound.defuserPlanted(pos);
+        break;
+      case 'disabled': this.ui.banner('DEFUSER DISABLED', 'The defenders win the round', 3200); this.sound.defuserDisabled(pos); break;
+      case 'detonated': this.ui.banner('THE DEFUSER WENT OFF', 'The attackers win the round', 3200); this.sound.defuserBoom(pos); this.effects.explosion(pos); this.shake = 1.2; break;
+      default:
+    }
+  }
+
+  /** The planted defuser beeps, faster and faster as its time runs out. */
+  beepDefuser() {
+    const p = this.df?.p;
+    if (!p || this.mode !== 'defuser') return;
+    const left = this.defuserView.left ?? 0;
+    const now = performance.now();
+    if (now < (this.nextBeep || 0) || left <= 0) return;
+    this.nextBeep = now + 180 + 820 * Math.min(1, left / 45000);
+    this.sound.defuserBeep(p.pos, 1 - Math.min(1, left / 45000));
+  }
+
   /** Draw a rope for everyone hanging on one (you included). */
   drawRopes(local) {
     const rv = this.ropeView;
@@ -709,6 +773,7 @@ export class Game {
   /** A round's worth of state for the spectator: same as a player's, but everyone is a remote and nothing is hidden. */
   loadRoundSpectator(payload) {
     this.round = payload.round || this.round;
+    this.setMode(payload);
     this.capture = { p: 0, c: false };
     this.picks = payload.picks || {};
     if (payload.roster) { this.roster = payload.roster; this.renderRoster(); }
@@ -786,6 +851,7 @@ export class Game {
       : 'Free camera: WASD move · Space/C up/down · Shift fast · click: follow a player · Backspace: stop spectating');
     this.ui.setSpectatorInfo(sp.target ? `Watching ${sp.target.name}` : 'Free camera');
     this.ui.renderBoard(this.boardOn, this.boardRows(), this.round.scores);
+    this.defuserView.update(dt);
     this.drawRopes(null);
     this.drones.update(dt);
     this.gadgets.update(dt);
@@ -862,6 +928,13 @@ export class Game {
       const o = findOpening(this.mapDef, [eye.x, eye.y, eye.z], aimDirection(local.aimYaw, local.aimPitch), BARRICADE.reach);
       if (o && !this.gadgets.hasBarricade(o.id)) prompt = `Press ${keyFor('barricade')} to barricade (${this.barricadesLeft} left)`;
     }
+    // Defuser mode: what the carrier or a defender can do here
+    if (!prompt && this.mode === 'defuser' && local.alive && this.round.phase === PHASE.ACTION) {
+      const site = this.siteIndex !== null ? this.mapDef.sites[this.siteIndex] : null;
+      const inZone = site && Math.hypot(local.state.x - site.x, local.state.z - site.z) <= site.zoneRadius && Math.abs(local.state.y - site.y) < 2.2;
+      if (this.myTeam === 'attack' && this.df?.c === this.network.id && !this.df.p) prompt = inZone ? `Hold ${keyFor('interact')} (stand still) to plant the defuser` : 'You carry the defuser: take it to the objective';
+      else if (this.myTeam === 'defense' && this.df?.p && inZone) prompt = `Hold ${keyFor('interact')} (stand still) to disable the defuser`;
+    }
     // Rope and vault prompts (action phase, nothing more important on screen)
     if (!prompt && local.alive && this.round.phase === PHASE.ACTION && !this.camView && !this.reinforcing) {
       const st = local.state;
@@ -872,9 +945,15 @@ export class Game {
     }
     this.ui.setPrompt(prompt);
 
-    let progress = null;
+    let progress = null, label = this.reinforcing?.label || 'Reinforcing…';
     if (this.reinforcing) progress = Math.min(1, (now - this.reinforcing.start) / this.reinforcing.ms);
-    this.ui.setProgress(progress, this.reinforcing?.label || 'Reinforcing…');
+    else if (this.defuserAct) {
+      progress = Math.min(1, (performance.now() - this.defuserAct.start) / this.defuserAct.ms);
+      label = this.defuserAct.kind === 'plant' ? 'Planting the defuser…' : 'Disabling the defuser…';
+      if (performance.now() >= (this.nextTick || 0)) { this.nextTick = performance.now() + 450; this.audio.beep(this.defuserAct.kind === 'plant' ? 700 : 520, 0.05, 0.14, 'square'); }
+    }
+    this.ui.setProgress(progress, label);
+    this.beepDefuser();
 
     // Operator + ability panel
     const op = OPERATORS[this.loadout.op];
@@ -952,11 +1031,12 @@ export class Game {
     this.ui.updateRound({
       attack: scores.attack, defense: scores.defense,
       time: `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`,
-      label: `ROUND ${this.round.round} · ${labels[phase] || ''}`,
-      urgent: phase === PHASE.ACTION && left <= 30,
+      label: this.df?.p && phase === PHASE.ACTION ? 'DEFUSER PLANTED' : `ROUND ${this.round.round} · ${labels[phase] || ''}`,
+      urgent: phase === PHASE.ACTION && (left <= 30 || !!this.df?.p),
       myTeam: this.myTeam,
     });
-    const capturing = phase === PHASE.ACTION && this.capture.p > 0;
+    const defuserMode = this.mode === 'defuser';
+    const capturing = !defuserMode && phase === PHASE.ACTION && this.capture.p > 0;
     this.ui.setCapture(capturing ? this.capture.p : null, this.capture.c);
     // Only the site you know about is marked on the floor
     this.mapView.sites.forEach((s, i) => { s.holder.visible = i === this.siteIndex; });
@@ -966,7 +1046,8 @@ export class Game {
       zone.opacity = capturing ? 0.9 : 0.55;
     }
     const known = this.siteIndex !== null ? this.mapDef.sites[this.siteIndex] : null;
-    this.ui.setSiteChip(known ? `Objective: ${known.name}` : (this.myTeam === 'attack' ? 'Objective: unknown. Find it with your drones' : ''));
+    const goal = defuserMode ? (this.myTeam === 'attack' ? 'plant the defuser there' : 'stop the defuser') : null;
+    this.ui.setSiteChip(known ? `Objective: ${known.name}${goal ? ` · ${goal}` : ''}` : (this.myTeam === 'attack' ? 'Objective: unknown. Find it with your drones' : ''));
   }
 
   /** Where you are listening from: your eyes, a drone, a camera feed or the player you spectate. */
@@ -1030,6 +1111,7 @@ export class Game {
       timeText: `${left}s`, onPick: (opId) => this.network.pickOperator(opId), onUtility: (id) => this.network.pickUtility(id),
     });
     this.ui.updateSpawnPicker(noBody && local.alive, this.spawnChoice, this.mapDef.spawns.attack);
+    this.defuserView.update(dt);
     this.drawRopes(local);
     this.ui.setRunOut(local.alive && this.myTeam === 'defense' && this.round.phase === PHASE.ACTION ? this.runout : null);
     this.drones.update(dt);

@@ -19,7 +19,7 @@ const HOLD_BITS = {
   forward: KEY.FORWARD, back: KEY.BACK, left: KEY.LEFT, right: KEY.RIGHT,
   sprint: KEY.SPRINT, jump: KEY.JUMP, crouch: KEY.CROUCH,
   leanLeft: KEY.LEAN_LEFT, leanRight: KEY.LEAN_RIGHT, fire: KEY.FIRE, reload: KEY.RELOAD,
-  rappel: KEY.RAPPEL, flip: KEY.FLIP,
+  rappel: KEY.RAPPEL, flip: KEY.FLIP, interact: KEY.INTERACT,
 };
 // One-shot actions sent to the server as events
 const EVENT_ACTIONS = new Set(['breach', 'reinforce', 'droneNext', 'ability', 'utility', 'camView', 'barricade']);

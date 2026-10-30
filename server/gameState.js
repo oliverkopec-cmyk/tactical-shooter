@@ -20,10 +20,11 @@ import { aimDirection } from '../shared/weapons.js';
 import { raycastWorld } from '../shared/raycast.js';
 import {
   SNAPSHOT_RATE, MAX_INPUT_DT, MAX_TIME_BUDGET, KEY_MASK, MAX_HEALTH, BASIC_CHARGES, PHASE, CAPTURE_TIME,
-  SPOT_DURATION_MS, PING_COOLDOWN_MS, MELEE, BARRICADE, RUNOUT,
+  SPOT_DURATION_MS, PING_COOLDOWN_MS, MELEE, BARRICADE, RUNOUT, KEY,
 } from '../shared/constants.js';
 import { PoseHistory, resolveShot } from './combat.js';
 import { Destruction } from './destruction.js';
+import { Defuser } from './defuser.js';
 import { RoundManager } from './rounds.js';
 import { Gadgets } from './abilities.js';
 
@@ -37,6 +38,8 @@ export class GameState {
     this.map = getMap(room.mapId);   // the map the host chose in the lobby
     this.world = new World(this.map);
     this.destruction = new Destruction(this);
+    this.mode = room.mode || 'standard';
+    this.defuser = new Defuser(this);
     this.rounds = new RoundManager(this);
     this.gadgets = new Gadgets(this);
     this.players = new Map(); // id -> ServerPlayer
@@ -122,6 +125,7 @@ export class GameState {
     if (leaving && !this.settled && started && leaving.stats.rounds >= 1 && leaving.member.accountId) {
       this.room.progression?.forfeit(leaving.member.accountId).catch((err) => console.error('Forfeit failed:', err.message));
     }
+    if (leaving) this.defuser.onGone(id, leaving);   // a leaving carrier drops the defuser
     this.players.delete(id);
     this.revealed.attack.delete(id);
     this.revealed.defense.delete(id);
@@ -500,6 +504,7 @@ export class GameState {
   resetRound() {
     this.world.reset();
     this.destruction.reset();
+    this.defuser.reset();
     this.history.frames.length = 0;
     this.revealed.attack.clear();
     this.revealed.defense.clear();
@@ -561,6 +566,7 @@ export class GameState {
 
   /** Action: drones are recalled and attackers appear where they chose. */
   beginAction() {
+    if (this.mode === 'defuser') this.defuser.beginAction();
     this.clearDrones();
     this.placeAttackers();
     for (const [id, p] of this.players) {
@@ -745,6 +751,7 @@ export class GameState {
           if (!drone.jammed) stepDrone(drone.state, { ...input, keys: input.keys & DRONE_KEYS }, input.dt, this.world.droneView);
         } else {
           input.keys = maskKeys(input.keys, p.member.team, phase, p.camView >= 0);
+          if (input.keys & KEY.INTERACT) p.interactAt = wallNow;
           // Defenders can't leave the building during prep
           const solid = phase === PHASE.PREP && p.member.team === 'defense' ? this.world.barrierView : this.world;
           p.state.gunMul = gunMobility(p.weapon);
@@ -882,6 +889,7 @@ export class GameState {
     this.gadgets.exitCamera(victimId, victim);
     this.gadgets.cancelBarricade(victimId, 'You were eliminated.');
     this.destruction.cancelReinforce(victimId, 'You were eliminated.');
+    this.defuser.onGone(victimId, victim);
     this.emitAll('kill', { killer: killerId, victim: victimId, weapon: weaponId, head });
     victim.deaths++;
     const killer = this.players.get(killerId);
@@ -928,13 +936,13 @@ export class GameState {
     const forTeam = {};
     for (const team of ['attack', 'defense']) {
       // Detected defenders are marked for the attackers only
-      forTeam[team] = { t, players: players.map((e) => {
+      forTeam[team] = { df: this.mode === 'defuser' ? this.defuser.view(team, t) : undefined, t, players: players.map((e) => {
         const shown = this.canSee(team, this.players.get(e.id)) ? e : { ...e, o: undefined, w: undefined };
         return team === 'attack' || !e.det ? shown : { ...shown, det: undefined };
       }), cap, drones, grenades };
     }
     for (const [id, p] of this.players) this.io.to(id).volatile.emit('snapshot', forTeam[p.member.team]);
-    if (this.room.spectators.size) this.io.to(this.room.spectatorChannel).volatile.emit('snapshot', { t, players, cap, drones, grenades });
+    if (this.room.spectators.size) this.io.to(this.room.spectatorChannel).volatile.emit('snapshot', { df: this.mode === 'defuser' ? this.defuser.view('spectator', t) : undefined, t, players, cap, drones, grenades });
   }
 
   /** Everything a client needs to (re)build the round. Hidden gadgets are filtered by team. */
@@ -948,6 +956,8 @@ export class GameState {
       gadgets: this.gadgets.list(team),
       picks: this.picksFor(team),
       mapId: this.map.id, mapName: this.map.name,
+      mode: this.mode,
+      defuser: this.mode === 'defuser' ? this.defuser.view(team) : null,
       players: [...this.players.entries()].map(([id, p]) => ({
         id, name: p.member.name, owner: !!p.member.owner, team: p.member.team, skins: p.member.skins || {}, charms: p.member.charms || {}, owned: p.member.owned || [], state: p.state,
         weapon: this.canSee(team, p) ? p.weapon : null, health: p.health, alive: p.alive,

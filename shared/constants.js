@@ -56,8 +56,9 @@ export const KEY = {
   PRONE: 2048,
   RAPPEL: 4096,     // attach to / let go of a rope (a press)
   FLIP: 8192,       // hold: hang upside down while rappelling
+  INTERACT: 16384,  // hold: plant or disable the defuser
 };
-export const KEY_MASK = 16383;
+export const KEY_MASK = 32767;
 
 // Vaulting: Space at a low obstacle (a crate, a sill) hops over it
 export const VAULT = { maxRise: 1.3, time: 0.55, clear: 1.12, maxDepth: 2.1, cooldown: 0.4 };

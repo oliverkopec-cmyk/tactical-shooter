@@ -38,14 +38,14 @@ function makeLabel(text, color) {
 }
 
 /** A red downward-pointing arrow that is always visible, even through walls. */
-function makeMarker() {
+function makeMarker(fill = '#ff2a2a') {
   const size = 64;
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = size;
   const ctx = canvas.getContext('2d');
   ctx.beginPath();
   ctx.moveTo(8, 12); ctx.lineTo(56, 12); ctx.lineTo(32, 56); ctx.closePath();
-  ctx.fillStyle = '#ff2a2a';
+  ctx.fillStyle = fill;
   ctx.fill();
   ctx.lineWidth = 5;
   ctx.strokeStyle = 'rgba(0,0,0,0.75)';
@@ -147,6 +147,11 @@ export class RemotePlayer {
     this.marker.visible = false;
     this.root.add(this.marker);
     this.spotted = false;
+    // The attacker carrying the defuser, shown to their teammates (a yellow arrow over their head, even through walls)
+    this.carrier = false;
+    this.carryMark = makeMarker('#ffd23c');
+    this.carryMark.visible = false;
+    this.root.add(this.carryMark);
     // A defender who stayed outside too long: a red glow through walls (only attackers are told)
     this.detected = false;
     this.glow = new THREE.Mesh(
@@ -246,6 +251,7 @@ export class RemotePlayer {
     this.root.visible = this.alive && !this.hiddenForSpectate;
     this.marker.visible = this.spotted && this.alive;
     this.glow.visible = this.detected && this.alive;
+    this.carryMark.visible = this.carrier && this.alive;
     const buf = this.buffer;
     if (!buf.length) return;
     let a = buf[0], b = buf[0];
@@ -331,6 +337,7 @@ export class RemotePlayer {
     this.label.position.y = top + 0.35;
     this.markerPhase = (this.markerPhase || 0) + dt * 5;
     this.marker.position.y = top + 0.75 + Math.sin(this.markerPhase) * 0.05;
+    this.carryMark.position.y = top + 0.75 + Math.sin(this.markerPhase) * 0.05;
   }
 
   dispose() {

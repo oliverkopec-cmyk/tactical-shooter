@@ -33,6 +33,10 @@ const SOUNDS = {
   placeWire: { noise: true, filter: 'highpass', cutoff: 3500, q: 0.8, dur: 0.18, gain: 0.45 },
   placeBeep: { wave: 'square', freq: 1500, freq2: 1500, filter: 'lowpass', cutoff: 4000, dur: 0.06, gain: 0.22 },
   placeClick: { wave: 'square', freq: 2600, freq2: 900, filter: 'lowpass', cutoff: 5000, dur: 0.04, gain: 0.24 },
+  defuserBeep: { wave: 'square', freq: 1500, freq2: 1500, filter: 'lowpass', cutoff: 4200, dur: 0.07, gain: 0.5 },
+  defuserPlanted: { wave: 'square', freq: 880, freq2: 440, filter: 'lowpass', cutoff: 3000, dur: 0.5, gain: 0.7 },
+  defuserDisabled: { wave: 'sine', freq: 520, freq2: 1040, dur: 0.4, gain: 0.7 },
+  defuserBoom: { noise: true, filter: 'lowpass', cutoff: 380, q: 0.7, dur: 1.2, gain: 1.0 },
   ropeClip: { wave: 'square', freq: 1900, freq2: 700, filter: 'lowpass', cutoff: 3000, dur: 0.07, gain: 0.3 },
   ropeSlide: { noise: true, filter: 'bandpass', cutoff: 2600, q: 1.2, dur: 0.12, gain: 0.3 },
   vaultHop: { noise: true, filter: 'lowpass', cutoff: 700, q: 0.8, dur: 0.14, gain: 0.6 },
@@ -170,6 +174,11 @@ export class Soundscape {
 
   plasterBreak(pos) { this.at('crack', pos, 34); this.at('crackThud', pos, 34); }
 
+  /** urgency 0..1: the beep climbs in pitch as the time runs out. */
+  defuserBeep(pos, urgency = 0) { this.at('defuserBeep', pos, 60); if (urgency > 0.7) this.at('defuserBeep', pos, 60, 0.6); }
+  defuserPlanted(pos) { this.at('defuserPlanted', pos, 70); }
+  defuserDisabled(pos) { this.at('defuserDisabled', pos, 70); }
+  defuserBoom(pos) { this.at('defuserBoom', pos, 90); }
   ropeClip(pos) { this.at('ropeClip', pos, 30); }
   ropeSlide(pos) { this.at('ropeSlide', pos, 20); }
   vault(pos) { this.at('vaultHop', pos, 22); this.at('landThump', pos, 22, 0.6); }

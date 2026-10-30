@@ -116,7 +116,21 @@ export class RoundManager {
     }
   }
 
+  /** Defuser mode: plant, count down, disable. */
+  updateDefuserAction(now, dt) {
+    const { attackersAlive, defendersAlive } = this.census(dt);
+    if (defendersAlive === 0) return this.endRound('attack', 'All defenders eliminated', now);
+    const result = this.game.defuser.update(now);
+    if (result === 'detonated') return this.endRound('attack', 'The defuser went off', now);
+    if (result === 'disabled') return this.endRound('defense', 'The defuser was disabled', now);
+    if (!this.game.defuser.planted) {
+      if (attackersAlive === 0) return this.endRound('defense', 'All attackers eliminated', now);
+      if (now >= this.endsAt) this.endRound('defense', 'Time ran out before the defuser was planted', now);
+    }
+  }
+
   updateAction(now, dt) {
+    if (this.game.mode === 'defuser') return this.updateDefuserAction(now, dt);
     const { attackersAlive, defendersAlive, attackersIn, defendersIn } = this.census(dt);
 
     if (attackersAlive === 0) return this.endRound('defense', 'All attackers eliminated', now);
