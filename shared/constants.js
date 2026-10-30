@@ -99,9 +99,9 @@ export const PING_COOLDOWN_MS = 400;
 export const SPRINT_FIRE_DELAY = 0.25;
 
 // Barricades and melee
-// A barricade is a solid panel of 6 planks. Windows are covered completely; doors keep an open gap at the bottom (0.32 m: a drone (0.28 m) fits, a prone player (0.5 m) doesn't).
+// A barricade is a solid panel of 7 thin planks with a diagonal X of two planks over the front. Windows are covered completely; doors keep an open gap at the bottom (0.32 m: a drone (0.28 m) fits, a prone player (0.5 m) doesn't).
 // Bullets break planks one at a time (hp per plank); 3 melee hits break the whole barricade; breach charges and blasts destroy it at once.
-export const BARRICADE = { thickness: 0.12, planks: 6, gap: 0.32, hp: 35, channelMs: 1000, reach: 2.6, pool: 8, meleeHits: 3, blastExtra: 0.9 };
+export const BARRICADE = { thickness: 0.12, planks: 7, gap: 0.32, hp: 35, channelMs: 1000, reach: 2.6, pool: 8, meleeHits: 3, blastExtra: 0.9 };
 export const MELEE = { reach: 2.1, cone: 0.5, damage: 45, cooldown: 0.8 };
 
 // Operator gadgets

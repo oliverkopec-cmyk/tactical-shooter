@@ -14,7 +14,7 @@ import { getEyePosition, forwardVec, eyeHeight, bodyHeight } from '../shared/mov
 import { aimDirection } from '../shared/weapons.js';
 import { raycastWorld } from '../shared/raycast.js';
 import { UTILITIES, UTIL_STATS, ABILITY_STATS, claymoreLines } from '../shared/utilities.js';
-import { barricadePlanks, sectionSegments, BARRICADE_COLS, BARRICADE_ROWS } from '../shared/barricade.js';
+import { barricadePlanks, sectionSegments, sectionAt, BARRICADE_COLS } from '../shared/barricade.js';
 
 export class Gadgets {
   constructor(game) {
@@ -526,22 +526,25 @@ export class Gadgets {
 
   /**
    * A melee hit on a barricade, at `point` (where the swing met its plane). The first two hits
-   * knock out the grid section (a third of the width, 2 planks tall) nearest the point that still
-   * has anything standing, so a hit is never wasted on a hole. The third hit breaks all of it.
+   * knock out the grid section at the aimed height (a third of the width, 2 planks tall), or, if it
+   * is already gone, the nearest section that still has anything standing, so a hit is never wasted.
+   * The third hit breaks all of it.
    */
   meleeBarricade(bid, point) {
     const b = this.barricades.get(bid);
     if (!b) return;
     b.hits++;
     if (b.hits >= BARRICADE.meleeHits) return this.breakPanels(bid, b.planks.map((p) => p.i));
+    const o = this.game.map.openings[b.openingId];
+    const aim = sectionAt(o, point);
     let best = null;
     for (let col = 0; col < BARRICADE_COLS; col++) {
-      for (let row = 0; row < BARRICADE_ROWS; row++) {
-        const idx = sectionSegments(col, row).filter((i) => b.planks[i].alive);
+      for (let plank = 0; plank <= BARRICADE.planks - 2; plank++) {
+        const idx = sectionSegments(col, plank).filter((i) => b.planks[i].alive);
         if (!idx.length) continue;
-        const lo = b.planks[sectionSegments(col, row)[0]], hi = b.planks[sectionSegments(col, row)[1]];
-        const c = lo.min.map((v, k) => (v + hi.max[k]) / 2);
-        const d = Math.hypot(c[0] - point[0], c[1] - point[1], c[2] - point[2]);
+        // Distance in sections: the aimed one is 0; sideways steps cost more than a plank up or down
+        // and a pair that is already half gone is worse than a whole one, so holes stay 2 planks tall
+        const d = Math.hypot((col - aim.col) * 2, (plank - aim.plank) * 0.5) + (2 - idx.length) * 1.5;
         if (!best || d < best.d) best = { d, idx };
       }
     }
