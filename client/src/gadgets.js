@@ -7,6 +7,7 @@
 import * as THREE from 'three';
 import { claymoreLines, UTIL_STATS } from '../../shared/utilities.js';
 import { barricadePlanks } from '../../shared/barricade.js';
+import { BARRICADE } from '../../shared/constants.js';
 
 const shieldMat = new THREE.MeshStandardMaterial({
   color: 0x6fb8d8, transparent: true, opacity: 0.55, roughness: 0.2, metalness: 0.4, emissive: 0x1a4a66, emissiveIntensity: 0.6,
@@ -17,7 +18,22 @@ const darkMat = new THREE.MeshStandardMaterial({ color: 0x1b1e23, roughness: 0.5
 const greenLed = new THREE.MeshBasicMaterial({ color: 0x4dff88 });
 const redLed = new THREE.MeshBasicMaterial({ color: 0xff2a2a });
 const camBodyMat = new THREE.MeshStandardMaterial({ color: 0xd9dce0, roughness: 0.45, metalness: 0.3 });
-const woodMats = [0x8a5a2b, 0x7a4e24, 0x96663a].map((c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.9 }));
+// Green painted planks with two yellow straps and a yellow cross, like a prepared window panel
+const woodMats = [0x3f7a2e, 0x387028, 0x468533].map((c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.85 }));
+const strapMat = new THREE.MeshStandardMaterial({ color: 0xd9c42a, roughness: 0.7 });
+let crossMat = null;
+function getCrossMat() {
+  if (crossMat) return crossMat;
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d');
+  g.strokeStyle = '#e6d32a';
+  g.lineWidth = 20;
+  g.lineCap = 'round';
+  g.beginPath(); g.moveTo(16, 16); g.lineTo(112, 112); g.moveTo(112, 16); g.lineTo(16, 112); g.stroke();
+  crossMat = new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthWrite: false });
+  return crossMat;
+}
 const grenadeMat = new THREE.MeshStandardMaterial({ color: 0xe8e8ff, emissive: 0x9999ff, emissiveIntensity: 0.8, roughness: 0.3 });
 // One look per thrown grenade type, so you can tell what is flying at you
 const GRENADE_LOOK = { stun: null, flash: null, frag: 0x3f5a3a, impact: 0xd2502f, smoke: 0x9aa0a6 };
@@ -160,13 +176,14 @@ export class GadgetView {
       for (const p of opening ? barricadePlanks(opening) : []) {
         if (!standing.has(p.i)) continue;
         const sx = p.max[0] - p.min[0], sy = p.max[1] - p.min[1], sz = p.max[2] - p.min[2];
-        const m = new THREE.Mesh(new THREE.BoxGeometry(sx * 0.97, sy * 0.94, sz), woodMats[p.i % woodMats.length]);
+        const m = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), woodMats[p.i % woodMats.length]);
         m.position.set(p.min[0] + sx / 2, p.min[1] + sy / 2, p.min[2] + sz / 2);
         m.castShadow = true;
         group.add(m);
         group.userData.meshes.set(p.i, m);
         this.world.addBox({ id: `bar-${rec.id}-${p.i}`, kind: 'barricade', barricadeId: rec.id, panelIndex: p.i, min: p.min, max: p.max });
       }
+      if (opening) group.add(group.userData.deco = barricadeDecor(opening, standing.size === 6));
     } else if (rec.kind === 'claymore') {
       group = makeClaymore();
       group.position.set(...rec.pos);
@@ -228,6 +245,7 @@ export class GadgetView {
       it.group.userData.meshes.delete(i);
       this.world.removeBox(`bar-${id}-${i}`);
     }
+    if (it.group.userData.deco) it.group.userData.deco.visible = false;   // straps and cross go once the panel is damaged
     return centers;
   }
 
@@ -372,4 +390,28 @@ export class GadgetView {
       if (led) led.visible = on;
     }
   }
+}
+
+/** Two yellow straps and a cross on both faces of a barricade panel. */
+function barricadeDecor(o, intact) {
+  const g = new THREE.Group();
+  g.visible = intact;
+  const bottom = o.y0 + (o.window ? 0 : BARRICADE.gap), h = o.y1 - bottom, w = o.to - o.from;
+  const cx = (o.from + o.to) / 2, cy = bottom + h / 2, t = BARRICADE.thickness / 2 + 0.01;
+  const flat = o.axis === 'x';                       // wall runs along x: faces point along z
+  const put = (mesh, along, y, face) => {
+    mesh.position.set(flat ? along : o.fixed + face * t, y, flat ? o.fixed + face * t : along);
+    mesh.rotation.y = flat ? (face < 0 ? Math.PI : 0) : face * Math.PI / 2;
+    g.add(mesh);
+  };
+  for (const face of [-1, 1]) {
+    for (const f of [0.12, 0.88]) {
+      const strap = new THREE.Mesh(new THREE.PlaneGeometry(Math.min(0.12, w * 0.08), h), strapMat);
+      put(strap, o.from + w * f, cy, face);
+    }
+    const size = Math.min(w * 0.6, h * 0.85);
+    const cross = new THREE.Mesh(new THREE.PlaneGeometry(size, size), getCrossMat());
+    put(cross, cx, cy, face);
+  }
+  return g;
 }
