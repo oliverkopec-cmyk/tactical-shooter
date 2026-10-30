@@ -1001,3 +1001,10 @@ button.small { font-size: 12px; padding: 4px 10px; margin-top: 6px; }
 #killcam .kc-hp .bar { flex: 1; height: 6px; }
 #killcam-hp { height: 100%; background: #3bd16f; }
 #death-overlay.under-killcam { display: none; }
+
+/* Bots in the lobby */
+.bot-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 6px; }
+.bot-row select { background: #12171e; color: inherit; border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
+.bot-tag { color: #9fb4c8; margin-left: 6px; }
+.bot-remove { margin-left: auto; background: transparent; border: none; color: var(--muted); font-size: 16px; cursor: pointer; padding: 0 6px; }
+.bot-remove:hover { color: #ff6b6b; }

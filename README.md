@@ -2,7 +2,23 @@
 
 A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite on the client, Node.js + Socket.IO on an authoritative server. One Node process serves both the game client and the realtime server, so the whole thing deploys as a single Render web service.
 
-## Status: Stage 25 (killcam)
+## Status: Stage 26 (bots)
+
+- **Adding bots:** in the room lobby the host picks a difficulty (**Easy, Normal, Hard**) and adds a bot to Attack or Defense, or presses **Fill empty slots** to fill both sides up to 5. Bots show as "bot · normal" in the lobby; the host can remove one with ×. A room with only bots left closes.
+- **Rewards:** a match with any bot in it gives **half Money and no rank points** (the match summary says so), and leaving it early costs no rank points either.
+- **How bots play** (all on the server, with the same inputs and actions as players, so they follow every rule):
+  - **Aim:** they turn onto a target smoothly, like a hand on a mouse (a spring with a top speed, never a snap), with an aim error that is large when you first appear and settles quickly. Hard bots go for the head most of the time. They shoot in short bursts at range so their spread stays tight and hold the trigger up close; semi-automatic guns are tapped. Bot shots are checked against where you are now (bots have no network delay to make up for).
+  - **Losing sight:** for a moment after you go behind cover they keep aiming, and shooting, where they last saw you. If they hear you moving close behind a soft wall, Normal and Hard bots shoot through it.
+  - **Moving:** they walk one way while looking another, so they pre-aim doorways, corners and where they heard something. In a fight they strafe left and right (Hard also crouch-peeks); they never stand still in the open. When their magazine runs low or they're badly hurt, they fall back to a nearby spot you can't see, crouch and reload. After a kill or being shot they move.
+  - **Defenders:** each takes a different entrance to the site (doors and windows on its floor), barricades it and, with a claymore, plants it just inside, reinforces walls near the site, then holds an angle on that entrance from a spot 3.5 to 8 m back, off the straight line through the door and against a wall where possible, crouched. The nearest free defender rotates to help a teammate in a fight.
+  - **Attackers:** they drone during prep and remember the defenders the drones saw. In the action phase they gather short of the site and **push together** (when three are ready, after 9 s, or when time is short); one may blow a soft wall with a breach charge for a new angle first. Flashes go in before they enter, frags and impacts at enemies hiding behind cover, smoke to cover a plant. About a quarter go up a rope instead (swing in through a window, or break a roof hatch). When time runs low they stop waiting and play the objective.
+  - **Hearing and sharing:** they hear footsteps (sprinting far, walking closer, crouching barely), gunshots, explosions, breaking barricades and walls, and drones (defenders), and turn towards the sound ready to shoot. What one bot sees or hears its whole team knows; when one dies, its teammates turn on the killer and react faster (they trade).
+  - **Flashes and stuns** blind bots just like people.
+  - **Getting around:** a walking grid built from the map (`server/nav.js`). A barricade in the way is smashed with melee; when stuck they hop (which vaults low things), then sidestep.
+- **Difficulty:** Easy reacts in 0.75 to 1.1 s, aims loosely, turns slowly and doesn't use the tactics above. Normal reacts in 0.45 to 0.6 s with the same tactics as Hard and less accurate aim. Hard reacts in 0.2 to 0.3 s, settles its aim on the head within about a quarter second, turns fast and hears further. In a test against a target strafing in the open 12 to 24 m away, Hard killed it in about 0.5 to 0.7 s (reaction included), Normal in about 0.9 to 2 s, Easy in 3 s or more.
+- **Light on the server:** each bot thinks 10 times a second and steers every tick; ten bots cost about 1 ms per server tick. The walking grid is built once per map, in small slices so the server never pauses (a few MB; about 0.3 s for Dockside, 1.2 s for the hotel, started as soon as a bot is added). Paths come from cached distance fields worked out on demand; contact lists and remembered sounds are small and cleared every round.
+
+### Earlier: Stage 25 (killcam)
 
 - **Killcam:** when another player kills you, you watch a **4 second replay** of your death **through the killer's eyes**: their movement and aim, their gun firing on each of their shots (with tracers and the sound), and your own body going down where you stood. Then spectating carries on as before. **Click, Space or Enter skips it.**
 - **Shown during it:** a red-edged KILLCAM banner with the killer's name and operator, their gun with its **skin and charm**, and the **health they had left** (a bar and a number). The gun in view is their actual gun, skin and charm.
@@ -231,13 +247,6 @@ Six new operators, bought with Money in the Operators tab (the original eight an
 
 Written down so they aren't forgotten (see Status for what is built). They are built one at a time, one PR each, and the next one starts once the previous is confirmed. Server memory must stay low enough for Render's 512 MB plan.
 
-### Stage 26 - Bots
-
-- The host can fill empty slots with bots in the lobby, with difficulty Easy, Normal or Hard (reaction time and accuracy).
-- Bots pick operators, use abilities and utilities, drone during prep, reinforce walls and barricade as defenders, use vaulting, rappelling and hatches, and play both objective modes.
-- Bots run on the server and are light on memory and CPU.
-- Matches with bots give reduced Money and no rank points.
-
 ### Stage 27 - Placing gadgets takes time
 
 - Placing anything (claymores, barbed wire, cameras, jammers, shields, breach charges, barricades, reinforcing walls and hatches) takes time instead of being instant.
@@ -297,6 +306,8 @@ shared/            Code used by BOTH client and server
   charms.js        the 30 gun charms, level rewards and the charm crate odds
 server/
   index.js         Express static hosting + Socket.IO events
+  bots.js          the bots' brains (server side)
+  nav.js           the walking grid and distance fields bots move by
   killcam.js       the last 4.5 s of everyone's movement and shots, sent to a player who is killed
   defuser.js       the Defuser mode: carrier, drop, plant, countdown, disable
   roles.js         owner and admin lookup from the environment variables
