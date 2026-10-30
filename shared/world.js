@@ -100,6 +100,9 @@ export class World {
 
   addBox(box) { this.extra.set(box.id, box); this.rebuild(); }
   removeBox(id) { if (this.extra.delete(id)) this.rebuild(); }
+  /** Add or remove many dynamic boxes with a single rebuild (barricades are made of several planks). */
+  addBoxes(list) { for (const b of list) this.extra.set(b.id, b); this.rebuild(); }
+  removeBoxes(ids) { let changed = false; for (const id of ids) changed = this.extra.delete(id) || changed; if (changed) this.rebuild(); }
 
   get panels() { return this.layout.panels; }
   get sections() { return this.layout.sections; }

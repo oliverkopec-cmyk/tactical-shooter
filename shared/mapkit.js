@@ -31,7 +31,6 @@ export function createMapKit({ T = 0.3 } = {}) {
   function wall(axis, fixed, from, to, y0, y1, kind, ops = [], name = '') {
     const sorted = [...ops].sort((a, b) => a.from - b.from);
     const pieces = [];
-    let cursor = from;
     const push = (a, b, py0, py1) => {
       if (b - a < 1e-3 || py1 - py0 < 1e-3) return;
       const piece = axis === 'x'
@@ -41,17 +40,21 @@ export function createMapKit({ T = 0.3 } = {}) {
       piece.wallName = name;
       pieces.push(piece);
     };
-    for (const op of sorted) {
-      push(cursor, op.from, y0, y1);
-      push(op.from, op.to, y0, op.y0);   // below the opening (window sill)
-      push(op.from, op.to, op.y1, y1);   // above the opening (lintel)
-      cursor = op.to;
+    // Carve slice by slice so openings stacked on different floors (same running range) don't fill each other in
+    const cuts = [...new Set([from, to, ...sorted.flatMap((op) => [op.from, op.to])])].filter((c) => c >= from && c <= to).sort((a, b) => a - b);
+    for (let i = 0; i + 1 < cuts.length; i++) {
+      const a = cuts[i], b = cuts[i + 1], mid = (a + b) / 2;
+      let low = y0;
+      for (const op of sorted.filter((q) => q.from < mid && q.to > mid).sort((p, q) => p.y0 - q.y0)) {
+        push(a, b, low, op.y0);
+        low = Math.max(low, op.y1);
+      }
+      push(a, b, low, y1);
     }
-    push(cursor, to, y0, y1);
     for (const op of sorted) {
       openings.push({
         id: openings.length, axis, fixed, from: op.from, to: op.to, y0: op.y0, y1: op.y1,
-        exterior: kind === 'exterior', name,
+        exterior: kind === 'exterior', window: !!op.window, name,
       });
     }
     if (kind === 'exterior') {
@@ -66,7 +69,7 @@ export function createMapKit({ T = 0.3 } = {}) {
   }
 
   const door = (from, to, base = 0) => ({ from, to, y0: base, y1: base + 2.4 });
-  const win = (from, to, base = 0) => ({ from, to, y0: base + 1.0, y1: base + 2.2 });
+  const win = (from, to, base = 0) => ({ from, to, y0: base + 1.0, y1: base + 2.2, window: true });
 
   /**
    * Stairs: solid steps filled down to `base`. dir +1 rises towards +axis starting at `start`,

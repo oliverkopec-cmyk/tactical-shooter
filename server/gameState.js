@@ -392,7 +392,7 @@ export class GameState {
     if (this.canBreakWalls(p)) {
       const wall = raycastWorld(this.world, origin, aim, MELEE.reach);
       if (wall?.box.kind === 'barricade') {
-        if (phase === PHASE.ACTION) this.gadgets.damageBarricadePanel(wall.box.barricadeId, wall.box.panelIndex, BARRICADE.meleeDamage);
+        if (phase === PHASE.ACTION) this.gadgets.meleeBarricade(wall.box.barricadeId);
       } else if (wall?.box.kind === 'panel') {
         // Each melee hit knocks out one wall panel. Reinforced walls shrug it off.
         if (this.world.isReinforcedPanel(wall.box.id)) this.io.to(id).emit('actionError', { msg: 'Reinforced walls can\'t be broken by melee.' });

@@ -2,7 +2,14 @@
 
 A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite on the client, Node.js + Socket.IO on an authoritative server. One Node process serves both the game client and the realtime server, so the whole thing deploys as a single Render web service.
 
-## Status: Stage 18 (friends and parties)
+## Status: Stage 19 (finishing up)
+
+- **New barricade look:** a solid green panel of 6 horizontal wooden planks with two yellow straps and a yellow cross on both faces. A **window** is covered completely. A **door** barricade leaves the bottom 0.32 m open with no plank: a drone (0.28 m tall) can drive through it, but a player can't (even lying prone they are 0.5 m tall). The straps and cross disappear once the panel is damaged.
+- **Breaking:** a barricade breaks completely after **3 melee hits** (right click). Bullets still knock out single planks (to shoot or look through), and breach charges, frag and impact grenades destroy a whole barricade at once. Melee hits on a barricade only count in the action phase.
+- **Windows and outside doors start barricaded:** every window and every door leading outside begins every round already barricaded, using the same breakable barricades (doors keep the drone gap at the bottom), and they are put back each round. Doors between rooms are not included. These free barricades don't use up the defenders' 8 per round and don't count towards the barricade quest.
+- **Map fix:** in the hotel (and Dockside), windows stacked above each other in one wall could fill in the lower window with solid wall. Walls are now cut slice by slice, so every window really is a window.
+
+### Earlier: Stage 18 (friends and parties)
 
 - **Friends tab:** search players by username (even one letter lists the players whose names start with it, up to 8), send a friend request, accept or decline requests that were sent to you, cancel one you sent, and remove friends. Asking someone who already asked you makes you friends straight away. You can have 100 friends and 20 requests waiting. A badge on the tab counts requests waiting for you.
 - **Who is online:** every friend shows **Online · in the menu**, **In a lobby**, **In a match** or **Offline**, updated live (no refresh needed), with their rank icon.
@@ -141,25 +148,13 @@ Six new operators, bought with Money in the Operators tab (the original eight an
 - The pilot left-clicks to ping an enemy under the crosshair (30 m, clear line of sight, about 4° aim tolerance): a small red marker shows above that enemy's head for 3 s for the whole attacking team. Only the marker shows through walls, never the body
 - Polish: **Tab** shows a scoreboard (kills, deaths, your team's operators), **Esc** opens a pause menu with sensitivity, volume and field-of-view sliders (also on the home and lobby screens, saved in your browser), **H** hides the key hints (which change with your role and phase), round and phase banners, a low-health glow, a "Copy code" button and player counts in the lobby
 - **No shooting while sprinting:** pressing fire cancels a sprint, and the first shot comes 0.25 s later (you can't sprint while holding fire)
-- **Melee (right click):** 45 damage to an enemy in front of you (about 2 m), 0.8 s cooldown. It also breaks barricade planks, knocks out **one wall panel per hit** (never a reinforced wall), and attackers can use it to smash cameras
-- **Barricades (B, defenders, prep only):** nail wooden planks over a doorway or window (1 second, 8 per team per round, not while someone stands in the gap). A barricade is a grid of 0.5 m planks: bullets (2 rifle hits per plank) and melee (1 hit) break them one by one, and a breach charge destroys the whole barricade at once. Planks block movement, bullets and drones until broken
+- **Melee (right click):** 45 damage to an enemy in front of you (about 2 m), 0.8 s cooldown. It also smashes barricades (3 hits break one completely), knocks out **one wall panel per hit** (never a reinforced wall), and attackers can use it to smash cameras
+- **Barricades (B, defenders, prep only):** nail wooden planks over a doorway or window (1 second, 8 per team per round, not while someone stands in the gap). A barricade is a solid panel of 6 wooden planks (`barricadePlanks()` in `shared/barricade.js`); a door's has a 0.32 m open gap at the bottom that a drone can drive through but a player can't, a window's is closed: bullets (2 rifle hits per plank) break planks one by one, 3 melee hits break the whole barricade, and a breach charge or a grenade destroys it at once. Planks block movement and bullets until broken. Windows and outside doors start every round already barricaded for free (`Gadgets.placeStartBarricades`)
 - **Props:** furniture, crates, barrels, concrete barriers, pallets, planters and parked vehicles inside and outside the building. They are solid, so waist-high ones are cover; rugs, pictures, monitors and plants are decoration only
 - **Player models:** other players are drawn as a humanoid with helmet, head, vest, arms holding the gun, and bending legs with a walk cycle, crouch pose and a melee swing
 - **Three objective sites** in different rooms (upstairs office, ground-floor back room, upstairs west room). During operator select the defenders vote on one (ties and no votes are settled at random). Attackers aren't told which; a drone that gets within 6 m with a clear view of the objective, or an attacker walking into its zone, reveals it to everyone. Defenders start in or right next to the site they voted for (five spawn points per site, facing the objective); they are moved there the moment the vote is decided. Only the chosen site can be captured, the three boxes look identical, and the zone ring and "Objective:" label only appear once you know the site
 - **Sound** is positional: you hear other players from the right direction, quieter and duller with distance, through walls and from another floor. Footsteps: sprinting is loud and carries about 40 m, walking about 14 m, crouch-walking only a couple of metres. Also reloading, landing from a fall, barricades and walls breaking, gadgets being placed, melee swings and drone motors. Volume is in the settings menu
 - Defenders reinforce wall sections (V, 10 per team): darker, immune to bullets and basic charges; only a heavy charge (Spark, stage 6) breaks them
-
-## Planned: later stages
-
-Written down so they aren't forgotten (see Status for what is built).
-
-### Stage 19 - Finishing up
-
-Not built yet.
-
-- **New barricade look:** 6 horizontal wooden planks, parallel and evenly spaced. The bottom is left open with no plank, a gap big enough for a drone to drive through but too small for a player.
-- **Breaking:** a barricade breaks completely after 3 melee hits. This replaces the current 0.5 m plank grid, where melee and bullets break planks one by one (breach charges still destroy a barricade at once).
-- **Windows start barricaded:** every window begins every round already barricaded, using these same breakable barricades. Doors are not included.
 
 ## Run locally
 
@@ -279,7 +274,7 @@ Other players' sounds are derived on each client from the snapshots (speed, stan
 
 ## Barricades, melee and props
 
-`MAP.openings` lists every door and window gap (generated in `shared/map.js`; `findOpening()` finds the one a ray passes through). A barricade is a set of dynamic boxes added to the shared `World` (`kind: 'barricade'`), so movement and bullets on both sides treat the planks as solid. The server owns plank health and sends `barricadeBroken` events; clients remove the same planks. Props live in the same `MAP.boxes` list as walls (`prop()` in `shared/map.js`), with `MAP.details` for visual-only decoration. Run the reachability check idea from the commit when you move props: every room, both staircases and all spawn points must stay open.
+`MAP.openings` lists every door and window gap (generated in `shared/map.js`; `findOpening()` finds the one a ray passes through). A barricade is a set of dynamic plank boxes added to the shared `World` (`kind: 'barricade'`), so movement and bullets on both sides treat the planks as solid. The server owns plank health and the melee hit count and sends `barricadeBroken` / `barricadeHit` events; the barricade record sent to clients only lists the opening and which planks still stand, and clients build the same planks from the shared function. Props live in the same `MAP.boxes` list as walls (`prop()` in `shared/map.js`), with `MAP.details` for visual-only decoration. Run the reachability check idea from the commit when you move props: every room, both staircases and all spawn points must stay open.
 
 ## Shop
 
