@@ -111,6 +111,11 @@ io.on('connection', (socket) => {
     reply(ack, room ? room.setMap(socket.id, String(mapId)) : { error: 'Not in a room.' });
   });
 
+  socket.on('setMode', (mode, ack) => {
+    const room = socket.data.room;
+    reply(ack, room ? room.setMode(socket.id, String(mode)) : { error: 'Not in a room.' });
+  });
+
   socket.on('startMatch', (ack) => {
     const room = socket.data.room;
     reply(ack, room ? room.start(socket.id) : { error: 'Not in a room.' });

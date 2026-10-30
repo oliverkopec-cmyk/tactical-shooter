@@ -3,6 +3,7 @@
 import { TEAMS, MAX_PER_TEAM, ROOM_CODE_LENGTH, MAX_NAME_LENGTH } from '../shared/constants.js';
 import { GameState } from './gameState.js';
 import { DEFAULT_MAP_ID, MAP_IDS } from '../shared/map.js';
+import { MODE_IDS, DEFAULT_MODE_ID } from '../shared/modes.js';
 import { isOwner } from './roles.js';
 
 // No I or O, so codes can't be confused with 1 / 0.
@@ -61,6 +62,7 @@ class Room {
     this.spectators = new Map(); // socketId -> socket: admins watching invisibly (not members, never listed)
     this.hostId = null;
     this.mapId = DEFAULT_MAP_ID;   // chosen by the host in the lobby
+    this.mode = DEFAULT_MODE_ID;   // and the game mode
     this.phase = 'lobby';     // 'lobby' | 'match'
     this.game = null;
   }
@@ -164,6 +166,16 @@ class Room {
     return {};
   }
 
+  /** The host picks the game mode for the next match. */
+  setMode(socketId, mode) {
+    if (socketId !== this.hostId) return { error: 'Only the host can choose the game mode.' };
+    if (this.phase !== 'lobby') return { error: 'The mode is locked once the match starts.' };
+    if (!MODE_IDS.includes(mode)) return { error: 'Unknown game mode.' };
+    this.mode = mode;
+    this.broadcastState();
+    return {};
+  }
+
   start(socketId) {
     if (socketId !== this.hostId) return { error: 'Only the host can start the match.' };
     if (this.phase !== 'lobby') return { error: 'Match already started.' };
@@ -196,6 +208,7 @@ class Room {
       hostId: this.hostId,
       phase: this.phase,
       mapId: this.mapId,
+      mode: this.mode,
       players: [...this.members.values()].map(({ id, name, team, skins, charms, owner }) => ({ id, name, team, skins, charms, owner })),
     };
   }

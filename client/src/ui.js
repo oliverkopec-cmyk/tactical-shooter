@@ -12,6 +12,7 @@ import { mapChoices } from '../../shared/map.js';
 import { rankInfo, rankStep, xpForLevel } from '../../shared/progression.js';
 import { BIND_ACTIONS, DEFAULT_KEYBINDS, keyLabel, isBindableCode, RESERVED_CODES } from '../../shared/keybinds.js';
 import { ownerTag, ownerTagEl } from './badge.js';
+import { MODES } from '../../shared/modes.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -368,7 +369,11 @@ export class UI {
     $('code-input').addEventListener('input', (e) => { e.target.value = e.target.value.toUpperCase().replace(/[^A-Z]/g, ''); });
   }
 
-  bindLobby({ onTeam, onStart, onLeave, onMap }) {
+  bindLobby({ onTeam, onStart, onLeave, onMap, onMode }) {
+    $('mode-options').addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-mode]');
+      if (btn && !btn.disabled) onMode(btn.dataset.mode);
+    });
     $('map-options').addEventListener('click', (e) => {
       const btn = e.target.closest('[data-map]');
       if (btn && !btn.disabled) onMap(btn.dataset.map);
@@ -412,6 +417,11 @@ export class UI {
       btn.disabled = me?.team === team || members.length >= MAX_PER_TEAM;
     }
 
+    $('mode-note').textContent = isHost ? '(you choose)' : '(chosen by the host)';
+    $('mode-options').innerHTML = Object.values(MODES).map((m) => `
+      <button type="button" class="map-option${m.id === (room.mode || 'standard') ? ' selected' : ''}" data-mode="${m.id}" ${isHost ? '' : 'disabled'}>
+        <b>${escapeHtml(m.name)}</b><span>${escapeHtml(m.description)}</span>
+      </button>`).join('');
     // The host chooses the map; everyone else sees which one it is
     $('map-note').textContent = isHost ? '(you choose)' : '(chosen by the host)';
     $('map-options').innerHTML = mapChoices().map((m) => `

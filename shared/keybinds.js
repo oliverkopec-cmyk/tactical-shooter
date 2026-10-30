@@ -24,6 +24,7 @@ export const BIND_ACTIONS = [
   { id: 'utility', label: 'Use utility', group: 'Combat', key: 'Digit4' },
   { id: 'ability', label: 'Operator ability', group: 'Combat', key: 'KeyF' },
   { id: 'breach', label: 'Breach charge (attack)', group: 'Gadgets', key: 'KeyG' },
+  { id: 'interact', label: 'Plant / disable the defuser (hold)', group: 'Gadgets', key: 'KeyY' },
   { id: 'droneNext', label: 'Switch drone (attack)', group: 'Gadgets', key: 'KeyX' },
   { id: 'reinforce', label: 'Reinforce wall (defense)', group: 'Gadgets', key: 'KeyV' },
   { id: 'barricade', label: 'Barricade (defense)', group: 'Gadgets', key: 'KeyB' },
