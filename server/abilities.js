@@ -37,7 +37,7 @@ export class Gadgets {
     this.barricades = new Map();       // id -> { id, openingId, hits, planks: [{ i, min, max, hp, alive }] }
     this.barricading = new Map();      // playerId -> { openingId, doneAt, x, z }
     this.barricadesLeft = BARRICADE.pool;
-    this.placeWindowBarricades();       // every window starts the round barricaded
+    this.placeStartBarricades();       // windows and outside doors start the round barricaded
   }
 
   get world() { return this.game.world; }
@@ -499,9 +499,9 @@ export class Gadgets {
     return b;
   }
 
-  /** Every window starts the round barricaded (doors don't). Called when the gadgets are reset for a new round. */
-  placeWindowBarricades() {
-    for (const o of this.game.map.openings) if (o.window) this.placeBarricade(o, null, { free: true });
+  /** Every window and every door to the outside starts the round barricaded (inside doors don't). Called when the gadgets are reset for a new round. */
+  placeStartBarricades() {
+    for (const o of this.game.map.openings) if (o.window || o.exterior) this.placeBarricade(o, null, { free: true });
   }
 
   /** Remove planks (bullets, melee or a blast) and tell everyone. */
