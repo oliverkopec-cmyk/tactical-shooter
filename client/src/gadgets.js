@@ -173,7 +173,11 @@ export class GadgetView {
       group.userData.meshes = new Map();
       const opening = this.world.map.openings.find((o) => o.id === rec.openingId);
       const standing = new Set(rec.planks);
+      group.userData.segs = new Map();
+      group.userData.splinters = new Map();
+      group.userData.axis = opening ? opening.axis : 'x';
       for (const p of opening ? barricadePlanks(opening) : []) {
+        group.userData.segs.set(p.i, p);
         if (!standing.has(p.i)) continue;
         const sx = p.max[0] - p.min[0], sy = p.max[1] - p.min[1], sz = p.max[2] - p.min[2];
         const m = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), woodMats[p.i % woodMats.length]);
@@ -237,13 +241,28 @@ export class GadgetView {
     const it = this.items.get(`barricade:${id}`);
     if (!it) return [];
     const centers = [];
+    const { meshes, segs, splinters } = it.group.userData;
     for (const i of ids) {
-      const m = it.group.userData.meshes.get(i);
+      const m = meshes.get(i);
       if (!m) continue;
       centers.push([m.position.x, m.position.y, m.position.z]);
       it.group.remove(m);
-      it.group.userData.meshes.delete(i);
+      meshes.delete(i);
+      for (const s of splinters.get(i) || []) it.group.remove(s);   // the splinters of a piece that is gone
+      splinters.delete(i);
       this.world.removeBox(`bar-${id}-${i}`);
+    }
+    // Jagged, splintered edges on the planks that now border a hole
+    for (const i of ids) {
+      const seg = segs.get(i);
+      if (!seg) continue;
+      for (const side of [-1, 1]) {
+        const j = i + side;
+        const nb = segs.get(j);
+        if (!nb || nb.plank !== seg.plank || !meshes.has(j) ) continue;
+        const list = addSplinters(it.group, meshes.get(j), nb, -side, it.group.userData.axis);
+        splinters.set(j, [...(splinters.get(j) || []), ...list]);
+      }
     }
     if (it.group.userData.deco) it.group.userData.deco.visible = false;   // straps and cross go once the panel is damaged
     return centers;
@@ -390,6 +409,32 @@ export class GadgetView {
       if (led) led.visible = on;
     }
   }
+}
+
+const splinterMat = new THREE.MeshStandardMaterial({ color: 0xc9a066, roughness: 0.9 });
+
+/** A few ragged wooden spikes sticking out of the broken end of a plank segment. `dir` is -1 / +1 along the wall's running axis. */
+function addSplinters(group, mesh, seg, dir, axis) {
+  const flat = axis === 'x';
+  const span = flat ? seg.max[0] - seg.min[0] : seg.max[2] - seg.min[2];
+  const pitch = seg.max[1] - seg.min[1], thick = seg.max[flat ? 2 : 0] - seg.min[flat ? 2 : 0];
+  const end = (flat ? mesh.position.x : mesh.position.z) + dir * span / 2;
+  const out = [];
+  const n = 3 + Math.floor(Math.random() * 2);
+  for (let k = 0; k < n; k++) {
+    const len = 0.05 + Math.random() * 0.14, h = pitch * (0.12 + Math.random() * 0.25), d = thick * (0.3 + Math.random() * 0.6);
+    const m = new THREE.Mesh(new THREE.BoxGeometry(flat ? len : d, h, flat ? d : len), splinterMat);
+    const along = end + dir * (len / 2 - 0.02);
+    const y = seg.min[1] + pitch * (0.15 + 0.7 * (k + Math.random() * 0.6) / n);
+    const across = (flat ? mesh.position.z : mesh.position.x) + (Math.random() - 0.5) * thick * 0.5;
+    m.position.set(flat ? along : across, y, flat ? across : along);
+    m.rotation.y = (Math.random() - 0.5) * 0.5;
+    m.rotation.z = (Math.random() - 0.5) * 0.5;
+    m.rotation.x = (Math.random() - 0.5) * 0.3;
+    group.add(m);
+    out.push(m);
+  }
+  return out;
 }
 
 /** Two yellow straps and a cross on both faces of a barricade panel. */

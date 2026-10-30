@@ -4,7 +4,7 @@
 // time is rationed against real time so a modified client can't move or fire
 // faster by sending extra inputs.
 
-import { getMap } from '../shared/map.js';
+import { getMap, findOpening } from '../shared/map.js';
 import { createPlayerState, stepPlayer, weaponInput } from '../shared/movement.js';
 import { createWeaponState, stepWeapon, gunMobility } from '../shared/weapons.js';
 import { UTILITIES } from '../shared/utilities.js';
@@ -391,8 +391,14 @@ export class GameState {
     }
     if (this.canBreakWalls(p)) {
       const wall = raycastWorld(this.world, origin, aim, MELEE.reach);
-      if (wall?.box.kind === 'barricade') {
-        if (phase === PHASE.ACTION) this.gadgets.meleeBarricade(wall.box.barricadeId);
+      // Aiming at a barricade, even where it already has a hole: the swing is judged against the opening itself
+      const opening = findOpening(this.map, origin, aim, MELEE.reach);
+      const barricade = opening && this.gadgets.barricadeAt(opening.id);
+      const planeT = barricade ? (opening.fixed - origin[opening.axis === 'x' ? 2 : 0]) / aim[opening.axis === 'x' ? 2 : 0] : 0;
+      if (barricade && (!wall || wall.box.kind === 'barricade' || wall.t >= planeT - 0.1)) {
+        if (phase === PHASE.ACTION) this.gadgets.meleeBarricade(barricade.id, origin.map((v, k) => v + aim[k] * planeT));
+      } else if (wall?.box.kind === 'barricade') {
+        if (phase === PHASE.ACTION) this.gadgets.meleeBarricade(wall.box.barricadeId, wall.point);
       } else if (wall?.box.kind === 'panel') {
         // Each melee hit knocks out one wall panel. Reinforced walls shrug it off.
         if (this.world.isReinforcedPanel(wall.box.id)) this.io.to(id).emit('actionError', { msg: 'Reinforced walls can\'t be broken by melee.' });
