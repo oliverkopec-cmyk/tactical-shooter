@@ -111,6 +111,19 @@ io.on('connection', (socket) => {
     reply(ack, room ? room.setMap(socket.id, String(mapId)) : { error: 'Not in a room.' });
   });
 
+  socket.on('addBot', ({ team, difficulty } = {}, ack) => {
+    const room = socket.data.room;
+    reply(ack, room ? room.addBot(socket.id, String(team), String(difficulty)) : { error: 'Not in a room.' });
+  });
+  socket.on('fillBots', ({ difficulty } = {}, ack) => {
+    const room = socket.data.room;
+    reply(ack, room ? room.fillBots(socket.id, String(difficulty)) : { error: 'Not in a room.' });
+  });
+  socket.on('removeBot', (botId, ack) => {
+    const room = socket.data.room;
+    reply(ack, room ? room.removeBot(socket.id, String(botId)) : { error: 'Not in a room.' });
+  });
+
   socket.on('setMode', (mode, ack) => {
     const room = socket.data.room;
     reply(ack, room ? room.setMode(socket.id, String(mode)) : { error: 'Not in a room.' });

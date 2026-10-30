@@ -26,6 +26,7 @@ import { PoseHistory, resolveShot } from './combat.js';
 import { Destruction } from './destruction.js';
 import { Defuser } from './defuser.js';
 import { KillcamRecorder } from './killcam.js';
+import { BotBrains } from './bots.js';
 import { VOICE_LINES, VOICE_COOLDOWN, PING_TYPES, PING } from '../shared/voiceLines.js';
 import { RoundManager } from './rounds.js';
 import { Gadgets } from './abilities.js';
@@ -42,6 +43,7 @@ export class GameState {
     this.destruction = new Destruction(this);
     this.mode = room.mode || 'standard';
     this.killcam = new KillcamRecorder();   // last few seconds of everyone, for the killcam
+    this.bots = new BotBrains(this);        // drives any bot players (server/bots.js)
     this.defuser = new Defuser(this);
     this.rounds = new RoundManager(this);
     this.gadgets = new Gadgets(this);
@@ -125,11 +127,12 @@ export class GameState {
     const leaving = this.players.get(id);
     // Walking out of a match that is still going counts as a forfeit (no reward, rank points lost)
     const started = this.rounds.round > 1 || this.rounds.phase !== PHASE.INTRO;
-    if (leaving && !this.settled && started && leaving.stats.rounds >= 1 && leaving.member.accountId) {
+    if (leaving && !this.settled && started && leaving.stats.rounds >= 1 && leaving.member.accountId && !this.room.hasBots) {
       this.room.progression?.forfeit(leaving.member.accountId).catch((err) => console.error('Forfeit failed:', err.message));
     }
     if (leaving) this.defuser.onGone(id, leaving);
-    this.killcam.forget(id);   // a leaving carrier drops the defuser
+    this.killcam.forget(id);
+    this.bots.forget(id);   // a leaving carrier drops the defuser
     this.players.delete(id);
     this.revealed.attack.delete(id);
     this.revealed.defense.delete(id);
@@ -802,6 +805,7 @@ export class GameState {
         kills: p.kills, deaths: p.deaths, headshots: p.stats.headshots, plants: p.stats.plants, reinforced: p.stats.reinforced,
         barricades: p.stats.barricades, utilities: p.stats.utilities, objSecs: p.stats.objSecs,
         score: { yours: scores[squad], theirs: scores[other] },
+        withBots: this.room.hasBots,          // bots in the match: half Money, no rank points
       };
       progression.settle(accountId, match)
         .then((summary) => { if (summary) this.io.to(id).emit('matchSummary', summary); })
@@ -838,6 +842,7 @@ export class GameState {
     const wallNow = Date.now();
 
     const phase = this.rounds.phase;
+    if (this.room.hasBots) this.bots.update(wallNow, realDt);   // bots write their inputs first, then everyone is simulated alike
     for (const [id, p] of this.players) {
       if (!p.alive) continue;
       p.timeBudget = Math.min(MAX_TIME_BUDGET, p.timeBudget + realDt);
