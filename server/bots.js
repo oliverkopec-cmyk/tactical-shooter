@@ -144,6 +144,7 @@ export class BotBrains {
       if (!p.alive) continue;
       if (now >= (b.nextThink || 0)) { b.nextThink = now + THINK_MS; this.think(b, id, p, now); }
       const keys = this.steer(b, id, p, now, dt);
+      if (!Number.isFinite(b.yaw) || !Number.isFinite(b.pitch)) { b.yaw = p.state.yaw || 0; b.pitch = 0; b.yawVel = 0; b.pitchVel = 0; }
       // One input per tick (split if the tick was long), exactly like a client would send. rt = now: a bot has no
       // network delay, so its shots are checked against where players are now (not rewound into the past).
       let left = Math.min(dt, 0.25);
@@ -251,7 +252,7 @@ export class BotBrains {
       }
       b.target = best;
       b.lastSeen = now;
-      b.lastSeenPos = this.targetPos(best);
+      b.lastSeenPos = best.drone ? null : this.targetPos(best);   // only people are worth shooting at after they hide
     } else if (b.target && now - b.lastSeen > 250) b.target = null;
 
     // ---- hearing: enemy footsteps nearby, recent shots and explosions
@@ -330,7 +331,7 @@ export class BotBrains {
   /** Where to aim on a target: the head for good bots (most of the time), else the chest. */
   targetPos(t) {
     const g = this.game;
-    if (t.drone) { const d = g.drones.get(t.id); return d ? [d.state.x, d.state.y + 0.12, d.state.z] : null; }
+    if (t.drone) { const d = g.drones.get(t.id); return d ? [d.state.x, d.state.y + 0.12, d.state.z, d.state.y + 0.12] : null; }
     const q = g.players.get(t.id);
     if (!q) return null;
     const s = q.state;
@@ -738,6 +739,7 @@ export class BotBrains {
 
   /** Turn the view towards (yaw, pitch) like a hand on a mouse: a damped spring with a top speed. */
   aimAt(b, wantYaw, wantPitch, dt, fast) {
+    if (!Number.isFinite(wantYaw) || !Number.isFinite(wantPitch)) return;      // never feed a bad number into the game
     const w = fast ? b.diff.spring : Math.max(8, b.diff.spring * 0.7);
     const ey = wrap(wantYaw - b.yaw), ep = wantPitch - b.pitch;
     b.yawVel += (w * w * ey - 2 * w * b.yawVel) * dt;
@@ -854,7 +856,10 @@ export class BotBrains {
       if (fwd > 0.38) keys |= KEY.FORWARD; else if (fwd < -0.38) keys |= KEY.BACK;
       if (right > 0.38) keys |= KEY.RIGHT; else if (right < -0.38) keys |= KEY.LEFT;
       const facing = Math.abs(rel) < 0.35;
-      if (facing && !t && !b.alert && !b.pushing && !drone && !(b.watch && b.diff.tactics)) keys |= KEY.SPRINT;
+      // Sprint on the way in while nothing is close; walk (pre-aiming) once a threat or the site is near
+      const nearThreat = b.alert && (b.alert.d ?? 99) < 18;
+      const nearSite = b.siteIdx !== undefined && dist2([p.state.x, 0, p.state.z], [this.game.map.sites[b.siteIdx].x, 0, this.game.map.sites[b.siteIdx].z]) < 14;
+      if (facing && !t && !nearThreat && !nearSite && !b.cover && !drone && !b.crouchPost) keys |= KEY.SPRINT;
       if (drone && facing) keys |= KEY.SPRINT;
     }
     // Crouch: holding a post, in cover, and sometimes mid-fight (hard to hit)
