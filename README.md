@@ -165,6 +165,88 @@ Six new operators, bought with Money in the Operators tab (the original eight an
 - **Sound** is positional: you hear other players from the right direction, quieter and duller with distance, through walls and from another floor. Footsteps: sprinting is loud and carries about 40 m, walking about 14 m, crouch-walking only a couple of metres. Also reloading, landing from a fall, barricades and walls breaking, gadgets being placed, melee swings and drone motors. Volume is in the settings menu
 - Defenders reinforce wall sections (V, 10 per team): darker, immune to bullets and basic charges; only a heavy charge (Spark, stage 6) breaks them
 
+## Planned: later stages
+
+Written down so they aren't forgotten (see Status for what is built). They are built one at a time, one PR each, and the next one starts once the previous is confirmed. Server memory must stay low enough for Render's 512 MB plan.
+
+### Stage 20 - Owner, admin tools
+
+- The owner is set with the `OWNER_USERNAME` environment variable on Render and extra admins with `ADMIN_USERNAMES` (comma-separated). There is no way to become owner or admin from inside the game. The owner is automatically an admin.
+- **Owner badge:** a gold "OWNER" tag next to the owner's name everywhere names appear (menu top bar, lobby, scoreboard, kill feed, end-of-match screen, friends list). Nobody else can get it.
+- The server checks admin status on every admin action.
+- **Admin tab** (only visible to admins):
+  - All online accounts: username, rank, level, and whether they're in the menu, a lobby or a match.
+  - All active matches: room code, map, players on each team, score, round.
+  - Join any match as an invisible spectator (free camera, can follow any player), or join it as a player on either team if there's space.
+
+### Stage 21 - Gun rework and charms
+
+- Rebuild every gun model with much more detail, built from many shapes in code (no external assets): receiver, barrel, handguard, stock, grip, trigger guard, magazine, sights/optic, muzzle, rails, and details like bolts and vents. Each gun gets a recognisable silhouette for its type (assault rifle, SMG, shotgun, LMG, marksman rifle, pistol, revolver, machine pistol). Original designs, not copies of real branded guns.
+- Split each gun into named parts (body, barrel, stock, magazine, etc.) so skins can colour parts differently and patterns look good on them.
+- Update every skin to use the new parts, and make sure the first-person view, third-person view, menu scene, Operators tab and crate opening all use the new models.
+- Simple animations: the magazine comes out and goes in on reload, the bolt or slide moves when firing.
+- **Gun charms:** small objects hanging from the side of the gun that swing with movement and recoil. About 30 original charms (a small skull, a dice, a medal, a tiny shield, a star, a legendary Polish eagle coloured like the Polish flag, and so on) in the same four rarities as skins.
+  - Charms unlock by levelling up (one every few levels) and from a charm crate in the shop (Money only, same odds, duplicate refund and opening animation as skin crates).
+  - Equip one charm per gun in the Operators tab. Other players see it.
+
+### Stage 22 - Vaulting, rappelling, hatches and defender run-out detection
+
+- **Vault:** look at a low obstacle or an open or broken window and press Space to vault over or through it with a short animation. You can't vault through an intact barricade.
+- **Rappelling** (all players, outside walls only):
+  - Press a free (rebindable) key at the edge of the roof, or while facing an outside wall, to attach a rope.
+  - Climb up and down the wall with W/S and move sideways with A/D. At the top, climb onto the roof; at the bottom, drop off.
+  - You can shoot while rappelling, with more spread.
+  - Hold a key to flip upside down and look in through a window from above.
+  - Press Space at a window to swing in through it. This breaks a barricade if there is one.
+  - Rappelling is visible and audible to others, and you can be shot.
+- **Hatches:** square breakable panels in some floors and roofs. Covers that can be broken with melee or breach charges. Once open, players can drop through (drones can't fall in). Defenders can reinforce hatches during prep like walls.
+- Rope anchor points on the roof and hatches on all maps.
+- **Defender run-out detection** (action phase only):
+  - When a defender leaves the main building, a 3-second countdown with a warning appears on their screen.
+  - If they're still outside when it hits 0, they're "detected": every attacker sees them highlighted red through walls, and their own screen shows "DETECTED".
+  - It stops as soon as they're back inside (after a 1-second delay), and the countdown resets.
+  - The server decides inside/outside using a building boundary for each map, so it can't be cheated.
+
+### Stage 23 - Defuser objective mode
+
+- A new game mode the host picks in the lobby, alongside the current one.
+- One random attacker carries the defuser (shown on teammates' screens). If they die, it drops and any attacker can pick it up.
+- Attackers plant it at the defenders' chosen site (hold a key for 7 seconds). Once planted, it counts down 45 seconds.
+- Defenders win by disabling it (hold a key for 7 seconds), eliminating all attackers before it's planted, or running out the timer before a plant. Attackers win if the countdown finishes, or by eliminating all defenders.
+- Clear sounds and on-screen alerts for planting, planted and disabling.
+
+### Stage 24 - Ping system and voice lines
+
+- Middle mouse (rebindable) places a ping where you aim, visible to your team only, lasting 5 seconds. Pinging an enemy marks them with a short marker if they're in your view. Pinging a gadget or wall labels it.
+- A ping wheel (hold the ping key): "Enemy here", "Go here", "Danger", "Need help", "Defending here".
+- Operator voice lines using the browser's speech synthesis, with a different voice pitch per operator: for abilities, utilities, reloading, pings, getting a kill, spotting enemies, planting and disabling. Short lines, with a cooldown so they don't spam. Teammates hear them with direction. A setting turns voice lines off.
+- All voice line text lives in one file so recorded audio can be swapped in later.
+
+### Stage 25 - Killcam
+
+- After you die, a 4-second replay of your death from the killer's view (their position, aim and shots), then spectating. Skippable.
+- Shows the killer's operator, gun (with skin and charm), and remaining health.
+- Uses data the server already has. Memory use stays low (only the last few seconds per player are kept).
+
+### Stage 26 - Bots
+
+- The host can fill empty slots with bots in the lobby, with difficulty Easy, Normal or Hard (reaction time and accuracy).
+- Bots pick operators, use abilities and utilities, drone during prep, reinforce walls and barricade as defenders, use vaulting, rappelling and hatches, and play both objective modes.
+- Bots run on the server and are light on memory and CPU.
+- Matches with bots give reduced Money and no rank points.
+
+### Stage 27 - Placing gadgets takes time
+
+- Placing anything (claymores, barbed wire, cameras, jammers, shields, breach charges, barricades, reinforcing walls and hatches) takes time instead of being instant.
+- While placing, a circle outline appears in the middle of the screen and fills up clockwise. When it's full, the item is placed. The item's name shows under the circle.
+- Placing times (adjusted if they feel wrong): claymore, camera, barbed wire 1 s; jammer, breach charge 1.5 s; deployable shield, barricade 1 s; reinforcing a wall or hatch keeps its current time but uses the circle.
+- Hold the key to keep placing. Letting go, getting shot, sprinting or switching weapons cancels it, and the item isn't used up.
+- While placing you move slowly and can't shoot.
+- A ghost preview of the item shows where it will go: white if the spot is valid, red if it isn't.
+- Placing animation: in first person your hands lower the item into place (kneeling for floor items like claymores and wire, reaching forward for wall items like cameras and charges). Other players see your character doing the same, so they know you're placing something.
+- A short placing sound that others nearby can hear.
+- The server times the placement, so it can't be skipped by cheating.
+
 ## Run locally
 
 ```bash
