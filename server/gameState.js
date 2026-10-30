@@ -25,6 +25,7 @@ import {
 import { PoseHistory, resolveShot } from './combat.js';
 import { Destruction } from './destruction.js';
 import { Defuser } from './defuser.js';
+import { KillcamRecorder } from './killcam.js';
 import { VOICE_LINES, VOICE_COOLDOWN, PING_TYPES, PING } from '../shared/voiceLines.js';
 import { RoundManager } from './rounds.js';
 import { Gadgets } from './abilities.js';
@@ -40,6 +41,7 @@ export class GameState {
     this.world = new World(this.map);
     this.destruction = new Destruction(this);
     this.mode = room.mode || 'standard';
+    this.killcam = new KillcamRecorder();   // last few seconds of everyone, for the killcam
     this.defuser = new Defuser(this);
     this.rounds = new RoundManager(this);
     this.gadgets = new Gadgets(this);
@@ -126,7 +128,8 @@ export class GameState {
     if (leaving && !this.settled && started && leaving.stats.rounds >= 1 && leaving.member.accountId) {
       this.room.progression?.forfeit(leaving.member.accountId).catch((err) => console.error('Forfeit failed:', err.message));
     }
-    if (leaving) this.defuser.onGone(id, leaving);   // a leaving carrier drops the defuser
+    if (leaving) this.defuser.onGone(id, leaving);
+    this.killcam.forget(id);   // a leaving carrier drops the defuser
     this.players.delete(id);
     this.revealed.attack.delete(id);
     this.revealed.defense.delete(id);
@@ -600,6 +603,7 @@ export class GameState {
     this.world.reset();
     this.destruction.reset();
     this.defuser.reset();
+    this.killcam.reset();
     this.history.frames.length = 0;
     this.revealed.attack.clear();
     this.revealed.defense.clear();
@@ -866,6 +870,7 @@ export class GameState {
     if ((phase === PHASE.PREP || phase === PHASE.ACTION) && this.tick % 6 === 0) this.updateSiteReveal();
     this.destruction.update(wallNow);
     this.history.record(wallNow, this.players);
+    this.killcam.record(wallNow, this.players);
     if (this.tick % 12 === 0 && (phase === PHASE.PREP || phase === PHASE.ACTION)) this.updateVision(wallNow);
     if (this.rosterDirty && wallNow - this.lastRoster >= 100) this.sendRoster();
     if (this.tick % Math.round(TICK_RATE / SNAPSHOT_RATE) === 0) this.broadcastSnapshot();
@@ -935,6 +940,7 @@ export class GameState {
     // Others see a tracer; the shooter already drew its own predicted one.
     // The gun is named only to teams that know who the shooter is (otherwise it would give the operator away)
     const ends = shot.pellets.map((p) => p.end.map(round2));
+    this.killcam.shot(shooterId, now, ends);
     for (const [pid, q] of this.players) {
       if (pid === shooterId) continue;
       this.io.to(pid).emit('shot', { id: shooterId, w: this.canSee(q.member.team, shooter) ? shooter.weapon.id : null, ends });
@@ -987,6 +993,9 @@ export class GameState {
     this.gadgets.cancelBarricade(victimId, 'You were eliminated.');
     this.destruction.cancelReinforce(victimId, 'You were eliminated.');
     this.defuser.onGone(victimId, victim);
+    // The victim gets a replay of the last seconds from the killer's eyes
+    const killerP = this.players.get(killerId);
+    if (killerP && killerId !== victimId) this.io.to(victimId).emit('killcam', this.killcam.build(Date.now(), killerId, killerP, victimId, victim));
     this.emitAll('kill', { killer: killerId, victim: victimId, weapon: weaponId, head });
     victim.deaths++;
     const killer = this.players.get(killerId);

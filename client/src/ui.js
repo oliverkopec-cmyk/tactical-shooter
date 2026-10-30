@@ -178,6 +178,23 @@ export class UI {
     if (text !== this.lastRunOut) { this.lastRunOut = text; $('runout-text').textContent = text; $('runout-sub').textContent = runout.detected ? 'Every attacker can see you. Get back inside!' : 'Get back inside or the attackers will see you'; }
   }
 
+  /** The killcam banner: who killed you, with what, and how much health they had left. */
+  showKillcam(k) {
+    const el = $('killcam');
+    el.classList.remove('hidden');
+    $('killcam-who').innerHTML = `<span class="kc-name ${k.team}">${escapeHtml(k.name)}</span> <span class="muted">· ${escapeHtml(k.op)}</span>`;
+    $('killcam-gun').textContent = `${k.gun} · ${k.skin}${k.charm ? ` · ${k.charm} charm` : ''}`;
+    $('killcam-hp').style.width = `${Math.max(0, Math.min(100, k.health))}%`;
+    $('killcam-hp-text').textContent = `${k.health} health left`;
+    $('killcam-skip').textContent = k.skipKey;
+    $('death-overlay').classList.add('under-killcam');
+  }
+
+  hideKillcam() {
+    $('killcam').classList.add('hidden');
+    $('death-overlay').classList.remove('under-killcam');
+  }
+
   /** The ping wheel: choices around a circle (clockwise from the top), the one pointed at highlighted. */
   showWheel(choices, selected) {
     const el = $('ping-wheel');

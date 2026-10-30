@@ -2,7 +2,14 @@
 
 A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite on the client, Node.js + Socket.IO on an authoritative server. One Node process serves both the game client and the realtime server, so the whole thing deploys as a single Render web service.
 
-## Status: Stage 24 (pings and voice lines)
+## Status: Stage 25 (killcam)
+
+- **Killcam:** when another player kills you, you watch a **4 second replay** of your death **through the killer's eyes**: their movement and aim, their gun firing on each of their shots (with tracers and the sound), and your own body going down where you stood. Then spectating carries on as before. **Click, Space or Enter skips it.**
+- **Shown during it:** a red-edged KILLCAM banner with the killer's name and operator, their gun with its **skin and charm**, and the **health they had left** (a bar and a number). The gun in view is their actual gun, skin and charm.
+- **Server:** `server/killcam.js` keeps only the last 4.5 seconds of each player's movement (20 samples a second, about 90 small arrays each) and of their shots, so memory stays tiny. On a kill it sends the victim just the last 4 seconds of the killer's and the victim's movement, the killer's shots in that time, and their operator, gun, skin, charm and health. Nothing new is recorded on the client. No killcam when you kill yourself (your own charge, say).
+- The replay is driven by real time, so a slow frame rate can't stretch it past 4 seconds.
+
+### Earlier: Stage 24 (pings and voice lines)
 
 - **Team pings:** the **middle mouse button** (rebindable: "Ping (tap) / ping wheel (hold)") in prep or action.
   - **Tap:** pings what you aim at, for **your team only**, for **5 seconds**: a coloured diamond with a label and your name, seen through walls, with a chirp from where it landed. The server traces your aim itself. If an **enemy in plain view** is under the crosshair it becomes an "Enemy" ping and that enemy is **marked for 2 seconds** (the usual red arrow); behind a wall they are not. Otherwise the ping names what it hit: Claymore, Jammer, Shock trap, Barbed wire, Breach charge, Shield, Barricade, Hatch / Reinforced hatch, Soft wall / Reinforced wall, Wall, or just "Ping". Defenders' hidden cameras are only named for defenders.
@@ -224,12 +231,6 @@ Six new operators, bought with Money in the Operators tab (the original eight an
 
 Written down so they aren't forgotten (see Status for what is built). They are built one at a time, one PR each, and the next one starts once the previous is confirmed. Server memory must stay low enough for Render's 512 MB plan.
 
-### Stage 25 - Killcam
-
-- After you die, a 4-second replay of your death from the killer's view (their position, aim and shots), then spectating. Skippable.
-- Shows the killer's operator, gun (with skin and charm), and remaining health.
-- Uses data the server already has. Memory use stays low (only the last few seconds per player are kept).
-
 ### Stage 26 - Bots
 
 - The host can fill empty slots with bots in the lobby, with difficulty Easy, Normal or Hard (reaction time and accuracy).
@@ -296,6 +297,7 @@ shared/            Code used by BOTH client and server
   charms.js        the 30 gun charms, level rewards and the charm crate odds
 server/
   index.js         Express static hosting + Socket.IO events
+  killcam.js       the last 4.5 s of everyone's movement and shots, sent to a player who is killed
   defuser.js       the Defuser mode: carrier, drop, plant, countdown, disable
   roles.js         owner and admin lookup from the environment variables
   admin.js         the admin tools: online list, matches, join as spectator or player
