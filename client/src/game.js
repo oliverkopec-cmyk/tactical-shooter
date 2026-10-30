@@ -166,13 +166,8 @@ export class Game {
     network.on('barricadeBroken', ({ id, ids }) => {
       if (!this.running) return;
       const centers = this.gadgets.breakPanels(id, ids);
-      for (const c of centers) this.effects.debris(c, 0x8a5a2b, 3);
+      for (const c of centers) this.effects.debris(c, 0x3f7a2e, 2);
       if (centers.length) this.sound.woodBreak(centers[0]);
-    });
-    network.on('barricadeHit', ({ pos }) => {
-      if (!this.running || !pos) return;
-      this.effects.debris(pos, 0x8a5a2b, 1);
-      this.sound.woodBreak(pos);
     });
     network.on('melee', ({ id }) => {
       const r = this.remotes.get(id);
