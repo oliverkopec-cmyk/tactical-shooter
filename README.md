@@ -2,7 +2,19 @@
 
 A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite on the client, Node.js + Socket.IO on an authoritative server. One Node process serves both the game client and the realtime server, so the whole thing deploys as a single Render web service.
 
-## Status: Stage 20 (owner and admin tools)
+## Status: Stage 21 (gun rework and charms)
+
+- **Every gun rebuilt with far more detail**, all drawn in code (no image or model files), in `client/src/gunModels.js`: receiver, handguard, barrel, muzzle device, rails with teeth, stock, grip, trigger and trigger guard, magazine, sights or optics, ejection ports, vents, bolt and more (up to about 100 small shapes per gun). Eight original designs with their own silhouettes: assault rifle, SMG, shotgun (pump, shell loops, tube magazine), LMG (box magazine with belt, carry handle, bipod), marksman rifle (long scope, bipod), pistol, revolver (cylinder with six chambers, hammer) and machine pistol. Guns of the same type differ by their optic (red dot, scope or iron sights) and muzzle device (flash hider, compensator or suppressor), picked from the gun's id, so they don't all look alike. None copies a real branded gun.
+- **Named parts with roles:** every part has a name (`receiver.main`, `barrel.main`, `magazine.body`, `stock.tube`...) and a role: **body** (receiver, handguard, slide), **accent** (stock, grip, magazine, trigger guard), **steel** (barrel, muzzle, rails, bolt) and **trim** (sights, optic housing, vents), plus unchanging glass.
+- **Skins use the parts:** every skin now has `body`, `accent`, optional `steel` and `trim` colours, so the barrel, the furniture and the sights can each get their own look (a gilded skin has gold metal, circuit has glowing cyan sights, and so on). Patterns (stripes, camo, circuit, flames, void) are drawn on every body part, including the handguard and slide, and glow on bright skins.
+- **Used everywhere:** the first-person view, other players' hands, the menu stage, the Operators tab and the crate opening all build their guns from the same function.
+- **Animations:** the bolt, slide or pump kicks back with every shot (the revolver turns its cylinder and drops its hammer), and during a reload the magazine drops out and slides back in. Other players' guns animate the same way.
+- **Gun charms:** 30 original charms hang from the left side of a gun on a short string and swing like a pendulum with movement and recoil (a faint idle sway when still). Common (12): Dog Tag, Brass Bullet, Lucky Dice, Padlock, Old Key, Cog, Four-Leaf Clover, Horseshoe, Feather, Gold Coin, Compass, Hex Nut. Rare (9): Little Skull, Service Medal, Tiny Shield, Gold Star, Heart, Crescent Moon, Mini Grenade, Lightning Bolt, Anchor. Epic (6): Crown, Cut Diamond, Dragon Fang, Crystal Orb, Toy Rocket, Living Flame. Legendary (3): **White Eagle** (the Polish white eagle with a gold crown and beak, on a red shield with a white band: the colours of the Polish flag), Golden Dragon, Galaxy Orb.
+  - **How you get them:** levelling up gives a charm **every 2 levels** (level 2 Dog Tag, 4 Brass Bullet, 6 Lucky Dice ... up to level 30; the list is the 12 commons, then Little Skull, Service Medal and Tiny Shield). Levels are worked out on the server, so nothing extra is stored. The **Charm crate** in the Shop (first card) holds all 30: 900 Money, the same odds as skin crates (Common 60%, Rare 25%, Epic 12%, Legendary 3%), a **duplicate refunds 450 Money**, and the same opening animation (the charm rises out of the crate). The server takes the Money and draws the charm.
+  - **Equipping:** one charm per gun, in the Operators tab under the gun's skins (locked ones show the level that unlocks them and send you to the Shop when clicked). Other players see your charm: it is part of the loadout the server sends with the match.
+  - **Server:** two new columns (`owned_charms`, `equipped_charms`) are added automatically. `PUT /api/equip/charm` checks you own the charm; `POST /api/crates/charm` is locked per account like the skin crates.
+
+### Earlier: Stage 20 (owner and admin tools)
 
 - **Owner and admins come from environment variables**, never from inside the game: `OWNER_USERNAME` (one username) and `ADMIN_USERNAMES` (comma-separated, optional). The owner is automatically an admin. Usernames are matched ignoring upper/lower case. See "Owner and admins" below for how to set them.
 - **Owner badge:** a gold **OWNER** tag next to the owner's name in the menu top bar, the room lobby, the Tab scoreboard, the kill feed, the end-of-match screen and the Friends tab (friends, search results, requests and the party). The server tells clients who the owner is; nobody else can get the tag.
@@ -171,7 +183,7 @@ Six new operators, bought with Money in the Operators tab (the original eight an
 - **Melee (right click):** 45 damage to an enemy in front of you (about 2 m), 0.8 s cooldown. It also smashes barricades (3 hits break one completely), knocks out **one wall panel per hit** (never a reinforced wall), and attackers can use it to smash cameras
 - **Barricades (B, defenders, prep only):** nail wooden planks over a doorway or window (1 second, 8 per team per round, not while someone stands in the gap). A barricade is a solid panel of 7 thin wooden planks with a diagonal X over the front (`barricadePlanks()` in `shared/barricade.js`); a door's has a 0.32 m open gap at the bottom that a drone can drive through but a player can't, a window's is closed: bullets (2 rifle hits per plank) break planks one by one, each melee hit breaks one grid section (a third of the width, 2 planks tall, at the height you aim) and the 3rd breaks the whole barricade, while a breach charge or a grenade destroys it at once. Each plank is 3 segments (`barricadePlanks()` returns 21 for the 7 planks), index = plank * 3 + column. Planks block movement and bullets until broken. Windows and outside doors start every round already barricaded for free (`Gadgets.placeStartBarricades`)
 - **Props:** furniture, crates, barrels, concrete barriers, pallets, planters and parked vehicles inside and outside the building. They are solid, so waist-high ones are cover; rugs, pictures, monitors and plants are decoration only
-- **Player models:** other players are drawn as a humanoid with helmet, head, vest, arms holding the gun, and bending legs with a walk cycle, crouch pose and a melee swing
+- **Player models:** other players are drawn as a humanoid with helmet, head, vest, arms holding the (detailed, skinned, charmed) gun, and bending legs with a walk cycle, crouch pose and a melee swing
 - **Three objective sites** in different rooms (upstairs office, ground-floor back room, upstairs west room). During operator select the defenders vote on one (ties and no votes are settled at random). Attackers aren't told which; a drone that gets within 6 m with a clear view of the objective, or an attacker walking into its zone, reveals it to everyone. Defenders start in or right next to the site they voted for (five spawn points per site, facing the objective); they are moved there the moment the vote is decided. Only the chosen site can be captured, the three boxes look identical, and the zone ring and "Objective:" label only appear once you know the site
 - **Sound** is positional: you hear other players from the right direction, quieter and duller with distance, through walls and from another floor. Footsteps: sprinting is loud and carries about 40 m, walking about 14 m, crouch-walking only a couple of metres. Also reloading, landing from a fall, barricades and walls breaking, gadgets being placed, melee swings and drone motors. Volume is in the settings menu
 - Defenders reinforce wall sections (V, 10 per team): darker, immune to bullets and basic charges; only a heavy charge (Spark, stage 6) breaks them
@@ -179,16 +191,6 @@ Six new operators, bought with Money in the Operators tab (the original eight an
 ## Planned: later stages
 
 Written down so they aren't forgotten (see Status for what is built). They are built one at a time, one PR each, and the next one starts once the previous is confirmed. Server memory must stay low enough for Render's 512 MB plan.
-
-### Stage 21 - Gun rework and charms
-
-- Rebuild every gun model with much more detail, built from many shapes in code (no external assets): receiver, barrel, handguard, stock, grip, trigger guard, magazine, sights/optic, muzzle, rails, and details like bolts and vents. Each gun gets a recognisable silhouette for its type (assault rifle, SMG, shotgun, LMG, marksman rifle, pistol, revolver, machine pistol). Original designs, not copies of real branded guns.
-- Split each gun into named parts (body, barrel, stock, magazine, etc.) so skins can colour parts differently and patterns look good on them.
-- Update every skin to use the new parts, and make sure the first-person view, third-person view, menu scene, Operators tab and crate opening all use the new models.
-- Simple animations: the magazine comes out and goes in on reload, the bolt or slide moves when firing.
-- **Gun charms:** small objects hanging from the side of the gun that swing with movement and recoil. About 30 original charms (a small skull, a dice, a medal, a tiny shield, a star, a legendary Polish eagle coloured like the Polish flag, and so on) in the same four rarities as skins.
-  - Charms unlock by levelling up (one every few levels) and from a charm crate in the shop (Money only, same odds, duplicate refund and opening animation as skin crates).
-  - Equip one charm per gun in the Operators tab. Other players see it.
 
 ### Stage 22 - Vaulting, rappelling, hatches and defender run-out detection
 
@@ -290,6 +292,7 @@ shared/            Code used by BOTH client and server
   keybinds.js      rebindable actions, default keys, key names, keybind cleaning
   progression.js   rank ladder, level maths, daily quest definitions
   skins.js         gun skin catalog: rarities, colours, patterns
+  charms.js        the 30 gun charms, level rewards and the charm crate odds
 server/
   index.js         Express static hosting + Socket.IO events
   roles.js         owner and admin lookup from the environment variables

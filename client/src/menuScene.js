@@ -7,6 +7,7 @@ import { TEAM_COLORS } from '../../shared/constants.js';
 import { OPERATORS } from '../../shared/operators.js';
 import { RemotePlayer } from './avatars.js';
 import { makeGunModel } from './weapons.js';
+import { attachCharm } from './charmModels.js';
 import { CrateSequence } from './crateScene.js';
 
 const CAMERA = { y: 1.6, z: 6.8, lookY: 1.15 };
@@ -53,7 +54,7 @@ export class MenuScene {
     this.showcase = null;
     this.showcaseKey = '';
     this.mode = 'play';
-    this.look = { team: 'attack', operatorId: 'recruit_atk', weaponId: 'rifle', skinId: null };
+    this.look = { team: 'attack', operatorId: 'recruit_atk', weaponId: 'rifle', skinId: null, charmId: null };
     this.userYaw = 0;
     this.targetX = 0;
     this.x = 0;
@@ -116,22 +117,25 @@ export class MenuScene {
   /** What to show: { team, operatorId, weaponId, skinId } */
   setLook(look) {
     this.look = { ...this.look, ...look };
-    const { team, operatorId, weaponId, skinId } = this.look;
+    const { team, operatorId, weaponId, skinId, charmId } = this.look;
     if (!this.avatar || this.avatarTeam !== team) this.buildAvatar(team);
     this.avatar.setOperator(operatorId);
     this.avatar.skins = { [weaponId]: skinId };
+    this.avatar.charms = { [weaponId]: charmId };
     this.avatar.weaponId = null;                 // force the gun to be rebuilt with the new skin
     this.avatar.setWeapon(weaponId);
     const color = OPERATORS[operatorId]?.color ?? TEAM_COLORS[team];
     this.ringMat.color.setHex(color);
     this.rim.color.setHex(color);
 
-    const key = `${weaponId}|${skinId || ''}`;
+    const key = `${weaponId}|${skinId || ''}|${charmId || ''}`;
     if (key !== this.showcaseKey) {
       this.showcaseKey = key;
       if (this.showcase) this.scene.remove(this.showcase);
       const holder = new THREE.Group();
       const gun = makeGunModel(weaponId, skinId);
+      attachCharm(gun, charmId);
+      this.showcaseGun = gun;
       gun.userData.hold && gun.position.set(0, 0, 0);
       gun.scale.multiplyScalar(1.45);
       gun.traverse((o) => { if (o.isMesh) o.castShadow = true; });
@@ -186,6 +190,8 @@ export class MenuScene {
     if (this.showcase?.visible) {
       this.showcase.rotation.y = this.time * 0.7;
       this.showcase.position.y = 1.2 + Math.sin(this.time * 1.4) * 0.05;
+      const charm = this.showcaseGun?.userData.charm;
+      if (charm) { charm.push(Math.sin(this.time * 2.1) * 0.1 * dt * 12, Math.cos(this.time * 1.7) * 0.06 * dt * 12); charm.update(dt, this.showcase.position); }
     }
     this.renderer.render(this.scene, this.camera);
   }

@@ -963,3 +963,8 @@ button.small { font-size: 12px; padding: 4px 10px; margin-top: 6px; }
 #spec-bar.hidden { display: none; }
 #spec-bar .spec-badge { color: #ffd23c; font-weight: 700; font-size: 11px; letter-spacing: 0.08em; }
 #hud.spectating #crosshair, #hud.spectating #hitmarker, #hud.spectating #health-box, #hud.spectating #ammo-box { display: none; }
+
+/* Charms: the Operators tab grid and the shop card */
+.charm-dot { display: grid; place-items: center; font-weight: 800; color: rgba(0, 0, 0, 0.55); border-radius: 6px; }
+.charm-none { background: repeating-linear-gradient(45deg, #2a3038, #2a3038 4px, #1a1f25 4px, #1a1f25 8px); }
+.charm-crate-icon { display: block; font-size: 30px; line-height: 40px; text-align: center; color: #f0a020; }

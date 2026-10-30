@@ -313,6 +313,7 @@ export class Game {
 
     this.myTeam = me.team;
     this.mySkins = me.skins || {};   // my equipped gun skins, drawn on my own gun
+    this.myCharms = me.charms || {};   // and my gun charms
     this.myOwned = me.owned || [];   // operators I own (the select screen locks the others)
     this.members.clear();
     for (const p of payload.players) this.members.set(p.id, { name: p.name, team: p.team, owner: !!p.owner });
@@ -1000,7 +1001,7 @@ export class Game {
     this.ui.setHint(this.hintText(watching, inDrone));
     this.ui.renderBoard(this.boardOn, this.boardRows(), this.round.scores);
 
-    this.viewModel.setWeapon(local.weapon.id, this.mySkins[local.weapon.id]);
+    this.viewModel.setWeapon(local.weapon.id, this.mySkins[local.weapon.id], this.myCharms?.[local.weapon.id]);
     const w = local.weaponDef;
     this.viewModel.update(dt, {
       speed: Math.hypot(s.vx, s.vz),

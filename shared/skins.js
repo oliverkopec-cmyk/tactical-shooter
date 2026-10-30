@@ -1,8 +1,10 @@
 // Gun skins. A skin recolours a gun and can add a pattern drawn in code (no
 // image files). Any skin fits any gun; each gun has its own equipped skin.
 //
-//   body / accent   replace the gun's own two colours
-//   pattern         'solid' | 'stripes' | 'camo' | 'circuit' | 'flames' | 'void'
+//   body / accent   the gun's body parts (receiver, handguard, slide) and furniture (stock, grip, magazine)
+//   steel / trim    optional: the metal parts (barrel, muzzle, rails, bolt) and the small parts (sights,
+//                   optic housing, vents); left out, they keep their default dark colours
+//   pattern         'solid' | 'stripes' | 'camo' | 'circuit' | 'flames' | 'void' (drawn on the body parts)
 //   mark            colour of the pattern marks
 //   metal / glow    how shiny (0-1) and how much it glows (0-1)
 
@@ -15,22 +17,22 @@ export const RARITIES = {
 
 export const SKINS = {
   // ---------------------------------------------------------------- common (every account owns these)
-  olive: { name: 'Olive Drab', rarity: 'common', pattern: 'solid', body: 0x4b5a3a, accent: 0x2e3826, mark: 0x4b5a3a, metal: 0.2, glow: 0 },
-  sand: { name: 'Desert Sand', rarity: 'common', pattern: 'solid', body: 0xb59a6b, accent: 0x6b5a3a, mark: 0xb59a6b, metal: 0.2, glow: 0 },
-  slate: { name: 'Slate Stripe', rarity: 'common', pattern: 'stripes', body: 0x3d4650, accent: 0x20262c, mark: 0x8b95a3, metal: 0.3, glow: 0 },
-  urban: { name: 'Urban Grey', rarity: 'common', pattern: 'solid', body: 0x6f757c, accent: 0x33373b, mark: 0x6f757c, metal: 0.3, glow: 0 },
+  olive: { name: 'Olive Drab', rarity: 'common', pattern: 'solid', body: 0x4b5a3a, accent: 0x2e3826, steel: 0x2a2e26, trim: 0x16190f, mark: 0x4b5a3a, metal: 0.2, glow: 0 },
+  sand: { name: 'Desert Sand', rarity: 'common', pattern: 'solid', body: 0xb59a6b, accent: 0x6b5a3a, steel: 0x3a3426, trim: 0x2a2418, mark: 0xb59a6b, metal: 0.2, glow: 0 },
+  slate: { name: 'Slate Stripe', rarity: 'common', pattern: 'stripes', body: 0x3d4650, accent: 0x20262c, steel: 0x1f2328, trim: 0x8b95a3, mark: 0x8b95a3, metal: 0.3, glow: 0 },
+  urban: { name: 'Urban Grey', rarity: 'common', pattern: 'solid', body: 0x6f757c, accent: 0x33373b, steel: 0x25282b, trim: 0x15171a, mark: 0x6f757c, metal: 0.3, glow: 0 },
   // ---------------------------------------------------------------- rare
-  cobalt: { name: 'Cobalt', rarity: 'rare', pattern: 'solid', body: 0x1f55a8, accent: 0x0e2a55, mark: 0x4a90e2, metal: 0.6, glow: 0.05 },
-  crimson: { name: 'Crimson Stripe', rarity: 'rare', pattern: 'stripes', body: 0x2b2b30, accent: 0x6a1414, mark: 0xd8323a, metal: 0.5, glow: 0.05 },
-  arctic: { name: 'Arctic Camo', rarity: 'rare', pattern: 'camo', body: 0xdde6ee, accent: 0x8fa3b5, mark: 0x7e93a8, metal: 0.3, glow: 0 },
+  cobalt: { name: 'Cobalt', rarity: 'rare', pattern: 'solid', body: 0x1f55a8, accent: 0x0e2a55, steel: 0x8aa4c8, trim: 0x4a90e2, mark: 0x4a90e2, metal: 0.6, glow: 0.05 },
+  crimson: { name: 'Crimson Stripe', rarity: 'rare', pattern: 'stripes', body: 0x2b2b30, accent: 0x6a1414, steel: 0x3a3a3f, trim: 0xd8323a, mark: 0xd8323a, metal: 0.5, glow: 0.05 },
+  arctic: { name: 'Arctic Camo', rarity: 'rare', pattern: 'camo', body: 0xdde6ee, accent: 0x8fa3b5, steel: 0x6a7d90, trim: 0x2a3440, mark: 0x7e93a8, metal: 0.3, glow: 0 },
   // ---------------------------------------------------------------- epic
-  circuit: { name: 'Neon Circuit', rarity: 'epic', pattern: 'circuit', body: 0x10161f, accent: 0x0a3a44, mark: 0x39f0ff, metal: 0.7, glow: 0.45 },
-  amethyst: { name: 'Amethyst', rarity: 'epic', pattern: 'solid', body: 0x6a2bb0, accent: 0x2a0f4a, mark: 0xd18cff, metal: 0.8, glow: 0.35 },
-  toxic: { name: 'Toxic Camo', rarity: 'epic', pattern: 'camo', body: 0x1c2a1a, accent: 0x0e1a0e, mark: 0x7dff3a, metal: 0.5, glow: 0.4 },
+  circuit: { name: 'Neon Circuit', rarity: 'epic', pattern: 'circuit', body: 0x10161f, accent: 0x0a3a44, steel: 0x0a2a30, trim: 0x39f0ff, mark: 0x39f0ff, metal: 0.7, glow: 0.45 },
+  amethyst: { name: 'Amethyst', rarity: 'epic', pattern: 'solid', body: 0x6a2bb0, accent: 0x2a0f4a, steel: 0xb69be0, trim: 0xd18cff, mark: 0xd18cff, metal: 0.8, glow: 0.35 },
+  toxic: { name: 'Toxic Camo', rarity: 'epic', pattern: 'camo', body: 0x1c2a1a, accent: 0x0e1a0e, steel: 0x0e1a0e, trim: 0x7dff3a, mark: 0x7dff3a, metal: 0.5, glow: 0.4 },
   // ---------------------------------------------------------------- legendary
-  gilded: { name: 'Gilded', rarity: 'legendary', pattern: 'solid', body: 0xd9a824, accent: 0x7a5a10, mark: 0xfff0a0, metal: 1, glow: 0.3 },
-  inferno: { name: 'Inferno', rarity: 'legendary', pattern: 'flames', body: 0x1a0e0a, accent: 0x5a1a08, mark: 0xff7a1a, metal: 0.7, glow: 0.7 },
-  void: { name: 'Void', rarity: 'legendary', pattern: 'void', body: 0x07060d, accent: 0x1a0f3a, mark: 0xa56bff, metal: 0.9, glow: 0.8 },
+  gilded: { name: 'Gilded', rarity: 'legendary', pattern: 'solid', body: 0xd9a824, accent: 0x7a5a10, steel: 0xf2d46a, trim: 0xfff0a0, mark: 0xfff0a0, metal: 1, glow: 0.3 },
+  inferno: { name: 'Inferno', rarity: 'legendary', pattern: 'flames', body: 0x1a0e0a, accent: 0x5a1a08, steel: 0x3a1408, trim: 0xff7a1a, mark: 0xff7a1a, metal: 0.7, glow: 0.7 },
+  void: { name: 'Void', rarity: 'legendary', pattern: 'void', body: 0x07060d, accent: 0x1a0f3a, steel: 0x1a0f3a, trim: 0xa56bff, mark: 0xa56bff, metal: 0.9, glow: 0.8 },
 };
 
 export const SKIN_IDS = Object.keys(SKINS);

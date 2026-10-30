@@ -41,7 +41,7 @@ export class RoomManager {
 /** The skins and preferred operators the player's account has equipped right now. */
 function loadoutFrom(socket) {
   const a = socket?.data?.account;
-  return { skins: a?.skins || {}, preferred: a?.operators || {}, owned: a?.owned || [] };
+  return { skins: a?.skins || {}, charms: a?.charms || {}, preferred: a?.operators || {}, owned: a?.owned || [] };
 }
 
 export function cleanName(name) {
@@ -196,7 +196,7 @@ class Room {
       hostId: this.hostId,
       phase: this.phase,
       mapId: this.mapId,
-      players: [...this.members.values()].map(({ id, name, team, skins, owner }) => ({ id, name, team, skins, owner })),
+      players: [...this.members.values()].map(({ id, name, team, skins, charms, owner }) => ({ id, name, team, skins, charms, owner })),
     };
   }
 

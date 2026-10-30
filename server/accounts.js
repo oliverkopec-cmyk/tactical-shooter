@@ -10,7 +10,8 @@ import bcrypt from 'bcrypt';
 import express from 'express';
 import { usernameError, passwordError } from '../shared/account.js';
 import { sanitizeSettings } from '../shared/settings.js';
-import { profileOf, configureProfile, ownsSkin, equippedSkinsOf, equippedOperatorsOf, devToolsEnabled } from './profile.js';
+import { profileOf, configureProfile, ownsSkin, equippedSkinsOf, equippedOperatorsOf, devToolsEnabled, ownsCharm, equippedCharmsOf } from './profile.js';
+import { CHARM_CRATE, rollCharmCrate } from '../shared/charms.js';
 import { OPERATORS as OPERATOR_DEFS } from '../shared/operators.js';
 import { SKINS, CRATE, rollCrate } from '../shared/skins.js';
 import { WEAPONS } from '../shared/weapons.js';
@@ -36,7 +37,7 @@ function readCookie(header, name) {
 }
 
 /** What a match needs to know about a player's equipped skins and operators. */
-const loadoutOf = (row) => ({ skins: equippedSkinsOf(row), operators: equippedOperatorsOf(row), owned: ownedOperatorIds(row.owned_operators) });
+const loadoutOf = (row) => ({ skins: equippedSkinsOf(row), charms: equippedCharmsOf(row), operators: equippedOperatorsOf(row), owned: ownedOperatorIds(row.owned_operators) });
 
 export class Accounts {
   constructor(db) {
@@ -185,6 +186,20 @@ export class Accounts {
       res.json({ account: profileOf(rows[0]) });
     });
 
+    // Equip a charm on a gun (charm: null takes it off)
+    r.put('/equip/charm', async (req, res) => {
+      const found = await this.fromCookie(req.headers.cookie);
+      if (!found) return res.status(401).json({ error: 'Not logged in.' });
+      const { weapon, charm } = req.body || {};
+      if (!WEAPONS[weapon]) return res.status(400).json({ error: 'Unknown gun.' });
+      if (charm !== null && !ownsCharm(found.row, charm)) return res.status(403).json({ error: 'You don\'t own that charm.' });
+      const equipped = { ...equippedCharmsOf(found.row) };
+      if (charm === null) delete equipped[weapon]; else equipped[weapon] = charm;
+      const { rows } = await this.db.query('UPDATE accounts SET equipped_charms = $2 WHERE id = $1 RETURNING *', [found.row.id, JSON.stringify(equipped)]);
+      this.refreshSocketLoadout(rows[0]);
+      res.json({ account: profileOf(rows[0]) });
+    });
+
     // Equip an operator for their side; it is also the one shown in the main menu
     r.put('/equip/operator', async (req, res) => {
       const found = await this.fromCookie(req.headers.cookie);
@@ -247,6 +262,30 @@ export class Accounts {
         return { status: 200, body: { account: profileOf(rows[0]), result: { weapon, skin, rarity, duplicate, refund, price: CRATE.price } } };
       });
       if (out.status === 200) this.refreshSocketLoadout(await this.progression.load(found.row.id));
+      res.status(out.status).json(out.body);
+    });
+
+    // Open the charm crate: same price, odds and duplicate refund as a gun's skin crate. The server draws the charm.
+    r.post('/crates/charm', async (req, res) => {
+      const found = await this.fromCookie(req.headers.cookie);
+      if (!found) return res.status(401).json({ error: 'Not logged in.' });
+      const out = await this.progression.withLock(found.row.id, async () => {
+        const row = (await this.db.query('SELECT * FROM accounts WHERE id = $1', [found.row.id])).rows[0];
+        if (!row) return { status: 404, body: { error: 'Account not found.' } };
+        if (row.money < CHARM_CRATE.price) {
+          return { status: 402, body: { error: `Not enough Money: a charm crate costs ${CHARM_CRATE.price.toLocaleString()}.`, account: profileOf(row) } };
+        }
+        const { rarity, charm } = rollCharmCrate((n) => crypto.randomInt(n));
+        const duplicate = ownsCharm(row, charm);
+        const refund = duplicate ? CHARM_CRATE.refund : 0;
+        const owned = Array.isArray(row.owned_charms) ? row.owned_charms : [];
+        const next = duplicate ? owned : [...owned, charm];
+        const { rows } = await this.db.query(
+          'UPDATE accounts SET money = money - $2 + $3, owned_charms = $4 WHERE id = $1 RETURNING *',
+          [row.id, CHARM_CRATE.price, refund, JSON.stringify(next)],
+        );
+        return { status: 200, body: { account: profileOf(rows[0]), result: { charm, rarity, duplicate, refund, price: CHARM_CRATE.price } } };
+      });
       res.status(out.status).json(out.body);
     });
 

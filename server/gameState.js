@@ -895,7 +895,7 @@ export class GameState {
       picks: this.picksFor(team),
       mapId: this.map.id, mapName: this.map.name,
       players: [...this.players.entries()].map(([id, p]) => ({
-        id, name: p.member.name, owner: !!p.member.owner, team: p.member.team, skins: p.member.skins || {}, owned: p.member.owned || [], state: p.state,
+        id, name: p.member.name, owner: !!p.member.owner, team: p.member.team, skins: p.member.skins || {}, charms: p.member.charms || {}, owned: p.member.owned || [], state: p.state,
         weapon: this.canSee(team, p) ? p.weapon : null, health: p.health, alive: p.alive,
         charges: p.charges, placed: !!p.placedCharge, spawnChoice: p.spawnChoice, operator: this.canSee(team, p) ? p.operator : null,
       })),

@@ -53,3 +53,8 @@ export const searchPlayers = (q) => call('GET', `friends/search?q=${encodeURICom
 export const sendFriendRequest = (username) => call('POST', 'friends/request', { username });
 export const answerFriendRequest = (id, accept) => call('POST', 'friends/respond', { id, accept });
 export const removeFriend = (id) => call('POST', 'friends/remove', { id });
+
+/** Equip a charm on a gun (charm null = take it off). Returns { account } or { error }. */
+export const equipCharm = (weapon, charm) => call('PUT', 'equip/charm', { weapon, charm });
+/** Open the charm crate. The server charges the Money and picks the charm: { account, result } or { error }. */
+export const openCharmCrate = () => call('POST', 'crates/charm');
