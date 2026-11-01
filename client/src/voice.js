@@ -36,6 +36,7 @@ export class VoicePlayer {
     this.ui.addVoiceLine(`${arrow ? `${arrow} ` : ''}${opName}: ${text}`, self);
     const volume = (settings.voice ?? 0.8) * (self ? 1 : Math.max(0, 1 - dist / HEAR_RANGE));
     if (volume <= 0.02) return;
+    if (typeof document !== 'undefined' && document.hidden) return;   // a tab in the background stays quiet (the line still shows on screen)
     if (entry.audio?.[i]) return this.playClip(entry.audio[i], volume);
     if (!this.synth) return;
     if (this.synth.speaking && this.synth.pending) return;          // already one waiting: drop this one rather than pile up
@@ -56,4 +57,9 @@ export class VoicePlayer {
   }
 
   stop() { this.synth?.cancel(); }
+}
+
+// Switching away from the game's tab cuts off anything still being said
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => { if (document.hidden) window.speechSynthesis?.cancel(); });
 }

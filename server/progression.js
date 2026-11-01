@@ -41,6 +41,9 @@ const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 // ---------------------------------------------------------------- pure rules
 
 /** stats: { kills, deaths, headshots, plants, objSecs, roundsWon, rounds } -> { lines: [{ label, amount }], total } */
+/** Money from a match that had bots in it, compared with the same match against people. */
+export const BOT_MONEY_FACTOR = 0.5;
+
 export function computeMoney(stats, won) {
   const lines = [{ label: 'Match played', amount: REWARD.participation }];
   if (won) lines.push({ label: 'Victory', amount: REWARD.win });
@@ -144,8 +147,14 @@ export class Progression {
       if (!row) return null;
       row = await this.ensureQuests(row);
 
-      const money = computeMoney(match, match.won);
-      const rankDelta = computeRankDelta(match, match.won);
+      let money = computeMoney(match, match.won);
+      // Matches with bots pay half the Money and never move your rank
+      if (match.withBots) {
+        const lines = money.lines.map((l) => ({ ...l, amount: Math.floor(l.amount * BOT_MONEY_FACTOR) }));
+        lines.push({ label: 'Bots in the match: half Money, no rank points', amount: 0 });
+        money = { lines, total: lines.reduce((n, l) => n + l.amount, 0) };
+      }
+      const rankDelta = match.withBots ? 0 : computeRankDelta(match, match.won);
       const { quests, completed } = advanceQuests(row.quests, match);
       const questMoney = completed.reduce((n, q) => n + q.reward, 0);
 

@@ -102,6 +102,12 @@ ui.bindLobby({
     const res = await network.request('setTeam', team);
     ui.lobbyError(res.error);
   },
+  onBot: async (cmd) => {
+    const res = cmd.type === 'add' ? await network.request('addBot', { team: cmd.team, difficulty: cmd.difficulty })
+      : cmd.type === 'fill' ? await network.request('fillBots', { difficulty: cmd.difficulty })
+        : await network.request('removeBot', cmd.id);
+    ui.lobbyError(res.error);
+  },
   onMode: async (mode) => {
     const res = await network.request('setMode', mode);
     ui.lobbyError(res.error);

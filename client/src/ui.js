@@ -418,7 +418,19 @@ export class UI {
     $('code-input').addEventListener('input', (e) => { e.target.value = e.target.value.toUpperCase().replace(/[^A-Z]/g, ''); });
   }
 
-  bindLobby({ onTeam, onStart, onLeave, onMap, onMode }) {
+  bindLobby({ onTeam, onStart, onLeave, onMap, onMode, onBot }) {
+    $('bot-controls').addEventListener('click', (e) => {
+      const add = e.target.closest('[data-bot-add]');
+      const difficulty = $('bot-difficulty').value;
+      if (add) onBot({ type: 'add', team: add.dataset.botAdd, difficulty });
+      else if (e.target.closest('[data-bot-fill]')) onBot({ type: 'fill', difficulty });
+    });
+    for (const t of ['attack', 'defense']) {
+      $(`team-${t}`).addEventListener('click', (e) => {
+        const rm = e.target.closest('[data-bot-remove]');
+        if (rm) onBot({ type: 'remove', id: rm.dataset.botRemove });
+      });
+    }
     $('mode-options').addEventListener('click', (e) => {
       const btn = e.target.closest('[data-mode]');
       if (btn && !btn.disabled) onMode(btn.dataset.mode);
@@ -454,6 +466,21 @@ export class UI {
         name.textContent = p.name;
         li.appendChild(name);
         if (p.owner) li.appendChild(ownerTagEl());
+        if (p.bot) {
+          const tag = document.createElement('span');
+          tag.className = 'tag bot-tag';
+          tag.textContent = `bot · ${p.bot}`;
+          li.appendChild(tag);
+          if (isHost) {
+            const rm = document.createElement('button');
+            rm.type = 'button';
+            rm.className = 'bot-remove';
+            rm.dataset.botRemove = p.id;
+            rm.title = 'Remove this bot';
+            rm.textContent = '×';
+            li.appendChild(rm);
+          }
+        }
         if (p.id === room.hostId) {
           const tag = document.createElement('span');
           tag.className = 'tag';
@@ -466,6 +493,7 @@ export class UI {
       btn.disabled = me?.team === team || members.length >= MAX_PER_TEAM;
     }
 
+    $('bot-controls').classList.toggle('hidden', !isHost);
     $('mode-note').textContent = isHost ? '(you choose)' : '(chosen by the host)';
     $('mode-options').innerHTML = Object.values(MODES).map((m) => `
       <button type="button" class="map-option${m.id === (room.mode || 'standard') ? ' selected' : ''}" data-mode="${m.id}" ${isHost ? '' : 'disabled'}>

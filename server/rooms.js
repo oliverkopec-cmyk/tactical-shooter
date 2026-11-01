@@ -5,6 +5,12 @@ import { GameState } from './gameState.js';
 import { DEFAULT_MAP_ID, MAP_IDS } from '../shared/map.js';
 import { MODE_IDS, DEFAULT_MODE_ID } from '../shared/modes.js';
 import { isOwner } from './roles.js';
+import { OPERATORS } from '../shared/operators.js';
+import { BOT_DIFFICULTIES } from './bots.js';
+import { navFor } from './nav.js';
+import { getMap } from '../shared/map.js';
+
+const BOT_NAMES = ['Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo', 'Foxtrot', 'Golf', 'Hotel', 'India', 'Juliet'];
 
 // No I or O, so codes can't be confused with 1 / 0.
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -133,11 +139,12 @@ class Room {
     this.social?.presenceChanged(socket.data.account.id);
     if (this.game) this.game.removePlayer(socket.id);
 
-    if (this.members.size === 0) {
+    const humans = [...this.members.values()].filter((m) => !m.bot);
+    if (humans.length === 0) {          // only bots left: close the room
       this.destroy();
       return;
     }
-    if (this.hostId === socket.id) this.hostId = this.members.keys().next().value;
+    if (this.hostId === socket.id) this.hostId = humans[0].id;
     if (this.game && !this.game.hasBothSides()) {
       this.endMatch('A team has no players left, so the match was ended.');
       return;
@@ -162,9 +169,56 @@ class Room {
     if (this.phase !== 'lobby') return { error: 'The map is locked once the match starts.' };
     if (!MAP_IDS.includes(mapId)) return { error: 'Unknown map.' };
     this.mapId = mapId;
+    if (this.hasBots) navFor(getMap(mapId));
     this.broadcastState();
     return {};
   }
+
+  // ---------------------------------------------------------------- bots
+
+  /** The host adds a bot to a side (lobby only). difficulty: 'easy' | 'normal' | 'hard'. */
+  addBot(socketId, team, difficulty = 'normal') {
+    if (socketId !== this.hostId) return { error: 'Only the host can add bots.' };
+    if (this.phase !== 'lobby') return { error: 'Bots can only be added in the lobby.' };
+    if (team !== TEAMS.ATTACK && team !== TEAMS.DEFENSE) return { error: 'Unknown team.' };
+    if (!BOT_DIFFICULTIES[difficulty]) return { error: 'Unknown difficulty.' };
+    if (this.teamCount(team) >= MAX_PER_TEAM) return { error: 'That team is full.' };
+    const used = new Set([...this.members.values()].map((m) => m.name));
+    const name = `Bot ${BOT_NAMES.find((n) => !used.has(`Bot ${n}`)) || this.members.size}`;
+    this.botCount = (this.botCount || 0) + 1;
+    const id = `bot-${this.code}-${this.botCount}`;
+    this.members.set(id, {
+      id, accountId: null, name, owner: false, team, bot: difficulty,
+      skins: {}, charms: {}, preferred: {}, owned: Object.keys(OPERATORS),   // bots may play any operator
+    });
+    navFor(getMap(this.mapId));      // start building the map's walking grid now, so it's ready by the match
+    this.broadcastState();
+    return {};
+  }
+
+  /** Fill every empty slot on both sides with bots. */
+  fillBots(socketId, difficulty = 'normal') {
+    if (socketId !== this.hostId) return { error: 'Only the host can add bots.' };
+    for (const team of [TEAMS.ATTACK, TEAMS.DEFENSE]) {
+      while (this.teamCount(team) < MAX_PER_TEAM) {
+        const res = this.addBot(socketId, team, difficulty);
+        if (res.error) return res;
+      }
+    }
+    return {};
+  }
+
+  removeBot(socketId, botId) {
+    if (socketId !== this.hostId) return { error: 'Only the host can remove bots.' };
+    if (this.phase !== 'lobby') return { error: 'Bots can only be removed in the lobby.' };
+    const m = this.members.get(botId);
+    if (!m?.bot) return { error: 'No such bot.' };
+    this.members.delete(botId);
+    this.broadcastState();
+    return {};
+  }
+
+  get hasBots() { return [...this.members.values()].some((m) => m.bot); }
 
   /** The host picks the game mode for the next match. */
   setMode(socketId, mode) {
@@ -184,12 +238,12 @@ class Room {
     }
     this.phase = 'match';
     // Pick up any skin or operator changes made since each player joined the room
-    for (const m of this.members.values()) Object.assign(m, loadoutFrom(this.io.sockets.sockets.get(m.id)));
+    for (const m of this.members.values()) if (!m.bot) Object.assign(m, loadoutFrom(this.io.sockets.sockets.get(m.id)));
     this.game = new GameState(this);
     for (const m of this.members.values()) this.game.addPlayer(m);
     this.game.start();
     for (const m of this.members.values()) this.io.to(m.id).emit('matchStart', this.game.startPayload(m.team));
-    for (const m of this.members.values()) this.social?.presenceChanged(m.accountId);
+    for (const m of this.members.values()) if (m.accountId) this.social?.presenceChanged(m.accountId);
     this.broadcastState();
     return {};
   }
@@ -209,7 +263,7 @@ class Room {
       phase: this.phase,
       mapId: this.mapId,
       mode: this.mode,
-      players: [...this.members.values()].map(({ id, name, team, skins, charms, owner }) => ({ id, name, team, skins, charms, owner })),
+      players: [...this.members.values()].map(({ id, name, team, skins, charms, owner, bot }) => ({ id, name, team, skins, charms, owner, bot: bot || null })),
     };
   }
 
@@ -226,7 +280,7 @@ class Room {
     for (const m of this.members.values()) m.team = m.startTeam || m.team;
     if (notice) this.io.to(this.channel).emit('notice', { message: notice });
     this.broadcastState();
-    for (const m of this.members.values()) this.social?.presenceChanged(m.accountId);
+    for (const m of this.members.values()) if (m.accountId) this.social?.presenceChanged(m.accountId);
   }
 
   destroy() {

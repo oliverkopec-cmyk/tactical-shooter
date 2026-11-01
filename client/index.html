@@ -162,6 +162,19 @@
           <button data-team="defense" class="team-btn">Join Defense</button>
         </div>
       </div>
+      <div id="bot-controls" class="map-picker hidden">
+        <div class="muted">Bots <span class="muted">(matches with bots give half Money and no rank points)</span></div>
+        <div class="bot-row">
+          <select id="bot-difficulty">
+            <option value="easy">Easy</option>
+            <option value="normal" selected>Normal</option>
+            <option value="hard">Hard</option>
+          </select>
+          <button type="button" class="small" data-bot-add="attack">+ Bot to Attack</button>
+          <button type="button" class="small" data-bot-add="defense">+ Bot to Defense</button>
+          <button type="button" class="small" data-bot-fill>Fill empty slots</button>
+        </div>
+      </div>
       <div class="map-picker">
         <div class="muted">Game mode <span id="mode-note"></span></div>
         <div id="mode-options"></div>

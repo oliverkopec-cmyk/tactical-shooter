@@ -206,6 +206,7 @@ export class Gadgets {
     if (g.type === 'stun') {
       for (const { pid, q } of this.enemiesNear(g, STUN.radius)) {
         q.stunUntil = now + STUN.duration * 1000;
+        q.blindUntil = now + STUN.duration * 1000;   // bots can't see either
         this.game.io.to(pid).emit('stunned', { ms: STUN.duration * 1000 });
       }
     } else if (g.type === 'flash') {
@@ -216,7 +217,9 @@ export class Gadgets {
         const to = [g.pos[0] - eye[0], g.pos[1] - eye[1], g.pos[2] - eye[2]];
         const d = Math.hypot(...to) || 1;
         const facing = (look[0] * to[0] + look[1] * to[1] + look[2] * to[2]) / d;
-        this.game.io.to(pid).emit('stunned', { ms: F.duration * 1000 * (facing > 0 ? 1 : F.awayScale) });
+        const ms = F.duration * 1000 * (facing > 0 ? 1 : F.awayScale);
+        q.blindUntil = now + ms;                       // bots are blinded too (people see a white screen)
+        this.game.io.to(pid).emit('stunned', { ms });
       }
     } else {
       // frag and impact: damage that fades with distance, plus barricades in reach
