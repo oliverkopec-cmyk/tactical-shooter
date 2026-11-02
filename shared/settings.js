@@ -3,10 +3,10 @@
 
 import { DEFAULT_KEYBINDS, sanitizeKeybinds } from './keybinds.js';
 
-export const SETTING_DEFAULTS = { sensitivity: 1, aimSensitivity: 1, volume: 0.5, fov: 78, voice: 0.8, leanMode: 'toggle', aimMode: 'hold' };
-export const SETTING_LIMITS = { sensitivity: [0.2, 3], aimSensitivity: [0.2, 2], volume: [0, 1], fov: [60, 100], voice: [0, 1] };
-// Settings that are one of a few words (the first is the default)
-export const SETTING_CHOICES = { leanMode: ['toggle', 'hold'], aimMode: ['hold', 'toggle'] };
+export const SETTING_DEFAULTS = { sensitivity: 1, aimSensitivity: 1, volume: 0.5, fov: 78, voice: 0.8, menuMusic: 0.4, leanMode: 'toggle', aimMode: 'hold', graphics: 'auto' };
+export const SETTING_LIMITS = { sensitivity: [0.2, 3], aimSensitivity: [0.2, 2], volume: [0, 1], fov: [60, 100], voice: [0, 1], menuMusic: [0, 1] };
+// Settings that are one of a few words (the first is the default). graphics 'auto' picks low on weak devices.
+export const SETTING_CHOICES = { leanMode: ['toggle', 'hold'], aimMode: ['hold', 'toggle'], graphics: ['auto', 'high', 'low'] };
 
 export function clampSetting(name, value) {
   if (SETTING_CHOICES[name]) return SETTING_CHOICES[name].includes(value) ? value : SETTING_DEFAULTS[name];
