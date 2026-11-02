@@ -2,7 +2,18 @@
 
 A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite on the client, Node.js + Socket.IO on an authoritative server. One Node process serves both the game client and the realtime server, so the whole thing deploys as a single Render web service.
 
-## Status: Stage A (controls and gameplay fixes)
+## Status: Stage B (movement physics)
+
+- **All movement numbers are in one file: `shared/movementConfig.js`.** Speeds, acceleration, braking, strafe and backwards speed, momentum, stance and lean speeds, aiming, operator speed ratings, and the camera and gun feel. Rebuild and restart after changing it (the simulation part runs on the server too).
+- **Acceleration and braking:** you reach full speed in 0.15 s and stop in 0.1 s from walking (0.17 s from a sprint), instead of starting and stopping instantly.
+- **Direction:** strafing is 85% and walking backwards 75% of forward speed (diagonals in between). Changing direction carries your old momentum for a moment: forward to backward takes about a quarter of a second, and sideways speed fades a little more slowly than when you stop.
+- **Speed** still comes from stance, aiming, the gun's mobility and the operator's speed rating (now `SPEED_RATING` in the config), multiplied together.
+- **Camera:** a subtle head bob in step with your footsteps (2 cm walking, 5 cm sprinting, less crouched or aiming, with a slight side sway and tilt), a small springy dip when you stop sharply from a run, and a bigger one when you land a vault. Only the camera moves; your aim and hitbox don't.
+- **Weapon sway:** the gun trails slightly behind the mouse and catches up, and moves in step with your footsteps (it breathes a little standing still). Much less while aiming down sights.
+- **Stances:** crouching takes about 0.22 s and the eye height eases in and out of crouch and prone instead of moving in a straight line.
+- **No rubber-banding:** the new physics is shared code, so prediction and the server agree exactly (in a test walk, strafe, reverse, sprint, stop, crouch and aim session the client was corrected by 0.0 m over 99 server updates).
+
+### Earlier: Stage A (controls and gameplay fixes)
 
 - **No jumping:** Space only vaults (and swings you in through a window from a rope). Drones keep their hop and Shift boost. Bots that get stuck vault instead of hopping.
 - **Lean: Toggle or Hold** (Settings, default Toggle). In Toggle, Q leans left, Q again stands you up, E leans right straight away. Sprinting cancels the lean (in Hold too, even with the key held).
@@ -271,17 +282,6 @@ Written down so they aren't forgotten (see Status for what is built). They are b
 - A short placing sound that others nearby can hear.
 - The server times the placement, so it can't be skipped by cheating.
 
-### Stage B - Better movement physics
-
-- Players speed up over about 0.15 s and slow down over about 0.1 s instead of starting and stopping instantly.
-- Strafing and walking backwards are slower than forwards. Changing direction quickly has a small momentum delay.
-- Speed depends on stance, aiming, the gun's mobility and the operator's speed rating.
-- Camera: subtle head bob walking, more sprinting, a small dip when stopping and when vaulting.
-- Weapon sway: the gun lags slightly behind the mouse and moves with footsteps; less while aiming.
-- Smooth transitions between standing, crouching and prone.
-- Server and client movement stay identical (no rubber-banding).
-- All movement numbers in one config file for tuning.
-
 ### Stage C - Admin announcements, gifts and exclusive skins
 
 - **Announcements** (admin tab): a message sent to everyone online, shown as a banner at the top of the screen (menu and matches) for 5, 10 or 30 seconds, chosen when sending. Offline players don't get it.
@@ -311,6 +311,9 @@ Bought with Money like the other new ones, each with its own icon, primary and s
 - **Medic (D):** a healing pistol, 40 health per shot to teammates or themselves, 3 shots per round.
 - **Interceptor (D):** 2 devices that each shoot down 2 thrown grenades or launched pellets within 4 m before they explode.
 - Balanced against the existing operators.
+- One of the defenders is a **Castle-style** operator: bulletproof armour panels placed over doorways and windows instead of wooden barricades, which take many melee hits to break and are broken by explosives and breaching tools (which of the four it replaces is decided when Stage E starts).
+- A gun may be shared by at most 2 operators, so new operators can reuse an existing gun where that helps.
+- Some names clash with what's in the game (a defender called Volt, Spark's Ember AR, Surge's EMP, Tonic's healing); to be settled when Stage E starts.
 
 ## Run locally
 
@@ -340,6 +343,7 @@ Add `?debug` to the URL to expose `window.breachline` (game, network, ui) in the
 ```
 shared/            Code used by BOTH client and server
   constants.js     tuning values, key bit flags, team colours
+  movementConfig.js  MOVEMENT TUNING: speeds, acceleration, strafing, stances, aiming, head bob, weapon sway
   map.js           map geometry (axis-aligned boxes), spawns, objective
   movement.js      deterministic movement + collision (prediction and authority)
   weapons.js       the 20 guns + deterministic ammo/fire-rate/reload/spread/swap, stat rows for menus

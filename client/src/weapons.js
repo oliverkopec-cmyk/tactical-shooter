@@ -3,6 +3,7 @@
 
 import * as THREE from 'three';
 import { WEAPONS } from '../../shared/weapons.js';
+import { FEEL } from '../../shared/constants.js';
 import { makeGunModel, animateGun } from './gunModels.js';
 import { attachCharm } from './charmModels.js';
 
@@ -47,6 +48,7 @@ export class ViewModel {
     this.swingT = 0;
     this.flashTime = 0;
     this.bobPhase = 0;
+    this.sway = { x: 0, y: 0 };   // how far the gun trails behind the mouse (rad)
     this.visible = true;
   }
 
@@ -83,7 +85,10 @@ export class ViewModel {
     this.swingT = 0.0001;
   }
 
-  /** ctx: { speed, sprinting, crouch, reloadFrac (0..1 or -1), lean, ads (0..1), hidden } */
+  /**
+   * ctx: { speed, sprinting, crouch, reloadFrac (0..1 or -1), lean, ads (0..1), hidden,
+   *        stepPhase / stepAmp (the camera's footstep bob, so the gun moves in step), turnX / turnY (mouse turn rate, rad/s) }
+   */
   update(dt, ctx) {
     const ads = ctx.ads || 0, hip = 1 - ads * ads * (3 - 2 * ads);   // eased: 1 at the hip, 0 fully aimed
     this.hidden = !!ctx.hidden;                                       // looking through a scope: no gun in view
@@ -93,10 +98,18 @@ export class ViewModel {
     this.flash.visible = this.flashTime > 0;
     this.flashLight.intensity = this.flashTime > 0 ? 3 : 0;
 
-    const speed = Math.min(1.6, ctx.speed / 4) * (0.25 + 0.75 * hip);   // the sights bob much less
-    this.bobPhase += dt * (6 + speed * 6) * (speed > 0.05 ? 1 : 0.3);
-    const bobX = Math.sin(this.bobPhase) * 0.012 * speed;
-    const bobY = Math.abs(Math.cos(this.bobPhase)) * 0.014 * speed;
+    // Footsteps: the gun moves in step with the camera bob (and breathes gently when standing still)
+    const still = 0.25 + 0.75 * hip;                                     // the sights move much less
+    const step = (ctx.stepAmp ?? 0) / FEEL.bobWalk * FEEL.swayStep * still;
+    this.bobPhase += dt * 1.6;
+    const phase = ctx.stepPhase ?? 0;
+    const bobX = Math.sin(phase) * 0.012 * step + Math.sin(this.bobPhase) * 0.002 * still;
+    const bobY = Math.abs(Math.sin(phase)) * 0.014 * step + Math.sin(this.bobPhase * 2) * 0.0015 * still;
+    // Sway: the gun trails a little behind the mouse and catches up (less while aiming)
+    const lag = FEEL.swayLag * (1 - (1 - FEEL.swayAim) * ads), cap = FEEL.swayMax;
+    const tx = Math.max(-cap, Math.min(cap, -(ctx.turnX || 0) * lag)), ty = Math.max(-cap, Math.min(cap, -(ctx.turnY || 0) * lag));
+    const k = Math.min(1, dt * FEEL.swayReturn);
+    this.sway.x += (tx - this.sway.x) * k; this.sway.y += (ty - this.sway.y) * k;
 
     let dip = this.raise * this.raise * 0.3, tilt = this.raise * 0.5;
     if (ctx.reloadFrac >= 0) {
@@ -107,8 +120,8 @@ export class ViewModel {
 
     const aimY = -((this.gun?.userData.sightY ?? 0.04) + (this.gun?.userData.hold[1] ?? 0));
     this.holder.position.set(
-      REST.x * hip + bobX - sprint * 0.06,
-      REST.y * hip + aimY * (1 - hip) - bobY - dip - sprint * 0.04,
+      REST.x * hip + bobX - sprint * 0.06 + this.sway.x * 0.25,
+      REST.y * hip + aimY * (1 - hip) - bobY - dip - sprint * 0.04 + this.sway.y * 0.25,
       REST.z * hip + ADS_Z * (1 - hip) + this.kick * (0.03 + 0.03 * hip),
     );
     let swing = 0;
@@ -118,7 +131,11 @@ export class ViewModel {
     }
     this.holder.position.z -= 0.28 * swing;
     this.holder.position.x -= 0.18 * swing;
-    this.holder.rotation.set(this.kick * (0.04 + 0.05 * hip) - tilt * 0.3 - swing * 0.25, sprint * 0.6 + swing * 0.7, tilt + ctx.lean * 0.2 * hip + sprint * 0.25 + swing * 0.5);
+    this.holder.rotation.set(
+      this.kick * (0.04 + 0.05 * hip) - tilt * 0.3 - swing * 0.25 + this.sway.y,
+      sprint * 0.6 + swing * 0.7 - this.sway.x,
+      tilt + ctx.lean * 0.2 * hip + sprint * 0.25 + swing * 0.5 + this.sway.x * 0.6,
+    );
     const fov = VM_FOV - 14 * (1 - hip);
     if (Math.abs(this.camera.fov - fov) > 0.01) { this.camera.fov = fov; this.camera.updateProjectionMatrix(); }
 

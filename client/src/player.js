@@ -3,10 +3,10 @@
 // authoritative server snapshots.
 
 import {
-  KEY, MAX_INPUT_DT, INPUT_SEND_RATE, LEAN_ROLL,
+  KEY, MAX_INPUT_DT, INPUT_SEND_RATE, LEAN_ROLL, FEEL, WALK_SPEED,
 } from '../../shared/constants.js';
 import { stepDrone, copyDroneState, droneEye, DRONE_KEYS } from '../../shared/drone.js';
-import { createPlayerState, copyPlayerState, stepPlayer, getEyePosition, weaponInput } from '../../shared/movement.js';
+import { createPlayerState, copyPlayerState, stepPlayer, getEyePosition, weaponInput, rightVec } from '../../shared/movement.js';
 import {
   WEAPONS, createWeaponState, copyWeaponState, stepWeapon, currentSpread, shotDirections, gunMobility,
 } from '../../shared/weapons.js';
@@ -75,6 +75,8 @@ export class LocalPlayer {
     this.sendTimer = 0;
     this.smoothing = { x: 0, y: 0, z: 0 }; // visual offset that hides small corrections
     this.droneSmoothing = { x: 0, y: 0, z: 0 }; // the same for the drone you're piloting
+    // Camera feel (visual only): head bob in step with your footsteps, and a springy dip when you stop or land a vault
+    this.feel = { phase: 0, dip: 0, dipV: 0, fast: 0, vaulting: false };
     this.lastCorrection = 0;
     this.sprinting = false;
     this.dragging = false;
@@ -241,7 +243,35 @@ export class LocalPlayer {
     const ds = this.droneSmoothing;
     ds.x *= k; ds.y *= k; ds.z *= k;
 
-    if (this.alive) this.updateCamera();
+    if (this.alive) { this.updateFeel(frameDt); this.updateCamera(); }
+  }
+
+  /** Head bob and dips, from how you are moving. Only the camera moves; your aim and hitbox don't. */
+  updateFeel(dt) {
+    const f = this.feel, s = this.state;
+    const speed = Math.hypot(s.vx, s.vz);
+    const moving = s.onGround && !s.rap && !this.droneState && speed > 0.3;
+    const stride = s.sprinting ? FEEL.strideSprint : FEEL.strideWalk;
+    if (moving) f.phase += speed * dt / stride * Math.PI;   // half a turn per footstep
+    // Stopping sharply from a run: a small dip. `fast` remembers recent speed for a moment.
+    if (speed < 0.6 && f.fast > 2.5 && s.onGround) { f.dipV -= FEEL.stopDip * Math.sqrt(FEEL.dipSpring) * Math.min(1.6, f.fast / WALK_SPEED); f.fast = 0; }
+    f.fast = Math.max(speed, f.fast - dt * 12);
+    // Landing a vault: a bigger dip
+    const vaulting = s.vaultT > 0;
+    if (f.vaulting && !vaulting) f.dipV -= FEEL.vaultDip * Math.sqrt(FEEL.dipSpring);
+    f.vaulting = vaulting;
+    // Spring back to rest, in small steps so a long frame can't make it overshoot
+    for (let left = Math.min(dt, 0.25); left > 1e-6; left -= 1 / 240) {
+      const h = Math.min(left, 1 / 240);
+      f.dipV += (-FEEL.dipSpring * f.dip - FEEL.dipDamping * f.dipV) * h;
+      f.dip += f.dipV * h;
+    }
+    // Bob size: more sprinting, less crouched or aiming, nothing standing still
+    const run = Math.min(1, speed / WALK_SPEED);
+    let amp = moving ? (s.sprinting ? FEEL.bobSprint : FEEL.bobWalk * run) : 0;
+    amp *= 1 - (1 - FEEL.bobCrouch) * Math.max(s.crouch, s.prone || 0);
+    amp *= 1 - (1 - FEEL.bobAim) * (s.ads || 0);
+    f.amp = (f.amp ?? 0) + (amp - (f.amp ?? 0)) * Math.min(1, dt * 10);   // fades in and out
   }
 
   /** Start/stop watching a camera feed: the body keeps its facing, the mouse only moves the feed. */
@@ -412,7 +442,12 @@ export class LocalPlayer {
       return;
     }
     const eye = getEyePosition(this.state, this.world);
-    this.camera.position.set(eye.x + this.smoothing.x, eye.y + this.smoothing.y, eye.z + this.smoothing.z);
-    this.camera.rotation.set(this.aimPitch, this.aimYaw, -eye.lean * LEAN_ROLL + (this.state.rapFlip || 0) * Math.PI, 'YXZ');   // upside down on a rope
+    const f = this.feel, amp = f.amp || 0;
+    const bobY = -Math.abs(Math.sin(f.phase)) * amp + f.dip;
+    const side = Math.sin(f.phase) * amp * FEEL.bobSide;
+    const [rx, rz] = rightVec(this.aimYaw);
+    this.camera.position.set(eye.x + this.smoothing.x + rx * side, eye.y + this.smoothing.y + bobY, eye.z + this.smoothing.z + rz * side);
+    const roll = Math.sin(f.phase) * FEEL.bobRoll * (amp / FEEL.bobWalk);
+    this.camera.rotation.set(this.aimPitch, this.aimYaw, -eye.lean * LEAN_ROLL + roll + (this.state.rapFlip || 0) * Math.PI, 'YXZ');   // upside down on a rope
   }
 }

@@ -12,6 +12,8 @@
 //   extraDrones: attackers only, drones on top of the standard one
 //   ability: { id, name, desc, charges }  or  { id, name, desc, cooldown } (seconds)
 
+import { SPEED_RATING } from './movementConfig.js';
+
 export const OPERATORS = {
   // ---------------------------------------------------------------- attackers
   spark: {
@@ -104,7 +106,6 @@ for (const [id, op] of Object.entries(OPERATORS)) {
 export const operatorsFor = (team) => Object.values(OPERATORS).filter((o) => o.team === team);
 export const defaultOperator = (team) => (team === 'attack' ? 'recruit_atk' : 'recruit_def');
 
-const SPEED = [0.92, 1.0, 1.08];
 const ARMOR = [1.15, 1.0, 0.85];   // damage taken multiplier
-export const speedMultiplier = (op) => SPEED[(op?.speed ?? 2) - 1];
+export const speedMultiplier = (op) => 1 + SPEED_RATING[op?.speed ?? 2];   // tuned in shared/movementConfig.js
 export const damageMultiplier = (op) => ARMOR[(op?.armor ?? 2) - 1];
