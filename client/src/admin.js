@@ -6,6 +6,7 @@ import { ownerTag } from './badge.js';
 import { SKINS, RARITIES, skinList } from '../../shared/skins.js';
 import { CHARMS, charmList } from '../../shared/charms.js';
 import { WEAPONS } from '../../shared/weapons.js';
+import { renderSkinThumbs } from './skinThumbs.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -42,6 +43,8 @@ export class AdminPanel {
     this.timer = null;
     this.visible = false;
     this.sendTab = 'announce';
+    this.giftSkin = '';          // the skin picked in the gift gallery ('' = none)
+    this.thumbsStarted = false;
     $('admin-matches').addEventListener('click', (e) => this.onClick(e));
     this.buildSend();
   }
@@ -49,8 +52,12 @@ export class AdminPanel {
   // ---------------------------------------------------------------- announcements, gifts, Money
 
   buildSend() {
-    const byRarity = (r) => skinList().filter((s) => s.rarity === r.id).map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
-    const skinOptions = ['exclusive', 'legendary', 'epic', 'rare', 'common'].map((r) => `<optgroup label="${RARITIES[r].name}">${byRarity(RARITIES[r])}</optgroup>`).join('');
+    // Every skin as a picture with its name, grouped by rarity (Exclusive first), in a scrolling gallery
+    const tile = (s) => `<button type="button" class="adm-skin-tile${s.rarity === 'exclusive' ? ' exclusive' : ''}" data-gift-skin="${s.id}" style="--rar:${s.rarityInfo.color}" title="${esc(s.name)}">
+        <img alt="" data-thumb="${s.id}"><span class="adm-skin-name">${esc(s.name)}</span></button>`;
+    const skinGallery = ['exclusive', 'legendary', 'epic', 'rare', 'common'].map((r) => `
+        <div class="adm-skin-group${r === 'exclusive' ? ' excl-text' : ''}" style="color:${RARITIES[r].color}">${RARITIES[r].name}${r === 'exclusive' ? ' · gifts only' : ''}</div>
+        ${skinList().filter((s) => s.rarity === r).map(tile).join('')}`).join('');
     const charmOptions = charmList().map((c) => `<option value="${c.id}">${esc(c.name)} (${RARITIES[c.rarity].name})</option>`).join('');
     const crateOptions = `<option value="charm">Charm crate</option>${Object.values(WEAPONS).map((w) => `<option value="${w.id}">${esc(w.name)} crate</option>`).join('')}`;
     $('admin-send').innerHTML = `
@@ -73,11 +80,12 @@ export class AdminPanel {
         <textarea id="gift-msg-in" maxlength="300" rows="2" placeholder="Message (optional)"></textarea>
         <div class="adm-grid">
           <label>Money <input type="number" id="gift-money" min="0" max="10000000" step="100" placeholder="0" /></label>
-          <label>Skin <span class="adm-inline"><select id="gift-skin"><option value="">None</option>${skinOptions}</select><button type="button" id="gift-preview" class="small" title="Show it on your operator's gun">👁</button></span></label>
           <label>Charm <select id="gift-charm"><option value="">None</option>${charmOptions}</select></label>
           <label>Crate <select id="gift-crate"><option value="">None</option>${crateOptions}</select></label>
         </div>
-        <p class="muted small-note">Skins in gifts are owned on every gun. A crate is opened when the gift is.</p>
+        <div class="adm-skin-head"><span>Skin</span><span id="gift-skin-name" class="muted">None</span><button type="button" class="small" id="gift-skin-clear">No skin</button></div>
+        <div class="adm-skins" id="gift-skins">${skinGallery}</div>
+        <p class="muted small-note">Click a skin to put it in the gift (it also shows on your operator's gun). Skins in gifts are owned on every gun. A crate is opened when the gift is.</p>
         ${recipients('gift')}
         <button type="button" class="primary" id="gift-send">Send gift</button>
         <p class="adm-status" id="gift-status"></p>
@@ -91,22 +99,43 @@ export class AdminPanel {
       </div>`;
     const box = $('admin-send');
     box.addEventListener('click', (e) => {
+      const pick = e.target.closest('[data-gift-skin]');
+      if (pick) { this.pickSkin(pick.dataset.giftSkin); return; }
       const tab = e.target.closest('[data-send-tab]');
       if (!tab) return;
       this.sendTab = tab.dataset.sendTab;
       for (const b of box.querySelectorAll('[data-send-tab]')) b.classList.toggle('active', b === tab);
       for (const p of box.querySelectorAll('[data-pane]')) p.classList.toggle('hidden', p.dataset.pane !== this.sendTab);
+      if (this.sendTab === 'gift') this.loadThumbs();
     });
     box.addEventListener('change', (e) => {
       if (e.target.name?.endsWith('-who')) this.updateWho(e.target.closest('.adm-who'));
-      if (e.target.id === 'gift-skin' && e.target.value) this.onPreviewSkin?.(e.target.value);
     });
+    $('gift-skin-clear').addEventListener('click', () => this.pickSkin(''));
     for (const w of box.querySelectorAll('.adm-who')) this.updateWho(w);
     box.addEventListener('input', (e) => { if (e.target.classList.contains('adm-user')) this.suggest(e.target.value); });
-    $('gift-preview').addEventListener('click', () => this.onPreviewSkin?.($('gift-skin').value));
     $('ann-send').addEventListener('click', () => this.announce());
     $('gift-send').addEventListener('click', () => this.sendGift('gift'));
     $('money-send').addEventListener('click', () => this.sendGift('money'));
+  }
+
+  /** Draw the gallery's pictures the first time the Gift form is opened. */
+  loadThumbs() {
+    if (this.thumbsStarted) return;
+    this.thumbsStarted = true;
+    renderSkinThumbs(skinList().map((s) => s.id), (id, url) => {
+      const img = document.querySelector(`#gift-skins img[data-thumb="${id}"]`);
+      if (img) img.src = url;
+    });
+  }
+
+  /** Choose the gift's skin ('' for none) and show it on the operator. */
+  pickSkin(id) {
+    this.giftSkin = SKINS[id] ? id : '';
+    for (const t of document.querySelectorAll('#gift-skins [data-gift-skin]')) t.classList.toggle('selected', t.dataset.giftSkin === this.giftSkin);
+    const s = SKINS[this.giftSkin];
+    $('gift-skin-name').innerHTML = s ? `<b>${esc(s.name)}</b> · ${s.rarity === 'exclusive' ? '<span class="excl-tag">EXCLUSIVE</span>' : `<span style="color:${RARITIES[s.rarity].color}">${RARITIES[s.rarity].name}</span>`}` : 'None';
+    if (s) this.onPreviewSkin?.(this.giftSkin);
   }
 
   updateWho(el) {
@@ -144,7 +173,7 @@ export class AdminPanel {
     if (who === 'player' && !username) return this.status(`${kind}-status`, 'Type the player\'s username.', false);
     const contents = kind === 'money'
       ? { money: Number($('money-amount').value) || 0 }
-      : { money: Number($('gift-money').value) || 0, skin: $('gift-skin').value || null, charm: $('gift-charm').value || null, crate: $('gift-crate').value || null };
+      : { money: Number($('gift-money').value) || 0, skin: this.giftSkin || null, charm: $('gift-charm').value || null, crate: $('gift-crate').value || null };
     if (kind === 'money' && !(contents.money > 0)) return this.status('money-status', 'Enter an amount.', false);
     const what = describe(contents) || 'nothing';
     const target = who === 'player' ? username : who === 'online' ? `everyone online (${this.online.length})` : 'every account on the server';

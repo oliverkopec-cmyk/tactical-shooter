@@ -1080,10 +1080,8 @@ button.small { font-size: 12px; padding: 4px 10px; margin-top: 6px; }
 .adm-row select { width: auto; }
 .adm-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .adm-grid label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
-.adm-inline { display: flex; gap: 6px; }
-.adm-inline button.small { margin-top: 0; }
 .adm-who { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; font-size: 14px; }
-.adm-radio { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+.adm-radio { display: flex; flex-direction: row; align-items: center; gap: 5px; cursor: pointer; font-size: 14px; color: var(--text); }
 .adm-radio input { padding: 0; margin: 0; width: auto; accent-color: var(--accent); }
 .adm-user { flex: 1 1 140px; }
 .adm-user.hidden { display: none; }
@@ -1094,3 +1092,18 @@ button.small { font-size: 12px; padding: 4px 10px; margin-top: 6px; }
 .adm-gift-head { display: flex; justify-content: space-between; gap: 8px; font-size: 14px; }
 .adm-gift-head span { font-size: 12px; white-space: nowrap; }
 @media (max-width: 600px) { .adm-grid { grid-template-columns: 1fr; } }
+
+/* admin gift skin gallery: every skin as a picture with its name */
+.adm-skin-head { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+.adm-skin-head button.small { margin: 0 0 0 auto; }
+.adm-skins { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; max-height: 300px; overflow-y: auto; padding: 2px 4px 2px 2px; border: 1px solid var(--line); border-radius: 8px; background: rgba(0, 0, 0, 0.25); }
+.adm-skin-group { grid-column: 1 / -1; font-size: 12px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; padding: 6px 2px 0; }
+.adm-skin-tile { display: flex; flex-direction: column; align-items: stretch; gap: 3px; padding: 4px; font-weight: 400; border: 2px solid var(--line); border-radius: 8px; text-align: center; }
+.adm-skin-tile img { width: 100%; aspect-ratio: 240 / 110; border-radius: 5px; background: #161a20; display: block; }
+.adm-skin-tile img:not([src]) { visibility: hidden; }
+.adm-skin-name { font-size: 12px; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.adm-skin-tile:hover { border-color: var(--rar); }
+.adm-skin-tile.selected { border-color: var(--accent); background: rgba(240, 180, 60, 0.16); box-shadow: 0 0 0 1px var(--accent); }
+.adm-skin-tile.exclusive { border-color: rgba(255, 231, 160, 0.45); }
+.adm-skin-tile.exclusive.selected { border-color: #ffe7a0; animation: excl-glow 2.4s ease-in-out infinite; }
+@media (max-width: 600px) { .adm-skins { grid-template-columns: repeat(2, 1fr); } }
