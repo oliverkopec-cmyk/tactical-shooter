@@ -17,6 +17,7 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { WEAPONS } from '../../shared/weapons.js';
 import { SKINS } from '../../shared/skins.js';
+import { applyExclusiveSkin } from './exclusiveSkins.js';
 
 const STEEL = 0x2b2f35, TRIM = 0x14161a, LENS = 0x66c8ff;
 
@@ -364,6 +365,7 @@ const BUILDERS = { rifle: buildRifle, smg: buildSmg, shotgun: buildShotgun, lmg:
 
 /** Every part of a role shares one material, so a skin recolours a role in one go. */
 function applySkin(b, skin, skinId) {
+  if (skin.fx) { applyExclusiveSkin(b, skin); return; }   // Exclusive skins: animated effects
   const w = b.w;
   const set = (role, hex, metal, rough, glowHex = null, glow = 0) => {
     const m = b.mats[role];

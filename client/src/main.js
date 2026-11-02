@@ -31,9 +31,13 @@ function setAccount(profile) {
   document.querySelector('[data-tab=admin]').classList.toggle('hidden', !profile.admin);
   menu.refresh();
 }
-const admin = new AdminPanel({ network });
+const admin = new AdminPanel({ network, onPreviewSkin: (skin) => menu.previewSkin(skin) });
 const social = new Social({ network, getAccount: () => account, onCreateRoom: () => createRoom() });
-const menu = new Menu({ getAccount: () => account, setAccount, onSettings: () => ui.openSettings(false), onTab: (tab) => { social.setVisible(tab === 'friends'); admin.setVisible(tab === 'admin'); } });
+const menu = new Menu({
+  getAccount: () => account, setAccount, onSettings: () => ui.openSettings(false),
+  onTab: (tab) => { social.setVisible(tab === 'friends'); admin.setVisible(tab === 'admin'); },
+  claimGift: (id) => network.request('giftClaim', id),
+});
 ui.onShow = (screen) => menu.setActive(screen === 'home');
 syncSettingsToAccount(() => !!account);
 
@@ -58,6 +62,7 @@ function leaveAccount(message = '') {
   ui.clearPassword();
   ui.show('auth');
   ui.authError(message);
+  menu.setGifts([]);
 }
 
 ui.bindAuth({
@@ -163,6 +168,9 @@ network.on('profile', (profile) => {
   if (!account) return;
   setAccount({ ...account, ...profile });
 });
+// Gifts waiting to be opened (sent when we connect and whenever an admin sends one), and admin announcements
+network.on('gifts', (list) => menu.setGifts(list));
+network.on('announcement', (a) => ui.showAnnouncement(a));
 network.on('matchSummary', (summary) => ui.showMatchSummary({ ...summary, name: account?.username, owner: !!account?.owner }));
 
 network.on('sessionReplaced', () => { replaced = true; });

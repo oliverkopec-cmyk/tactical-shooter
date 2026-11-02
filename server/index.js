@@ -10,6 +10,7 @@ import { openDatabase } from './db.js';
 import { Accounts } from './accounts.js';
 import { sharedCodeVersion } from './sharedVersion.js';
 import { Admin } from './admin.js';
+import { Gifts } from './gifts.js';
 
 // Local secrets (e.g. DATABASE_URL) can live in a .env file, which git ignores.
 try { process.loadEnvFile(); } catch { /* no .env file */ }
@@ -37,6 +38,7 @@ const io = new Server(server, {
 const rooms = new RoomManager(io, accounts.progression, accounts.social);
 const social = accounts.social;
 const admin = new Admin({ db, accounts, rooms, social });
+const gifts = new Gifts({ db, accounts });
 const SHARED_VERSION = sharedCodeVersion();
 // Pages built from different shared code would mispredict movement: send them back to reload.
 // ('dev' is the Vite dev server, which always runs the current files.)
@@ -49,6 +51,7 @@ io.use(accounts.socketAuth());
 io.on('connection', (socket) => {
   const reply = (ack, payload) => { if (typeof ack === 'function') ack(payload); };
   accounts.trackOnline(socket);
+  gifts.sendPending(socket);   // unopened gifts wait in the menu as presents
 
   socket.on('createRoom', (ack) => {
     const me = socket.data.account.id;
@@ -99,6 +102,19 @@ io.on('connection', (socket) => {
   // ---- admin tools (each one re-checks the caller's role on the server)
   socket.on('adminOnline', async (ack) => { try { reply(ack, await admin.online(socket)); } catch (err) { console.error('Admin list failed:', err.message); reply(ack, { error: 'Server error.' }); } });
   socket.on('adminMatches', (ack) => reply(ack, admin.matches(socket)));
+  // ---- announcements and gifts (admins send, anyone opens their own)
+  const safely = (fn) => async (...args) => {
+    const ack = typeof args.at(-1) === 'function' ? args.pop() : null;
+    try { reply(ack, await fn(...args)); } catch (err) { console.error('Gift request failed:', err.message); reply(ack, { error: 'Server error.' }); }
+  };
+  const obj = (v) => (v && typeof v === 'object' ? v : {});
+  socket.on('adminAnnounce', safely((req) => gifts.announce(socket, obj(req))));
+  socket.on('adminGift', safely((req) => gifts.create(socket, obj(req))));
+  socket.on('adminGifts', safely(() => gifts.history(socket)));
+  socket.on('adminFindPlayer', safely((q) => gifts.findPlayers(socket, q)));
+  socket.on('giftClaim', safely((id) => gifts.claim(socket, id)));
+  socket.on('giftList', safely(async () => ({ gifts: await gifts.pendingFor(socket.data.account.id) })));
+
   socket.on('adminJoin', (req, ack) => reply(ack, admin.join(socket, req && typeof req === 'object' ? { code: String(req.code || ''), mode: String(req.mode || '') } : {})));
 
   socket.on('setTeam', (team, ack) => {

@@ -27,6 +27,21 @@ export class UI {
     this.bindSettings();
     this.bindGunTips();
     $('summary-close').addEventListener('click', () => this.hideMatchSummary());
+    $('ann-close').addEventListener('click', () => $('announcement').classList.add('hidden'));
+  }
+
+  /** An admin announcement: a banner across the top for 5, 10 or 30 seconds, over the menu or the match. */
+  showAnnouncement({ text, seconds, from }) {
+    const el = $('announcement'), bar = $('ann-timer');
+    $('ann-text').textContent = text;
+    $('ann-from').textContent = from ? `· ${from}` : '';
+    el.classList.remove('hidden');
+    // restart the shrinking timer bar
+    bar.style.animation = 'none';
+    void bar.offsetWidth;
+    bar.style.animation = `ann-timer ${seconds}s linear forwards`;
+    clearTimeout(this.annTimer);
+    this.annTimer = setTimeout(() => el.classList.add('hidden'), seconds * 1000);
   }
 
   // ---------------------------------------------------------------- settings
@@ -191,6 +206,7 @@ export class UI {
     el.classList.remove('hidden');
     $('killcam-who').innerHTML = `<span class="kc-name ${k.team}">${escapeHtml(k.name)}</span> <span class="muted">· ${escapeHtml(k.op)}</span>`;
     $('killcam-gun').textContent = `${k.gun} · ${k.skin}${k.charm ? ` · ${k.charm} charm` : ''}`;
+    if (k.exclusive) $('killcam-gun').insertAdjacentHTML('beforeend', ' <span class="excl-tag">EXCLUSIVE</span>');
     $('killcam-hp').style.width = `${Math.max(0, Math.min(100, k.health))}%`;
     $('killcam-hp-text').textContent = `${k.health} health left`;
     $('killcam-skip').textContent = k.skipKey;

@@ -7,13 +7,20 @@
 //   pattern         'solid' | 'stripes' | 'camo' | 'circuit' | 'flames' | 'void' (drawn on the body parts)
 //   mark            colour of the pattern marks
 //   metal / glow    how shiny (0-1) and how much it glows (0-1)
+//
+// Exclusive skins (shared/exclusiveSkins.js) are gift-only: never in a crate, only an admin can give them.
+
+import { EXCLUSIVE_SKINS } from './exclusiveSkins.js';
 
 export const RARITIES = {
   common: { id: 'common', name: 'Common', color: '#b0b6bd', order: 0 },
   rare: { id: 'rare', name: 'Rare', color: '#4a90e2', order: 1 },
   epic: { id: 'epic', name: 'Epic', color: '#b04ae8', order: 2 },
   legendary: { id: 'legendary', name: 'Legendary', color: '#f0a020', order: 3 },
+  exclusive: { id: 'exclusive', name: 'Exclusive', color: '#ffe7a0', order: 4, giftOnly: true },   // shown with a shifting white-gold shimmer
 };
+/** The rarities crates can give (everything but Exclusive). */
+export const CRATE_RARITIES = Object.values(RARITIES).filter((r) => !r.giftOnly);
 
 export const SKINS = {
   // ---------------------------------------------------------------- common (every account owns these)
@@ -33,7 +40,11 @@ export const SKINS = {
   gilded: { name: 'Gilded', rarity: 'legendary', pattern: 'solid', body: 0xd9a824, accent: 0x7a5a10, steel: 0xf2d46a, trim: 0xfff0a0, mark: 0xfff0a0, metal: 1, glow: 0.3 },
   inferno: { name: 'Inferno', rarity: 'legendary', pattern: 'flames', body: 0x1a0e0a, accent: 0x5a1a08, steel: 0x3a1408, trim: 0xff7a1a, mark: 0xff7a1a, metal: 0.7, glow: 0.7 },
   void: { name: 'Void', rarity: 'legendary', pattern: 'void', body: 0x07060d, accent: 0x1a0f3a, steel: 0x1a0f3a, trim: 0xa56bff, mark: 0xa56bff, metal: 0.9, glow: 0.8 },
+  // ---------------------------------------------------------------- exclusive (gifts only)
+  ...EXCLUSIVE_SKINS,
 };
+
+export const isExclusive = (id) => SKINS[id]?.rarity === 'exclusive';
 
 export const SKIN_IDS = Object.keys(SKINS);
 /** Skins sorted by rarity, then name, for menus. */
@@ -58,10 +69,10 @@ export const CRATE = {
   odds: { common: 0.6, rare: 0.25, epic: 0.12, legendary: 0.03 },
 };
 
-/** Skins in a crate, grouped by rarity: { common: [ids], rare: [...], ... }. */
+/** Skins in a crate, grouped by rarity: { common: [ids], rare: [...], ... }. Exclusive skins are never in one. */
 export function crateContents() {
   const out = { common: [], rare: [], epic: [], legendary: [] };
-  for (const id of SKIN_IDS) out[SKINS[id].rarity].push(id);
+  for (const id of SKIN_IDS) if (out[SKINS[id].rarity]) out[SKINS[id].rarity].push(id);
   return out;
 }
 
