@@ -177,7 +177,7 @@ function buildRifle(b, v) {
   const bolt = b.group('bolt', 0.038, 0.022, 0.0);
   b.add('bolt.handle', box(0.014, 0.012, 0.04), 0, 0, 0, { parent: bolt });
   b.add('bolt.knob', box(0.02, 0.012, 0.012), 0.006, 0, 0.018, { parent: bolt });
-  addOptic(b, v.optic, 0.058, v.optic === 1 ? 0.0 : -0.04, 1);
+  addOptic(b, opticKind('rifle', v.optic), 0.058, v.optic === 1 ? 0.0 : -0.04, 1);
   b.anim = { bolt, boltTravel: 0.04, mag };
   b.muzzleAt = [0, 0.004, -0.545 - (v.muzzle === 2 ? 0.1 : 0)];
   b.anchorAt = [-0.034, 0.0, -0.2];
@@ -201,7 +201,7 @@ function buildSmg(b, v) {
   const mag = addMagazine(b, 0, -0.042, -0.03, 0.028, 0.16, 0.04, { curve: 0.04 });
   const bolt = b.group('bolt', 0.034, 0.02, -0.02);
   b.add('bolt.handle', box(0.012, 0.012, 0.035), 0, 0, 0, { parent: bolt });
-  addOptic(b, v.optic === 1 ? 0 : v.optic, 0.052, -0.02, 0.9, 0.038);
+  addOptic(b, opticKind('smg', v.optic), 0.052, -0.02, 0.9, 0.038);
   b.anim = { bolt, boltTravel: 0.03, mag };
   b.muzzleAt = [0, 0.01, -0.37 - (v.muzzle === 2 ? 0.1 : 0)];
   b.anchorAt = [-0.032, 0.0, -0.14];
@@ -227,7 +227,7 @@ function buildShotgun(b, v) {
   for (let i = 0; i < 4; i++) b.add('belt.shell', cyl(0.009, 0.034), -0.037, 0.022, 0.1 - i * 0.026, { role: 'accent' });
   const bolt = b.group('bolt', 0.036, 0.02, 0.0);
   b.add('bolt.handle', box(0.012, 0.012, 0.03), 0, 0, 0, { parent: bolt });
-  addOptic(b, v.optic === 1 ? 2 : v.optic, 0.046, -0.02, 0.9);
+  addOptic(b, opticKind('shotgun', v.optic), 0.046, -0.02, 0.9);
   b.anim = { bolt, boltTravel: 0.02, pump, pumpTravel: 0.07 };
   b.muzzleAt = [0, 0.018, -0.67];
   b.anchorAt = [-0.036, 0.0, -0.06];
@@ -261,7 +261,7 @@ function buildLmg(b, v) {
   const bolt = b.group('bolt', 0.05, 0.03, 0.06);
   b.add('bolt.handle', box(0.016, 0.014, 0.05), 0, 0, 0, { parent: bolt });
   b.add('bolt.knob', box(0.024, 0.014, 0.014), 0.008, 0, 0.022, { parent: bolt });
-  addOptic(b, v.optic === 2 ? 0 : v.optic, 0.092, 0.05, 1);
+  addOptic(b, opticKind('lmg', v.optic), 0.092, 0.05, 1);
   b.anim = { bolt, boltTravel: 0.035, mag, magDrop: 0.18 };
   b.muzzleAt = [0, 0.016, -0.67 - (v.muzzle === 2 ? 0.1 : 0)];
   b.anchorAt = [-0.05, 0.0, -0.2];
@@ -286,7 +286,7 @@ function buildDmr(b, v) {
   const bolt = b.group('bolt', 0.034, 0.026, 0.05);
   b.add('bolt.handle', box(0.012, 0.012, 0.04), 0, 0, 0, { parent: bolt });
   b.add('bolt.knob', box(0.022, 0.014, 0.014), 0.006, 0, 0.02, { parent: bolt });
-  addOptic(b, 1, 0.054, -0.01, 1.35);          // the marksman rifle always has a long scope
+  addOptic(b, opticKind('dmr', v.optic), 0.054, -0.01, 1.35);          // the marksman rifle always has a long scope
   b.anim = { bolt, boltTravel: 0.05, mag };
   b.muzzleAt = [0, 0.002, -0.65];
   b.anchorAt = [-0.028, 0.0, -0.2];
@@ -429,6 +429,51 @@ function decorate(g, body, skin, rand) {
 
 // ---------------------------------------------------------------- the public builder
 
+/**
+ * The sight a gun of this model gets for its variant: 0 red dot, 1 scope, 2 iron sights.
+ * SMGs never get a scope, shotguns no scope, LMGs always some optic, the marksman rifle always a scope, handguns iron sights.
+ */
+function opticKind(model, optic) {
+  switch (model) {
+    case 'rifle': return optic;
+    case 'smg': return optic === 1 ? 0 : optic;
+    case 'shotgun': return optic === 1 ? 2 : optic;
+    case 'lmg': return optic === 2 ? 0 : optic;
+    case 'dmr': return 1;
+    default: return 2;
+  }
+}
+
+// How much each kind of sight zooms in when aiming down it (the marksman rifle's long scope more)
+const SIGHT_ZOOM = { iron: 1.3, dot: 1.6, scope: 2.4, longScope: 3.2 };
+
+/** The sight on a gun: { kind: 'iron' | 'dot' | 'scope', zoom }. */
+export function sightOf(id) {
+  const w = WEAPONS[id] || WEAPONS.rifle;
+  const k = opticKind(w.model, variantOf(w.id, w.model).optic);
+  const kind = k === 0 ? 'dot' : k === 1 ? 'scope' : 'iron';
+  return { kind, zoom: SIGHT_ZOOM[w.model === 'dmr' ? 'longScope' : kind] };
+}
+
+/** Height of the line of sight above the gun's origin (unscaled), found from the sight parts. */
+function sightHeight(b) {
+  b.g.updateMatrixWorld(true);
+  const box = new THREE.Box3();
+  const centre = (names) => {
+    for (const n of names) {
+      const m = b.parts[n]?.[0];
+      if (m) return box.setFromObject(m).getCenter(new THREE.Vector3()).y;
+    }
+    return null;
+  };
+  const top = (names) => {
+    let y = null;
+    for (const n of names) for (const m of b.parts[n] || []) y = Math.max(y ?? -Infinity, box.setFromObject(m).max.y);
+    return y;
+  };
+  return centre(['lens.dot', 'lens.rear']) ?? top(['sight.rearNotch', 'sight.rear', 'sight.bead']) ?? 0.04;
+}
+
 /** Variants chosen per gun so guns of one type don't all look the same: optic, muzzle device. */
 function variantOf(id, model) {
   const r = seeded(`variant:${id}`);
@@ -451,6 +496,7 @@ export function makeGunModel(id, skinId = null) {
   b.g.userData.charmAnchor = anchor;
   b.g.userData.anim = b.anim || {};
   b.g.userData.parts = b.parts;
+  b.g.userData.sightY = sightHeight(b) * w.scale;
   if (skinId && SKINS[skinId]) applySkin(b, SKINS[skinId], skinId);
   if (w.scale !== 1) b.g.scale.setScalar(w.scale);
   // Pistols are short: the view model moves them forward and up so they sit in view

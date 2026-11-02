@@ -43,13 +43,17 @@ const SOUNDS = {
   ropeSlide: { noise: true, filter: 'bandpass', cutoff: 2600, q: 1.2, dur: 0.12, gain: 0.3 },
   vaultHop: { noise: true, filter: 'lowpass', cutoff: 700, q: 0.8, dur: 0.14, gain: 0.6 },
   hammer: { noise: true, filter: 'bandpass', cutoff: 1100, q: 1.4, dur: 0.06, gain: 0.7 },
+  // electronics hit by a bullet, and barbed wire rustling as someone walks through it
+  sparkZap: { noise: true, filter: 'highpass', cutoff: 4200, q: 0.7, dur: 0.12, gain: 0.7 },
+  sparkBuzz: { wave: 'sawtooth', freq: 1900, freq2: 240, filter: 'lowpass', cutoff: 5000, dur: 0.16, gain: 0.3 },
+  wireRustle: { noise: true, filter: 'bandpass', cutoff: 3200, q: 2.2, dur: 0.1, gain: 0.35 },
 };
 
 export class Soundscape {
   constructor(game) {
     this.game = game;
     this.audio = game.audio;
-    this.own = { stride: 0, wasGround: true, vy: 0, wasReloading: false, ammo: 0 };
+    this.own = { stride: 0, wasGround: true, vy: 0, wasReloading: false, ammo: 0, rustle: 0 };
     this.remote = new Map();   // id -> { stride, wasGround, vy, wasReloading }
     this.drone = new Map();    // id -> time until the next motor blip
   }
@@ -104,6 +108,7 @@ export class Soundscape {
         }
       }
     }
+    o.rustle = this.rustle(o.rustle, dt, active && speed > 0.4 && this.game.gadgets.inWire(s.x, s.y, s.z), null);
     if (active && s.onGround && !o.wasGround && o.vy < -5) {
       const k = Math.min(1, -o.vy / 12);
       this.self('land', k);
@@ -123,8 +128,9 @@ export class Soundscape {
     for (const [id, r] of this.game.remotes) {
       if (!r.alive) { this.remote.delete(id); continue; }
       let st = this.remote.get(id);
-      if (!st) { st = { stride: 0, wasGround: true, vy: 0, wasReloading: false }; this.remote.set(id, st); }
+      if (!st) { st = { stride: 0, wasGround: true, vy: 0, wasReloading: false, rustle: 0 }; this.remote.set(id, st); }
       const p = r.pose, pos = [p.x, p.y + 0.1, p.z];
+      st.rustle = this.rustle(st.rustle, dt, r.speed > 0.4 && this.game.gadgets.inWire(p.x, p.y, p.z), pos);
       const cls = this.stepClass(r.speed, Math.max(p.crouch, p.prone || 0), r.speed > 5);
       if (cls && r.onGround) {
         st.stride += r.speed * dt;
@@ -142,6 +148,14 @@ export class Soundscape {
       st.wasReloading = r.reloading;
     }
     for (const id of this.remote.keys()) if (!this.game.remotes.has(id)) this.remote.delete(id);
+  }
+
+  /** Barbed wire rustles while anyone walks through it, friend or enemy. Returns the time until the next rustle. */
+  rustle(wait, dt, inWire, pos) {
+    if (!inWire) return 0;
+    if ((wait -= dt) > 0) return wait;
+    if (pos) this.at('wireRustle', pos, 18); else this.self('wireRustle', 0.7);
+    return 0.28 + Math.random() * 0.12;
   }
 
   updateDrones(dt) {

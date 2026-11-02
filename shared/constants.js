@@ -30,8 +30,6 @@ export const WALK_SPEED = 4.0;
 export const SPRINT_SPEED = 6.4;
 export const CROUCH_SPEED = 2.0;
 export const PRONE_SPEED = 1.0;
-export const JUMP_SPEED = 5.4;            // about 0.66 m high
-export const JUMP_COOLDOWN = 0.45;        // seconds between jumps
 export const ACCEL_GROUND = 60;
 export const GRAVITY = 22;
 export const CROUCH_TRANSITION = 7;       // crouch amount change per second (0..1)
@@ -52,13 +50,17 @@ export const KEY = {
   LEAN_RIGHT: 128,
   FIRE: 256,
   RELOAD: 512,
-  JUMP: 1024,
+  JUMP: 1024,       // players: vault (and swing in from a rope); drones: hop. Players can't jump.
   PRONE: 2048,
   RAPPEL: 4096,     // attach to / let go of a rope (a press)
   FLIP: 8192,       // hold: hang upside down while rappelling
   INTERACT: 16384,  // hold: plant or disable the defuser
+  AIM: 32768,       // aim down sights
 };
-export const KEY_MASK = 32767;
+export const KEY_MASK = 65535;
+
+// Aiming down sights: time to raise the sights (s), spread and walking speed while fully aimed
+export const ADS = { time: 0.2, spreadMul: 0.4, moveMul: 0.62 };
 
 // Vaulting: Space at a low obstacle (a crate, a sill) hops over it
 export const VAULT = { maxRise: 1.3, time: 0.55, clear: 1.12, maxDepth: 2.1, cooldown: 0.4 };
@@ -120,6 +122,7 @@ export const MELEE = { reach: 2.1, cone: 0.5, damage: 45, cooldown: 0.8 };
 export const SHIELD = { width: 1.9, height: 1.5, thickness: 0.14, distance: 1.1 };
 export const WIRE = { size: 1.8, height: 0.5, slow: 0.4, reach: 3.5 };
 export const JAMMER_RANGE = 5;
+export const JAMMER_HITS = 2;             // bullet hits that destroy a jammer
 export const CAMERA_REACH = 4.5;
 export const STUN = { speed: 13, fuse: 1.5, radius: 7, duration: 4, slow: 0.45, cooldown: 0.8 };
 export const GADGET_REACH = 3.5;

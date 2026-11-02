@@ -11,6 +11,8 @@ const tracerMat = new THREE.MeshBasicMaterial({ color: 0xffe9a0, transparent: tr
 const decalMat = new THREE.MeshBasicMaterial({ color: 0x1a1a1a, polygonOffset: true, polygonOffsetFactor: -2 });
 const puffGeo = new THREE.SphereGeometry(1, 8, 6);
 const DEBRIS_LIFE = 1.3;
+const SPARK_LIFE = 0.5;
+const sparkMat = new THREE.MeshBasicMaterial({ color: 0xffe08a, transparent: true });
 const MAX_DEBRIS = 300;
 
 export class Effects {
@@ -90,6 +92,25 @@ export class Effects {
     }
   }
 
+  /** A burst of bright sparks that fall and fade (a gadget hit by a bullet), with a short flash of light. */
+  sparks(center, count = 8) {
+    for (let i = 0; i < count && this.debrisCount < MAX_DEBRIS; i++) {
+      const mesh = new THREE.Mesh(unitBox, sparkMat.clone());
+      mesh.material.color.setHex(Math.random() < 0.4 ? 0xffffff : Math.random() < 0.5 ? 0xffc23a : 0x8fd8ff);
+      mesh.scale.set(0.012, 0.012, 0.05 + Math.random() * 0.05);
+      mesh.position.set(...center);
+      const vel = new THREE.Vector3((Math.random() - 0.5) * 5, 1 + Math.random() * 3, (Math.random() - 0.5) * 5);
+      mesh.lookAt(mesh.position.clone().add(vel));
+      this.debrisCount++;
+      this.scene.add(mesh);
+      this.live.push({ mesh, life: SPARK_LIFE * (0.5 + Math.random() * 0.5), maxLife: SPARK_LIFE, kind: 'spark', vel });
+    }
+    const light = new THREE.PointLight(0x9fd8ff, 30, 4, 1.5);
+    light.position.set(...center);
+    this.scene.add(light);
+    this.live.push({ mesh: light, life: 0.12, maxLife: 0.12, kind: 'light' });
+  }
+
   explosion(pos) {
     const fire = new THREE.Mesh(puffGeo, new THREE.MeshBasicMaterial({ color: 0xffb347, transparent: true, opacity: 0.9, depthWrite: false }));
     fire.position.set(...pos);
@@ -140,6 +161,10 @@ export class Effects {
       const k = Math.max(0, e.life / e.maxLife);
       if (e.kind === 'light') {
         e.mesh.intensity = 30 * k;
+      } else if (e.kind === 'spark') {
+        e.vel.y -= 9 * dt;
+        e.mesh.position.addScaledVector(e.vel, dt);
+        e.mesh.material.opacity = k;
       } else if (e.kind === 'debris') {
         e.vel.y -= 14 * dt;
         e.mesh.position.addScaledVector(e.vel, dt);
@@ -152,7 +177,7 @@ export class Effects {
       }
       if (e.life <= 0) {
         this.scene.remove(e.mesh);
-        if (e.kind === 'debris') this.debrisCount--;
+        if (e.kind === 'debris' || e.kind === 'spark') this.debrisCount--;
         if (e.mesh.material) e.mesh.material.dispose();
         this.live.splice(i, 1);
       }

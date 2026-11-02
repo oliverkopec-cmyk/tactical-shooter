@@ -3,10 +3,13 @@
 
 import { DEFAULT_KEYBINDS, sanitizeKeybinds } from './keybinds.js';
 
-export const SETTING_DEFAULTS = { sensitivity: 1, volume: 0.5, fov: 78, voice: 0.8 };
-export const SETTING_LIMITS = { sensitivity: [0.2, 3], volume: [0, 1], fov: [60, 100], voice: [0, 1] };
+export const SETTING_DEFAULTS = { sensitivity: 1, aimSensitivity: 1, volume: 0.5, fov: 78, voice: 0.8, leanMode: 'toggle', aimMode: 'hold' };
+export const SETTING_LIMITS = { sensitivity: [0.2, 3], aimSensitivity: [0.2, 2], volume: [0, 1], fov: [60, 100], voice: [0, 1] };
+// Settings that are one of a few words (the first is the default)
+export const SETTING_CHOICES = { leanMode: ['toggle', 'hold'], aimMode: ['hold', 'toggle'] };
 
 export function clampSetting(name, value) {
+  if (SETTING_CHOICES[name]) return SETTING_CHOICES[name].includes(value) ? value : SETTING_DEFAULTS[name];
   const [lo, hi] = SETTING_LIMITS[name];
   const n = Number(value);
   return Number.isFinite(n) ? Math.max(lo, Math.min(hi, n)) : SETTING_DEFAULTS[name];

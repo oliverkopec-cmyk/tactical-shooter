@@ -11,7 +11,7 @@ import {
   WEAPONS, createWeaponState, copyWeaponState, stepWeapon, currentSpread, shotDirections, gunMobility,
 } from '../../shared/weapons.js';
 
-import { settings } from './settings.js';
+import { settings, onSettingsChange } from './settings.js';
 import { actionFor, mouseCode } from './controls.js';
 
 // Held actions become input bits, simulated on both sides (keybinds map keys to actions)
@@ -19,7 +19,7 @@ const HOLD_BITS = {
   forward: KEY.FORWARD, back: KEY.BACK, left: KEY.LEFT, right: KEY.RIGHT,
   sprint: KEY.SPRINT, jump: KEY.JUMP, crouch: KEY.CROUCH,
   leanLeft: KEY.LEAN_LEFT, leanRight: KEY.LEAN_RIGHT, fire: KEY.FIRE, reload: KEY.RELOAD,
-  rappel: KEY.RAPPEL, flip: KEY.FLIP, interact: KEY.INTERACT,
+  rappel: KEY.RAPPEL, flip: KEY.FLIP, interact: KEY.INTERACT, aim: KEY.AIM,
 };
 // One-shot actions sent to the server as events
 const EVENT_ACTIONS = new Set(['breach', 'reinforce', 'droneNext', 'ability', 'utility', 'camView', 'barricade']);
@@ -63,6 +63,9 @@ export class LocalPlayer {
     this.keys = 0;
     this.tapped = 0;     // keys pressed since the last frame, so quick taps aren't lost
     this.proneOn = false; // prone is a toggle: the PRONE bit is sent while it's on
+    this.leanOn = 0;      // toggle lean: -1 left, 0 upright, 1 right (sent as the lean bits)
+    this.aimOn = false;   // toggle aim: the AIM bit is sent while it's on
+    this.adsZoom = 1;     // zoom of the drawn gun's sights (set by the game), for the aiming sensitivity
     this.wantSlot = 1;    // which gun is drawn: 1 primary, 2 secondary (sent with every input)
     this.meleeReady = 0;
     this.viewLocked = null;  // while watching a camera: the body keeps this facing
@@ -88,10 +91,16 @@ export class LocalPlayer {
       blur: () => { this.keys = 0; this.dragging = false; },
     };
     for (const [ev, fn] of Object.entries(this.listeners)) window.addEventListener(ev, fn);
+    // Switching between toggle and hold starts again from upright and not aiming
+    this.offSettings = onSettingsChange((name) => {
+      if (name === 'leanMode') { this.leanOn = 0; this.keys &= ~(KEY.LEAN_LEFT | KEY.LEAN_RIGHT); }
+      if (name === 'aimMode') { this.aimOn = false; this.keys &= ~KEY.AIM; }
+    });
   }
 
   dispose() {
     for (const [ev, fn] of Object.entries(this.listeners)) window.removeEventListener(ev, fn);
+    this.offSettings();
   }
 
   get pointerLocked() {
@@ -135,11 +144,21 @@ export class LocalPlayer {
       if (down && !repeat) this.sendAction('ping');
       return;
     }
+    // Toggle lean: the same key again stands you up, the other key leans the other way
+    if ((action === 'leanLeft' || action === 'leanRight') && settings.leanMode === 'toggle') {
+      if (down && !repeat) { const dir = action === 'leanLeft' ? -1 : 1; this.leanOn = this.leanOn === dir ? 0 : dir; }
+      return;
+    }
+    if (action === 'aim' && settings.aimMode === 'toggle') {
+      if (down && !repeat) this.aimOn = !this.aimOn;
+      return;
+    }
     const bit = HOLD_BITS[action];
     if (bit) {
       if (!down) { this.keys &= ~bit; return; }
       this.keys |= bit; this.tapped |= bit;
       if (action === 'crouch' || action === 'jump') this.proneOn = false;   // get up from prone
+      if (action === 'sprint') this.aimOn = false;                          // sprinting lowers the sights
       return;
     }
     if (!down || repeat || !this.alive) return;
@@ -158,9 +177,14 @@ export class LocalPlayer {
   handleMouse(e) {
     if (!this.pointerLocked && !this.dragging) return;
     if (this.lookFrozen) { this.onWheelMove?.(e.movementX, e.movementY); return; }   // the ping wheel is open: the mouse picks a choice
-    const k = MOUSE_SENSITIVITY * settings.sensitivity;
-    this.yaw = wrapAngle(this.yaw - e.movementX * k);
-    this.pitch = clampPitch(this.pitch - e.movementY * k);
+    let k = MOUSE_SENSITIVITY * settings.sensitivity;
+    // Aiming: its own sensitivity, scaled down by the zoom so 1x feels like the hip-fire setting
+    const ads = this.droneState ? 0 : this.state.ads || 0;
+    if (ads > 0) k *= 1 + (settings.aimSensitivity / this.adsZoom - 1) * ads;
+    // Hanging upside down the view is turned over, so the mouse is too: it moves the view the way it would upright
+    const turned = !this.droneState && this.state.rap && this.state.rapFlip > 0.5 ? -1 : 1;
+    this.yaw = wrapAngle(this.yaw - e.movementX * k * turned);
+    this.pitch = clampPitch(this.pitch - e.movementY * k * turned);
   }
 
   get aimYaw() {
@@ -176,7 +200,9 @@ export class LocalPlayer {
     if (this.alive) {
       const droneMode = !!this.droneState;
       if (droneMode) this.pitch = Math.max(-0.7, Math.min(0.7, this.pitch));
-      const raw = this.keys | this.tapped | (this.proneOn ? KEY.PRONE : 0);
+      const toggled = (this.proneOn ? KEY.PRONE : 0) | (this.aimOn ? KEY.AIM : 0)
+        | (this.leanOn < 0 ? KEY.LEAN_LEFT : this.leanOn > 0 ? KEY.LEAN_RIGHT : 0);
+      const raw = this.keys | this.tapped | toggled;
       const keys = droneMode ? raw & DRONE_KEYS : this.mask(raw);
       // Long frames are split so each simulated step stays within server limits.
       let remaining = Math.min(frameDt, 0.25);
@@ -246,6 +272,7 @@ export class LocalPlayer {
     if (!live) return;
     const s = this.state;
     this.sprinting = s.sprinting && Math.hypot(s.vx, s.vz) > 4.5;
+    if (s.sprinting) { this.leanOn = 0; this.aimOn = false; }   // sprinting cancels a toggled lean and aim
     if (!fired) return;
 
     const w = this.weaponDef;
@@ -292,6 +319,7 @@ export class LocalPlayer {
 
     const s = this.state;
     for (const key of ['x', 'y', 'z', 'vx', 'vy', 'vz', 'crouch', 'prone', 'lean', 'onGround', 'slow']) s[key] = serverState[key];
+    s.ads = serverState.ad || 0;
     s.fireDelay = serverState.fd || 0;
     s.jumpCd = serverState.jc || 0;
     s.sprinting = !!serverState.spr;
@@ -333,6 +361,8 @@ export class LocalPlayer {
     this.alive = false;
     this.keys = 0;
     this.proneOn = false;
+    this.leanOn = 0;
+    this.aimOn = false;
     this.pending.length = 0;
     this.outbox.length = 0;
   }
@@ -341,6 +371,8 @@ export class LocalPlayer {
   teleport(state) {
     this.state = copyPlayerState(state);
     this.proneOn = false;
+    this.leanOn = 0;
+    this.aimOn = false;
     this.wantSlot = 1;
     this.yaw = state.yaw;
     this.pitch = 0;
@@ -367,6 +399,8 @@ export class LocalPlayer {
     this.smoothing = { x: 0, y: 0, z: 0 };
     this.alive = true;
     this.proneOn = false;
+    this.leanOn = 0;
+    this.aimOn = false;
     this.wantSlot = 1;
   }
 

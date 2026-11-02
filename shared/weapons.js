@@ -2,7 +2,7 @@
 // reload, spread). Client and server run the same code on the same inputs, so
 // the client can predict shots while the server stays authoritative.
 
-import { KEY, WALK_SPEED } from './constants.js';
+import { KEY, WALK_SPEED, ADS } from './constants.js';
 
 // Every operator has a unique primary and a unique secondary (see operators.js).
 // Fields:
@@ -351,6 +351,7 @@ export function currentSpread(ws, ps) {
   if (!ps.onGround && !ps.rap) spread += w.moveSpread * 2;
   if (ps.rap) spread = (spread + w.moveSpread) * 2.2;   // swinging on a rope: much less accurate
   spread *= 1 - Math.max(0.3 * ps.crouch, 0.45 * (ps.prone || 0));   // steadier crouched, steadiest lying down
+  spread *= 1 - (1 - ADS.spreadMul) * (ps.ads || 0);                   // aiming down the sights
   return spread;
 }
 

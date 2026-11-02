@@ -828,6 +828,7 @@ export class BotBrains {
       const bloomOk = !w.bloomMax || p.weapon.bloom <= w.bloomMax * (range > 12 ? b.diff.bloomCap : 1);
       if (w.auto === false) keys |= (b.seq % 5 < 2 ? KEY.FIRE : 0);
       else if (range < 8 || bloomOk) keys |= KEY.FIRE;
+      if (range > 10 && b.diff.tactics !== false) keys |= KEY.AIM;   // Normal and Hard aim down the sights at range, like a player would
     }
     // Wall-bang: heard an enemy close behind a soft wall -> shoot through it
     if (!fire && !t && b.diff.wallbang && b.alert?.steps && now - b.alert.t < 700 && b.alert.d < 10 && !drone && !s.rap) {

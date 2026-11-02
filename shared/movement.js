@@ -3,8 +3,8 @@
 
 import {
   PLAYER_RADIUS, STAND_HEIGHT, CROUCH_HEIGHT, PRONE_HEIGHT, STAND_EYE, CROUCH_EYE, PRONE_EYE, PRONE_EYE_FORWARD,
-  VAULT, RAPPEL, STEP_HEIGHT, WALK_SPEED, SPRINT_SPEED, CROUCH_SPEED, PRONE_SPEED, JUMP_SPEED, JUMP_COOLDOWN, ACCEL_GROUND, GRAVITY,
-  CROUCH_TRANSITION, PRONE_TRANSITION, LEAN_SPEED, LEAN_OFFSET, KEY, SPRINT_FIRE_DELAY,
+  VAULT, RAPPEL, STEP_HEIGHT, WALK_SPEED, SPRINT_SPEED, CROUCH_SPEED, PRONE_SPEED, ACCEL_GROUND, GRAVITY,
+  CROUCH_TRANSITION, PRONE_TRANSITION, LEAN_SPEED, LEAN_OFFSET, KEY, SPRINT_FIRE_DELAY, ADS,
 } from './constants.js';
 
 const EPS = 1e-4;
@@ -18,7 +18,8 @@ export function createPlayerState(spawn) {
     yaw: spawn.yaw || 0, pitch: 0,
     crouch: 0, lean: 0,
     prone: 0,      // 0 standing/crouching ... 1 lying down
-    jumpCd: 0,     // seconds until the next jump is allowed
+    jumpCd: 0,     // seconds until the next vault is allowed
+    ads: 0,        // 0 hip ... 1 fully aimed down the sights
     onGround: true,
     sprinting: false,
     fireDelay: 0,  // > 0 while recovering from a sprint: no shooting yet
@@ -187,15 +188,18 @@ export function stepPlayer(s, input, dt, world) {
   const len = Math.hypot(wx, wz);
   if (len > 0) { wx /= len; wz /= len; }
 
-  const leaning = (keys & (KEY.LEAN_LEFT | KEY.LEAN_RIGHT)) !== 0;
-  // Holding fire cancels a sprint, and you can't shoot until you've recovered from it
+  // Holding fire cancels a sprint, and you can't shoot until you've recovered from it.
+  // Aiming also stops a sprint; sprinting cancels a lean.
   const firing = (keys & KEY.FIRE) !== 0;
+  const aiming = (keys & KEY.AIM) !== 0;
   if (firing && s.sprinting) s.fireDelay = SPRINT_FIRE_DELAY;
   s.fireDelay = Math.max(0, (s.fireDelay || 0) - dt);
-  const sprinting = !!(keys & KEY.SPRINT) && fwd > 0 && s.crouch < 0.5 && !lying && !leaning && !firing && s.fireDelay <= 0;
+  const sprinting = !!(keys & KEY.SPRINT) && fwd > 0 && s.crouch < 0.5 && !lying && !firing && !aiming && s.fireDelay <= 0;
   s.sprinting = sprinting;
+  s.ads = Math.max(0, Math.min(1, (s.ads || 0) + (aiming && !sprinting ? dt : -dt) / ADS.time));
   const baseSpeed = sprinting ? SPRINT_SPEED : WALK_SPEED;
-  const speed = lerp(lerp(baseSpeed, CROUCH_SPEED, s.crouch), PRONE_SPEED, s.prone) * (s.speedMul ?? 1) * (s.gunMul ?? 1) * (s.slow ?? 1);
+  const speed = lerp(lerp(baseSpeed, CROUCH_SPEED, s.crouch), PRONE_SPEED, s.prone) * lerp(1, ADS.moveMul, s.ads)
+    * (s.speedMul ?? 1) * (s.gunMul ?? 1) * (s.slow ?? 1);
 
   // Lean (not while sprinting or lying down)
   let leanTarget = 0;
@@ -212,14 +216,9 @@ export function stepPlayer(s, input, dt, world) {
 
   moveHorizontal(s, s.vx * dt, s.vz * dt, h, world);
 
-  // Jump: only from the ground, not while lying down, with a short cooldown
+  // No jumping: the key only vaults a low obstacle in front (from the ground, not lying down)
   s.jumpCd = Math.max(0, (s.jumpCd || 0) - dt);
-  if ((keys & KEY.JUMP) && s.onGround && !lying && s.jumpCd <= 0) {
-    if (tryVault(s, world)) return;       // a low obstacle in front: hop over it instead
-    s.vy = JUMP_SPEED;
-    s.onGround = false;
-    s.jumpCd = JUMP_COOLDOWN;
-  }
+  if ((keys & KEY.JUMP) && s.onGround && !lying && s.jumpCd <= 0 && tryVault(s, world)) return;
 
   // Gravity, ceilings, landing, and sticking to stairs when walking down them
   const wasOnGround = s.onGround;
@@ -283,7 +282,7 @@ export function weaponInput(s, input) {
 /**
  * Space with a low obstacle straight ahead (a crate, a counter, a window sill): hop over or through it.
  * Needs room above the obstacle (so an intact barricade blocks it) and a free place to land beyond.
- * Returns true and starts the vault, or false to let the normal jump happen.
+ * Returns true and starts the vault, or false if there is nothing to vault.
  */
 function tryVault(s, world) {
   const v = findVault(s, world);
@@ -291,7 +290,7 @@ function tryVault(s, world) {
   const { land, top } = v;
   Object.assign(s, {
     vaultT: 1e-6, vax: s.x, vay: s.y, vaz: s.z, vbx: land.x, vby: land.y, vbz: land.z, vtop: top,
-    vx: 0, vy: 0, vz: 0, onGround: false, sprinting: false, crouch: 1, prone: 0, lean: 0,
+    vx: 0, vy: 0, vz: 0, onGround: false, sprinting: false, crouch: 1, prone: 0, lean: 0, ads: 0,
   });
   return true;
 }
@@ -396,12 +395,15 @@ function stepRappel(s, keys, rapPressed, dt, world) {
   s.vx = s.vy = s.vz = 0;
   s.sprinting = false;
   s.crouch = 0; s.prone = 0; s.lean = 0;
+  s.ads = Math.max(0, Math.min(1, (s.ads || 0) + ((keys & KEY.AIM) ? dt : -dt) / ADS.time));   // you can aim on a rope
   const flipping = (keys & KEY.FLIP) !== 0;
   s.rapFlip = Math.max(0, Math.min(1, (s.rapFlip || 0) + (flipping ? 1 : -1) * dt * RAPPEL.flipSpeed));
   if (rapPressed) { letGo(s, r, false); return; }
 
-  const up = ((keys & KEY.FORWARD) ? 1 : 0) - ((keys & KEY.BACK) ? 1 : 0);
-  const sideIn = ((keys & KEY.RIGHT) ? 1 : 0) - ((keys & KEY.LEFT) ? 1 : 0);
+  // Upside down the view is turned over, so the keys are too: they always move you the way they would on screen
+  const turned = s.rapFlip > 0.5 ? -1 : 1;
+  const up = (((keys & KEY.FORWARD) ? 1 : 0) - ((keys & KEY.BACK) ? 1 : 0)) * turned;
+  const sideIn = (((keys & KEY.RIGHT) ? 1 : 0) - ((keys & KEY.LEFT) ? 1 : 0)) * turned;
   const maxY = r.top - RAPPEL.hang;
 
   // Space at a window: swing in through it

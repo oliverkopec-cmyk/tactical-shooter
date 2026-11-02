@@ -23,6 +23,7 @@ import { buildMap, setupLighting } from './map.js';
 import { LocalPlayer } from './player.js';
 import { RemotePlayer } from './avatars.js';
 import { ViewModel } from './weapons.js';
+import { sightOf } from './gunModels.js';
 import { Effects } from './effects.js';
 import { Audio } from './audio.js';
 import { DestructionView } from './destruction.js';
@@ -36,6 +37,7 @@ import { settings, onSettingsChange } from './settings.js';
 import { DRONE } from '../../shared/drone.js';
 import { actionFor, mouseCode, keyFor } from './controls.js';
 
+const sightCache = new Map();   // gun id -> { kind, zoom }
 const TRACER_OFFSET = new THREE.Vector3(0.2, -0.17, -0.9); // muzzle, roughly, in camera space
 
 export class Game {
@@ -234,6 +236,13 @@ export class Game {
         this.exitCam();
         this.ui.toast('Your camera was destroyed');
       }
+    });
+    network.on('jammerHit', ({ pos, destroyed }) => {
+      if (!this.running) return;
+      this.effects.sparks(pos, destroyed ? 16 : 7);
+      this.sound.at('sparkZap', pos, 22);
+      this.sound.at('sparkBuzz', pos, 22, destroyed ? 1.4 : 0.8);
+      if (destroyed) { this.effects.debris(pos, 0x2a2d31, 5); this.effects.puff(pos, 0x9a9a9a, 0.2); }
     });
     network.on('stunned', ({ ms }) => {
       this.stunUntil = performance.now() + ms;
@@ -467,6 +476,21 @@ export class Game {
     else if (action === 'toggleHint') this.ui.toggleHint();
   }
 
+  /** Sight kind and zoom of a gun, worked out once per gun. */
+  sightFor(id) {
+    if (!sightCache.has(id)) sightCache.set(id, sightOf(id));
+    return sightCache.get(id);
+  }
+
+  /** Narrow the field of view by a zoom factor (1 = the player's FOV setting). */
+  setZoom(zoom) {
+    const base = THREE.MathUtils.degToRad(settings.fov);
+    const fov = zoom <= 1.0001 ? settings.fov : THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(base / 2) / zoom));
+    if (Math.abs(this.camera.fov - fov) < 0.01) return;
+    this.camera.fov = fov;
+    this.camera.updateProjectionMatrix();
+  }
+
   /** Short, context-sensitive reminder of what the keys do right now. */
   hintText(watching, inDrone) {
     const phase = this.round.phase, attack = this.myTeam === 'attack';
@@ -477,10 +501,10 @@ export class Game {
     if (!this.local.alive) return `Click to switch teammate · ${tail}`;
     if (watching) return `${k('camView')} next camera · mouse pans the feed · you can't move while watching`;
     if (inDrone) return `Drone: ${move} drive · ${k('sprint')} fast · ${k('jump')} hop · ${k('fire')} ping enemy · ${k('droneNext')} switch · 1/2/3 spawn point · ${k('scoreboard')} scoreboard`;
-    const base = `${move} move · ${k('sprint')} sprint · ${k('jump')} jump · ${k('crouch')} crouch · ${k('prone')} prone · ${k('leanLeft')}/${k('leanRight')} lean · ${k('reload')} reload · ${k('primary')}/${k('secondary')} guns · ${k('utility')} utility · ${k('melee')} melee · ${k('rappel')} rappel · ${k('jump')} vault`;
+    const base = `${move} move · ${k('sprint')} sprint · ${k('jump')} vault · ${k('crouch')} crouch · ${k('prone')} prone · ${k('leanLeft')}/${k('leanRight')} lean · ${k('aim')} aim · ${k('reload')} reload · ${k('primary')}/${k('secondary')} guns · ${k('utility')} utility · ${k('melee')} melee · ${k('rappel')} rappel`;
     const f = OPERATORS[this.loadout.op]?.ability ? ` · ${k('ability')} ability` : '';
     if (attack) return phase === PHASE.PREP ? 'Fly your drone to find the objective · 1/2/3 choose where you appear' : `${base}${f} · ${k('breach')} breach charge · ${tail}`;
-    return `${base}${f} · ${phase === PHASE.PREP ? `${k('reinforce')} reinforce · ${k('barricade')} barricade · ` : ''}${k('camView')} cameras · ${tail}`;
+    return `${base}${f} · ${k('reinforce')} reinforce · ${phase === PHASE.PREP ? `${k('barricade')} barricade · ` : ''}${k('camView')} cameras · ${tail}`;
   }
 
   /** Rows for the Tab scoreboard. */
@@ -1020,8 +1044,8 @@ export class Game {
       const phase = this.round.phase;
       if (attack && phase !== PHASE.ACTION) {
         prompt = '';
-      } else if (!attack && phase !== PHASE.PREP) {
-        prompt = '';
+      } else if (!attack && phase !== PHASE.PREP && phase !== PHASE.ACTION) {
+        prompt = '';   // defenders reinforce in prep and in the action phase
       } else if (attack && !this.loadout.placed && panel) {
         if (this.world.isReinforcedPanel(panel.id)) prompt = 'Reinforced wall: breach charges won\'t break it';
         else if (this.loadout.charges > 0) prompt = `Press ${keyFor('breach')} to plant a breach charge`;
@@ -1241,6 +1265,13 @@ export class Game {
     this.ui.renderBoard(this.boardOn, this.boardRows(), this.round.scores);
 
     const w = local.weaponDef;
+    // Aiming down sights: zoom by the sight on the drawn gun
+    const sight = this.sightFor(local.weapon.id);
+    const ads = local.alive && !inDrone && !noBody && !watching && !replaying ? s.ads || 0 : 0;
+    const scoped = sight.kind === 'scope' && ads > 0.85;
+    local.adsZoom = sight.zoom;
+    this.setZoom(1 + (sight.zoom - 1) * ads * ads * (3 - 2 * ads));
+    this.ui.setSights(ads, sight.kind);
     if (!replaying) this.viewModel.setWeapon(local.weapon.id, this.mySkins[local.weapon.id], this.myCharms?.[local.weapon.id]);
     if (!replaying) this.viewModel.update(dt, {
       speed: Math.hypot(s.vx, s.vz),
@@ -1248,6 +1279,7 @@ export class Game {
       crouch: Math.max(s.crouch, s.prone || 0),
       lean: s.lean,
       reloadFrac: local.weapon.reload > 0 ? 1 - local.weapon.reload / w.reloadTime : -1,
+      ads, hidden: scoped,
     });
     this.sound.update(dt);
 

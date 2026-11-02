@@ -169,6 +169,22 @@ button.ghost { background: transparent; }
 #crosshair .ch-left { right: var(--gap); }
 #crosshair .ch-right { left: var(--gap); }
 #crosshair .ch-dot { width: 2px; height: 2px; left: -1px; top: -1px; }
+#hud.aiming #crosshair { display: none; }
+
+/* Aiming down sights: a red dot for red-dot sights, a scope view for scopes */
+#red-dot { position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px 0 0 -2px; border-radius: 50%; background: #ff2a2a; box-shadow: 0 0 4px 1px rgba(255, 40, 40, 0.8); }
+#scope { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+#scope .scope-lens {
+  position: relative; width: min(86vh, 86vw); aspect-ratio: 1; border-radius: 50%;
+  box-shadow: 0 0 0 200vmax #050607, inset 0 0 40px 18px rgba(0, 0, 0, 0.85);
+}
+#scope i { position: absolute; background: rgba(10, 10, 10, 0.9); }
+#scope .sc-h { left: 0; right: 0; top: 50%; height: 1px; }
+#scope .sc-v { top: 0; bottom: 0; left: 50%; width: 1px; }
+#scope .sc-dot { left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px 0 0 -2px; border-radius: 50%; background: #ff2a2a; }
+.setting-choices { display: flex; gap: 16px; flex-wrap: wrap; margin: 4px 0 8px; }
+.setting-choices label { display: flex; align-items: center; gap: 8px; }
+.setting-choices select { background: #1b1f25; color: inherit; border: 1px solid #3a4250; border-radius: 4px; padding: 3px 6px; font: inherit; }
 
 #hitmarker {
   position: absolute;

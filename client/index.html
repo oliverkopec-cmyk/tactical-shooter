@@ -197,6 +197,8 @@
     <div id="crosshair">
       <i class="ch-top"></i><i class="ch-bottom"></i><i class="ch-left"></i><i class="ch-right"></i><i class="ch-dot"></i>
     </div>
+    <div id="scope" class="hidden"><div class="scope-lens"><i class="sc-h"></i><i class="sc-v"></i><i class="sc-dot"></i></div></div>
+    <div id="red-dot" class="hidden"></div>
     <div id="hitmarker"><i></i><i></i><i></i><i></i></div>
     <div id="damage-indicator"><i></i></div>
     <div id="drone-overlay" class="hidden"></div>
@@ -280,6 +282,13 @@
       <label>Mouse sensitivity <span id="val-sensitivity" class="muted"></span>
         <input id="set-sensitivity" type="range" min="0.2" max="3" step="0.05" />
       </label>
+      <label>Aiming sensitivity <span id="val-aimSensitivity" class="muted"></span>
+        <input id="set-aimSensitivity" type="range" min="0.2" max="2" step="0.05" />
+      </label>
+      <div class="setting-choices">
+        <label>Lean <select id="set-leanMode"><option value="toggle">Toggle</option><option value="hold">Hold</option></select></label>
+        <label>Aim down sights <select id="set-aimMode"><option value="hold">Hold</option><option value="toggle">Toggle</option></select></label>
+      </div>
       <label>Volume <span id="val-volume" class="muted"></span>
         <input id="set-volume" type="range" min="0" max="1" step="0.05" />
       </label>

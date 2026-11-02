@@ -60,8 +60,9 @@ export class PoseHistory {
  * Returns { origin, pellets: [{ end, hitId, head, damage }] }.
  */
 export const CAMERA_HIT_HALF = 0.22;
+export const JAMMER_HIT_HALF = 0.16;
 
-export function resolveShot({ shooterId, shooter, input, world, players, history, now, drones = [], cameras = [], claymores = [] }) {
+export function resolveShot({ shooterId, shooter, input, world, players, history, now, drones = [], cameras = [], claymores = [], jammers = [] }) {
   const w = WEAPONS[shooter.weapon.id];
   const eye = getEyePosition(shooter.state, world);
   const origin = [eye.x, eye.y, eye.z];
@@ -117,19 +118,29 @@ export function resolveShot({ shooterId, shooter, input, world, players, history
         if (h) { claymore = { id: c.id, t: h.t }; maxT = h.t; }
       }
     }
+    // Attackers can shoot Jammer's device (it takes two shots)
+    let jammer = null;
+    if (!hit && !drone && !camera && !claymore && shooter.member.team === 'attack') {
+      const q = JAMMER_HIT_HALF;
+      for (const j of jammers) {
+        const h = rayBox(origin, d, [j.pos[0] - q, j.pos[1] - q, j.pos[2] - q], [j.pos[0] + q, j.pos[1] + q, j.pos[2] + q], maxT);
+        if (h) { jammer = { id: j.id, t: h.t }; maxT = h.t; }
+      }
+    }
     const end = [origin[0] + d[0] * maxT, origin[1] + d[1] * maxT, origin[2] + d[2] * maxT];
     pellets.push({
       claymoreId: claymore ? claymore.id : null,
+      jammerId: jammer ? jammer.id : null,
       end,
       hitId: hit ? hit.id : null,
       head: hit ? hit.head : false,
       damage: hit ? damageAtDistance(w, hit.t, hit.head) : 0,
-      wall: !hit && !drone && !camera && !claymore && !!wallHit,
+      wall: !hit && !drone && !camera && !claymore && !jammer && !!wallHit,
       cameraId: camera ? camera.id : null,
-      barricade: !hit && !drone && !camera && !claymore && wallHit?.box.kind === 'barricade' ? { id: wallHit.box.barricadeId, index: wallHit.box.panelIndex } : null,
+      barricade: !hit && !drone && !camera && !claymore && !jammer && wallHit?.box.kind === 'barricade' ? { id: wallHit.box.barricadeId, index: wallHit.box.panelIndex } : null,
       droneId: drone ? drone.id : null,
       droneDamage: drone ? damageAtDistance(w, drone.t, false) : 0,
-      panelId: !hit && !drone && !camera && !claymore && wallHit?.box.kind === 'panel' ? wallHit.box.id : null,
+      panelId: !hit && !drone && !camera && !claymore && !jammer && wallHit?.box.kind === 'panel' ? wallHit.box.id : null,
       panelDamage: w.damage,
     });
   }

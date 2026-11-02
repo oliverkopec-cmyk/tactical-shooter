@@ -2,7 +2,19 @@
 
 A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite on the client, Node.js + Socket.IO on an authoritative server. One Node process serves both the game client and the realtime server, so the whole thing deploys as a single Render web service.
 
-## Status: Stage 26 (bots)
+## Status: Stage A (controls and gameplay fixes)
+
+- **No jumping:** Space only vaults (and swings you in through a window from a rope). Drones keep their hop and Shift boost. Bots that get stuck vault instead of hopping.
+- **Lean: Toggle or Hold** (Settings, default Toggle). In Toggle, Q leans left, Q again stands you up, E leans right straight away. Sprinting cancels the lean (in Hold too, even with the key held).
+- **Aim down sights:** right mouse (rebindable "Aim down sights", Settings: Hold or Toggle, default Hold). The gun comes up to the middle with its sights on your line of aim, over 0.2 s. Iron sights zoom 1.3×, red dots 1.6× (you look through the sight at a red dot), scopes 2.4× and the Longview marksman rifle's long scope 3.2× (a scope view with a black surround). While aiming: 60% less spread, 38% slower walking, no sprinting (pressing sprint in Toggle mode lowers the sights), much less gun bob, and no crosshair. **Aiming sensitivity** (Settings) is a multiplier on top of your mouse sensitivity, already corrected for the zoom, so 1.00× feels the same as hip-fire. Normal and Hard bots aim down their sights at targets over 10 m away.
+- **Melee moved to 3** because aiming took right click. Saved keybinds are moved over automatically: if melee was on right click, aiming gets right click and melee goes to 3; a key you chose yourself is never taken by a new action.
+- **Rappel fix:** hanging upside down, W/S/A/D and the mouse move you and the view the way they look on screen (W goes toward the top of the screen, the mouse isn't reversed).
+- **Jammers can be shot:** two bullet hits from an attacker destroy one (a shotgun blast counts as one hit). Each hit throws sparks with an electric crackle; the second also scatters debris.
+- **Defenders break barricades from inside during prep** with bullets and melee (the invisible prep barrier still keeps them in). The game has no window glass, so there is nothing else to break.
+- **Reinforcing in the action phase:** V (and Mason's extra two) now works in prep and action, from the same team count of 10.
+- **Barbed wire only slows the enemy team.** Teammates walk through at full speed. Anyone walking through it makes a rustling noise others can hear.
+
+### Earlier: Stage 26 (bots)
 
 - **Adding bots:** in the room lobby the host picks a difficulty (**Easy, Normal, Hard**) and adds a bot to Attack or Defense, or presses **Fill empty slots** to fill both sides up to 5. Bots show as "bot · normal" in the lobby; the host can remove one with ×. A room with only bots left closes.
 - **Rewards:** a match with any bot in it gives **half Money and no rank points** (the match summary says so), and leaving it early costs no rank points either.
@@ -189,7 +201,7 @@ Six new operators, bought with Money in the Operators tab (the original eight an
 
 ### Earlier: Stage 10 (movement and keybinds)
 
-- Jump (Space) for players and drones; players can't shoot in mid-air. A drone hop arcs about 0.5 m up and 1.5 m forward, once per second
+- Jump (Space) for players and drones (players lost the jump in Stage A; Space only vaults now); players can't shoot in mid-air. A drone hop arcs about 0.5 m up and 1.5 m forward, once per second
 - Prone (Z, toggle): slow, no sprinting, a smaller hitbox lying along the body; crouch moved to C and defender cameras to T
 - Settings → Keybinds: rebind every action to any key or mouse button, reset to default; saved to the account
 
@@ -199,7 +211,7 @@ Six new operators, bought with Money in the Operators tab (the original eight an
 - Your profile shows your level, Money, Polish Money and rank points, and saves your settings
 - Create a room (4-letter code) or join one; your username is your name in the lobby and in matches
 - Pick Attack or Defense in the lobby (max 5 per team); the host starts the match
-- First-person movement: WASD, mouse look (pointer lock), Shift sprint, Space jump (or vault), C crouch, Z prone, Q/E lean, N rappel, M flip (all rebindable)
+- First-person movement: WASD, mouse look (pointer lock), Shift sprint, Space vault, C crouch, Z prone, Q/E lean, right click aim, N rappel, M flip (all rebindable)
 - Server-authoritative movement with client-side prediction, reconciliation and interpolation of other players
 - Two-storey map with interior and exterior stairs, a balcony, and the objective box
 - Hitscan weapons with recoil, spread, magazines and reload (R)
@@ -235,13 +247,13 @@ Six new operators, bought with Money in the Operators tab (the original eight an
 - The pilot left-clicks to ping an enemy under the crosshair (30 m, clear line of sight, about 4° aim tolerance): a small red marker shows above that enemy's head for 3 s for the whole attacking team. Only the marker shows through walls, never the body
 - Polish: **Tab** shows a scoreboard (kills, deaths, your team's operators), **Esc** opens a pause menu with sensitivity, volume and field-of-view sliders (also on the home and lobby screens, saved in your browser), **H** hides the key hints (which change with your role and phase), round and phase banners, a low-health glow, a "Copy code" button and player counts in the lobby
 - **No shooting while sprinting:** pressing fire cancels a sprint, and the first shot comes 0.25 s later (you can't sprint while holding fire)
-- **Melee (right click):** 45 damage to an enemy in front of you (about 2 m), 0.8 s cooldown. It also smashes barricades (3 hits break one completely), knocks out **one wall panel per hit** (never a reinforced wall), and attackers can use it to smash cameras
+- **Melee (3, was right click before Stage A):** 45 damage to an enemy in front of you (about 2 m), 0.8 s cooldown. It also smashes barricades (3 hits break one completely), knocks out **one wall panel per hit** (never a reinforced wall), and attackers can use it to smash cameras
 - **Barricades (B, defenders, prep only):** nail wooden planks over a doorway or window (1 second, 8 per team per round, not while someone stands in the gap). A barricade is a solid panel of 7 thin wooden planks with a diagonal X over the front (`barricadePlanks()` in `shared/barricade.js`); a door's has a 0.32 m open gap at the bottom that a drone can drive through but a player can't, a window's is closed: bullets (2 rifle hits per plank) break planks one by one, each melee hit breaks one grid section (a third of the width, 2 planks tall, at the height you aim) and the 3rd breaks the whole barricade, while a breach charge or a grenade destroys it at once. Each plank is 3 segments (`barricadePlanks()` returns 21 for the 7 planks), index = plank * 3 + column. Planks block movement and bullets until broken. Windows and outside doors start every round already barricaded for free (`Gadgets.placeStartBarricades`)
 - **Props:** furniture, crates, barrels, concrete barriers, pallets, planters and parked vehicles inside and outside the building. They are solid, so waist-high ones are cover; rugs, pictures, monitors and plants are decoration only
 - **Player models:** other players are drawn as a humanoid with helmet, head, vest, arms holding the (detailed, skinned, charmed) gun, and bending legs with a walk cycle, crouch pose and a melee swing
 - **Three objective sites** in different rooms (upstairs office, ground-floor back room, upstairs west room). During operator select the defenders vote on one (ties and no votes are settled at random). Attackers aren't told which; a drone that gets within 6 m with a clear view of the objective, or an attacker walking into its zone, reveals it to everyone. Defenders start in or right next to the site they voted for (five spawn points per site, facing the objective); they are moved there the moment the vote is decided. Only the chosen site can be captured, the three boxes look identical, and the zone ring and "Objective:" label only appear once you know the site
 - **Sound** is positional: you hear other players from the right direction, quieter and duller with distance, through walls and from another floor. Footsteps: sprinting is loud and carries about 40 m, walking about 14 m, crouch-walking only a couple of metres. Also reloading, landing from a fall, barricades and walls breaking, gadgets being placed, melee swings and drone motors. Volume is in the settings menu
-- Defenders reinforce wall sections (V, 10 per team): darker, immune to bullets and basic charges; only a heavy charge (Spark, stage 6) breaks them
+- Defenders reinforce wall sections (V, 10 per team, in prep and action): darker, immune to bullets and basic charges; only a heavy charge (Spark, stage 6) breaks them
 
 ## Planned: later stages
 
@@ -258,6 +270,47 @@ Written down so they aren't forgotten (see Status for what is built). They are b
 - Placing animation: in first person your hands lower the item into place (kneeling for floor items like claymores and wire, reaching forward for wall items like cameras and charges). Other players see your character doing the same, so they know you're placing something.
 - A short placing sound that others nearby can hear.
 - The server times the placement, so it can't be skipped by cheating.
+
+### Stage B - Better movement physics
+
+- Players speed up over about 0.15 s and slow down over about 0.1 s instead of starting and stopping instantly.
+- Strafing and walking backwards are slower than forwards. Changing direction quickly has a small momentum delay.
+- Speed depends on stance, aiming, the gun's mobility and the operator's speed rating.
+- Camera: subtle head bob walking, more sprinting, a small dip when stopping and when vaulting.
+- Weapon sway: the gun lags slightly behind the mouse and moves with footsteps; less while aiming.
+- Smooth transitions between standing, crouching and prone.
+- Server and client movement stay identical (no rubber-banding).
+- All movement numbers in one config file for tuning.
+
+### Stage C - Admin announcements, gifts and exclusive skins
+
+- **Announcements** (admin tab): a message sent to everyone online, shown as a banner at the top of the screen (menu and matches) for 5, 10 or 30 seconds, chosen when sending. Offline players don't get it.
+- **40 Exclusive skins**, gift-only: not in any crate or the shop, only given by an admin. A new **Exclusive** rarity above Legendary with its own shifting colour and an "EXCLUSIVE" tag wherever skins are shown. The best-looking skins in the game, original and drawn in code, with effects regular skins don't have (animated patterns, pulsing glow, colour-shifting paint, shimmering metal, moving particles), each clearly different (molten lava, deep space, electric storm, frozen crystal, neon city, dragon scales, golden circuitry, ocean waves, aurora, cherry blossom, carbon fibre with gold inlay, glitch, holographic and more). Any of them fits any gun.
+- **Gifts** (admin tab): a title, a message and contents (any amount of Money, any skin including exclusives, a charm, or a crate), sent to one player (search by username), everyone online, or the whole server (every account; offline players get it at their next login). A quick **Send Money** option with the same three choices, an amount and an optional message.
+- In the menu, each unclaimed gift is a wrapped present on the platform in front of the operator, bouncing and glowing (in the exclusive colour for exclusive skins). Clicking it unwraps it (ribbon pops, lid flies off, confetti), shows what's inside and the message, and adds it to the account.
+- Each gift can be claimed once per account; the server handles everything. The admin tab lists past gifts and how many players claimed each.
+
+### Stage D - Main menu remodel
+
+- A proper original 3D scene behind the operator (for example a dark rooftop at dusk near the target building, city lights in the distance, drifting fog, light rain or dust, a slow sweeping searchlight) with a slow cinematic camera drift.
+- Better operator lighting: rim light, soft shadows, a subtle platform glow.
+- Restyled top bar, tabs and panels: sharper fonts, cleaner spacing, subtle animations on tab switches and button hovers.
+- Short menu music or ambient sound with a volume setting.
+- Fast to load and light on low-end laptops (fewer effects on the low graphics setting).
+
+### Stage E - 8 new operators
+
+Bought with Money like the other new ones, each with its own icon, primary and secondary gun and 2 utility options. Bots can play them.
+
+- **Volt (A):** 2 EMP grenades that disable and destroy enemy electronics in a radius (cameras, jammers, shock wires, interceptors) and stop reinforcement shocks for 10 seconds.
+- **Wasp (A):** one drone is a shock drone that zaps (short cooldown), destroying defender gadgets it touches and dealing small damage to players.
+- **Ember (A):** a launcher with 3 breaching pellets that open small holes in soft walls, barricades and hatches from a distance.
+- **Ram (A):** a breaching hammer (melee key, limited uses) that smashes big holes in soft walls, floors and hatches in one hit; slow and loud.
+- **Current (D):** 3 shock wires on reinforced walls or hatches; they destroy breach charges planted on that wall and damage anyone touching it. Volt's EMP disables them.
+- **Trapper (D):** 3 hidden floor traps; an attacker who steps on one is stuck for 4 seconds and takes small damage, and can shoot it to escape early.
+- **Medic (D):** a healing pistol, 40 health per shot to teammates or themselves, 3 shots per round.
+- **Interceptor (D):** 2 devices that each shoot down 2 thrown grenades or launched pellets within 4 m before they explode.
+- Balanced against the existing operators.
 
 ## Run locally
 
@@ -346,7 +399,8 @@ client/
 
 ## Movement and keybinds
 
-- Jump and prone are input bits (`KEY.JUMP`, `KEY.PRONE`) simulated by `shared/movement.js` on both sides, so prediction and the server agree. Prone is a toggle on the client, which sends the PRONE bit while it's on; crouching or jumping gets you up.
+- Vault and prone are input bits (`KEY.JUMP`, `KEY.PRONE`) simulated by `shared/movement.js` on both sides, so prediction and the server agree. `KEY.JUMP` only vaults for players (there is no jump); for drones it is the hop. Prone is a toggle on the client, which sends the PRONE bit while it's on; crouching or vaulting gets you up.
+- Aiming is `KEY.AIM`. `state.ads` (0..1) moves toward it over `ADS.time` and is sent in snapshots as `ad`; it scales walking speed and spread (`ADS` in `shared/constants.js`). Toggle lean and toggle aim are client-side: the client sends the lean or aim bits while the toggle is on (`leanOn`, `aimOn` in `client/src/player.js`). The zoom comes from the gun's sight (`sightOf()` in `client/src/gunModels.js`, which also decides which sight each gun model gets).
 - `state.prone` (0..1) blends height, eye height and speed. Getting up needs head room; if standing doesn't fit, you end up crouched.
 - Lying down (`prone >= 0.5`), the hitbox in `shared/raycast.js` is a low box along the facing direction with the head in front. The avatar in `client/src/avatars.js` uses the same measurements, and lag compensation records `prone` with every pose.
 - No shooting mid-air: `weaponInput()` drops the trigger while `!onGround`.
@@ -395,7 +449,7 @@ There is no in-game way to become owner or admin. Roles are worked out on the se
 
 ## Sound
 
-Other players' sounds are derived on each client from the snapshots (speed, stance, reload state), so they cost no extra network traffic. `Audio.play()` takes a source position and a range, and handles falloff, stereo direction (from the camera's facing), and muffling for walls (one ray per sound) and other floors. Add a new sound by adding a recipe to `SOUNDS` in `client/src/soundscape.js`. There is no jump key in the game, so "landing" sounds play for falls only.
+Other players' sounds are derived on each client from the snapshots (speed, stance, reload state, walking through barbed wire), so they cost no extra network traffic. `Audio.play()` takes a source position and a range, and handles falloff, stereo direction (from the camera's facing), and muffling for walls (one ray per sound) and other floors. Add a new sound by adding a recipe to `SOUNDS` in `client/src/soundscape.js`. There is no jumping in the game, so "landing" sounds play for falls only.
 
 ## Barricades, melee and props
 
