@@ -308,10 +308,15 @@ export class BotBrains {
     // ---- a barricade in the way: smash it
     if (phase === PHASE.ACTION && !b.target && (b.wantMove || b.stuckT > 0.3) && !p.state.rap && now > (b.nextMelee || 0)) {
       const ahead = raycastWorld(g.world, [origin[0], origin[1] - 0.5, origin[2]], aimDirection(b.moveYaw ?? b.yaw, 0), 1.4);
-      const abId = OPERATORS[p.operator]?.ability?.id;
-      if ((abId === 'hammer' || abId === 'shieldDash') && p.ability?.charges > 0 && (ahead?.box.kind === 'barricade' || (ahead?.box.kind === 'panel' && !g.world.isReinforcedPanel(ahead.box.id) && (b.stuckT > 0.3 || this.nearSite(p, 10))))) {
+      // Ram's hammer and Aegis's shield charge go through soft walls (near the site, or when stuck) and barricades;
+      // the hammer also takes armour panels, which everyone else has to beat down with melee
+      const abId = OPERATORS[p.operator]?.ability?.id, kind = ahead?.box.kind;
+      const armor = kind === 'armor' && team === 'attack';
+      const soft = kind === 'barricade' || (kind === 'panel' && !g.world.isReinforcedPanel(ahead.box.id) && (b.stuckT > 0.3 || this.nearSite(p, 10)));
+      const ready = p.ability?.charges > 0 && now >= (p.ability.cdUntil || 0);
+      if (ready && ((abId === 'hammer' && (soft || armor)) || (abId === 'shieldDash' && soft))) {
         b.nextMelee = now + 1200; b.faceFor = { yaw: b.moveYaw ?? b.yaw, until: now + 900 }; g.handleAction(id, 'ability');
-      } else if (ahead?.box.kind === 'barricade') { b.nextMelee = now + 850; b.faceFor = { yaw: b.moveYaw ?? b.yaw, until: now + 900 }; g.handleAction(id, 'melee'); }
+      } else if (kind === 'barricade' || armor) { b.nextMelee = now + 850; b.faceFor = { yaw: b.moveYaw ?? b.yaw, until: now + 900 }; g.handleAction(id, 'melee'); }
     }
     // ---- progress check over the last second: stuck -> hop (vaults low things), then sidestep
     const pos = [p.state.x, p.state.z];
@@ -393,7 +398,7 @@ export class BotBrains {
       if (p.health < 65 && p.ability?.charges > 0 && now > (b.nextAbility || 0)) { b.nextAbility = now + 1500; g.handleAction(id, 'ability'); }
     } else if (ab === 'pellets' && p.ability?.volley) {
       if (now > (b.detonateAt ||= now + 1500)) { b.detonateAt = 0; g.handleAction(id, 'ability'); }
-    } else if (ab !== 'armorPanel' && ab !== 'shockWire' && ab !== 'hammer' && ab !== 'shockDrone' && now > b.nextAbility && (b.target || b.alert || Math.random() < 0.05)) {
+    } else if (ab !== 'armorPanel' && ab !== 'shockWire' && ab !== 'hammer' && ab !== 'shockDrone' && (p.ability?.charges > 0 || OPERATORS[p.operator]?.ability?.cooldown) && now > b.nextAbility && (b.target || b.alert || Math.random() < 0.05)) {
       b.nextAbility = now + rand(14000, 28000); g.handleAction(id, 'ability');
     }
     if (!util || util.charges <= 0 || now < b.threw || Math.random() > d.utility) return;
@@ -466,22 +471,30 @@ export class BotBrains {
         const hit = raycastWorld(g.world, e, v.map((c) => c / d), d);
         if (!hit || hit.t >= d - 0.3) this.contact('attack', qid, [q.state.x, q.state.y, q.state.z], false, DRONE_CONTACT_MS);
       }
-      // Wasp: turn the drone to a defender gadget in taser range and zap it
+      // Wasp: drive the drone up to a defender gadget it can see, turn to it and zap it
       b.droneAim = null;
       if (drone.zaps > 0 && !drone.jammed) {
         const Z = ABILITY_STATS.zap;
+        let best = null;
         for (const el of g.gadgets.electronics()) {
           const v = el.pos.map((c, i) => c - e[i]);
           const d = Math.hypot(...v);
-          if (d > Z.range - 0.3 || d < 0.2) continue;
+          if (d > 15 || d < 0.2 || (best && d >= best.d)) continue;
           const hit = raycastWorld(g.world, e, v.map((c) => c / d), d);
           if (hit && hit.t < d - 0.3) continue;
+          best = { el, v, d };
+        }
+        if (best && best.d > Z.range - 0.6) {
+          const [x, y, z] = best.el.pos;
+          b.goal = { key: `zap:${best.el.kind}${best.el.id}`, x, y, z, r: 2.5, drone: true };
+        } else if (best) {
+          const { v } = best;
           b.droneAim = { yaw: yawTo(v[0], v[2]), pitch: Math.atan2(v[1], Math.hypot(v[0], v[2])) };
+          b.goal = null;
           if (Math.abs(wrap(b.yaw - b.droneAim.yaw)) < 0.06 && Math.abs(b.pitch - b.droneAim.pitch) < 0.08 && now > (b.nextZap || 0)) {
-            b.nextZap = now + ABILITY_STATS.zap.cooldownMs + 100;
+            b.nextZap = now + Z.cooldownMs + 100;
             g.handleAction(id, 'ability');
           }
-          break;
         }
       }
     }
