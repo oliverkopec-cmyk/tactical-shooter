@@ -152,7 +152,7 @@ export class BotBrains {
       while (left > 1e-4 && p.queue.length < 20) {
         const step = Math.min(left, MAX_INPUT_DT);
         left -= step;
-        p.queue.push({ seq: ++b.seq, dt: step, keys, yaw: b.yaw, pitch: b.pitch, wsel: 0, rt: now });
+        p.queue.push({ seq: ++b.seq, dt: step, keys, yaw: b.yaw, pitch: b.pitch, wsel: b.wsel || 0, rt: now });
         b.keysOnce = 0;
       }
     }
@@ -398,7 +398,7 @@ export class BotBrains {
       if (p.health < 65 && p.ability?.charges > 0 && now > (b.nextAbility || 0)) { b.nextAbility = now + 1500; g.handleAction(id, 'ability'); }
     } else if (ab === 'pellets' && p.ability?.volley) {
       if (now > (b.detonateAt ||= now + 1500)) { b.detonateAt = 0; g.handleAction(id, 'ability'); }
-    } else if (ab !== 'armorPanel' && ab !== 'shockWire' && ab !== 'hammer' && ab !== 'shockDrone' && (p.ability?.charges > 0 || OPERATORS[p.operator]?.ability?.cooldown) && now > b.nextAbility && (b.target || b.alert || Math.random() < 0.05)) {
+    } else if (ab !== 'armorPanel' && ab !== 'shockWire' && ab !== 'hammer' && ab !== 'shockDrone' && ab !== 'shieldDash' && (p.ability?.charges > 0 || OPERATORS[p.operator]?.ability?.cooldown) && now > b.nextAbility && (b.target || b.alert || Math.random() < 0.05)) {
       b.nextAbility = now + rand(14000, 28000); g.handleAction(id, 'ability');
     }
     if (!util || util.charges <= 0 || now < b.threw || Math.random() > d.utility) return;
@@ -887,6 +887,12 @@ export class BotBrains {
     if (lookYaw === null && moveYaw !== null) lookYaw = moveYaw;
     if (!t) b.headPick = null;
     if (lookYaw !== null) this.aimAt(b, lookYaw, lookPitch, dt, fast);
+
+    // Aegis: the shield can't shoot, so a fight means drawing the pistol; the shield goes back up 3 s after it
+    if (WEAPONS[OPERATORS[p.operator]?.weapons.primary]?.shield) {
+      if (t && !drone) b.pistolUntil = now + 3000;
+      b.wsel = now < (b.pistolUntil || 0) ? 2 : 1;
+    } else b.wsel = 0;
 
     // Shoot: bursts at range to keep the spread down, a steady stream up close; tap semi-automatics
     if (fire && !drone && !s.rap) {

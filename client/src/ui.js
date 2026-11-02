@@ -560,11 +560,12 @@ export class UI {
         this.lastAmmoKey = key;
         $('weapon-name').textContent = `${w.name} · ${w.kind}`;
         const o = other && WEAPONS[other.id];
-        $('weapon-other').textContent = o ? `${slotKeys[weapon.slot === 0 ? 1 : 0]} ${o.name} ${other.ammo} / ${other.reserve}` : '';
-        $('ammo-mag').textContent = weapon.ammo;
-        $('ammo-reserve').textContent = ` / ${weapon.reserve}`;
+        $('weapon-other').textContent = o ? `${slotKeys[weapon.slot === 0 ? 1 : 0]} ${o.name}${o.shield ? '' : ` ${other.ammo} / ${other.reserve}`}` : '';
+        // A shield has no ammo
+        $('ammo-mag').textContent = w.shield ? '—' : weapon.ammo;
+        $('ammo-reserve').textContent = w.shield ? '' : ` / ${weapon.reserve}`;
         $('reload-text').classList.toggle('hidden', !(weapon.reload > 0));
-        $('ammo-box').classList.toggle('empty', weapon.ammo === 0);
+        $('ammo-box').classList.toggle('empty', !w.shield && weapon.ammo === 0);
       }
     }
     for (const id of ['crosshair', 'health-box', 'ammo-box']) $(id).classList.toggle('hidden', !alive);

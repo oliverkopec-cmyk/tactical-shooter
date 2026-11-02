@@ -524,6 +524,7 @@ const SIGHT_ZOOM = { iron: 1.3, dot: 1.6, scope: 2.4, longScope: 3.2 };
 /** The sight on a gun: { kind: 'iron' | 'dot' | 'scope', zoom }. */
 export function sightOf(id) {
   const w = WEAPONS[id] || WEAPONS.rifle;
+  if (w.shield) return { kind: 'iron', zoom: 1 };   // nothing to aim down
   const k = opticKind(w.model, variantOf(w.id, w.model).optic);
   const kind = k === 0 ? 'dot' : k === 1 ? 'scope' : 'iron';
   return { kind, zoom: SIGHT_ZOOM[w.model === 'dmr' ? 'longScope' : kind] };
@@ -577,11 +578,6 @@ export function makeGunModel(id, skinId = null) {
   b.g.userData.hold = ['pistol', 'revolver', 'machinePistol'].includes(w.model) ? [0, 0.03, -0.1] : [0, 0, 0];
   b.g.userData.display = w.shield ? 0.4 : 1;   // menus and crates show a shield smaller than a gun of its size would be
   return b.g;
-}
-
-/** A shield's sidearm (the pistol fired past its edge), or null for any other gun. */
-export function sidearmOf(id) {
-  return WEAPONS[id]?.sidearm || null;
 }
 
 const smooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };

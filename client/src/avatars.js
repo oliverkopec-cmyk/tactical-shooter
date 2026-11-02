@@ -207,15 +207,18 @@ export class RemotePlayer {
     if (!id || id === this.weaponId) return;
     this.weaponId = id;
     this.gunMount.clear();
-    // A shield: the body holds its sidearm, and the shield goes on its own mount
-    const sidearm = WEAPONS[id]?.sidearm;
-    if (sidearm) { this.ensureShield(id); if (!this.cover) this.cover = 1; }
-    const gunId = sidearm || id;
-    const gun = makeGunModel(gunId, this.skins[gunId]);
+    // A shield: it goes on its own mount and the hands hold nothing else
+    if (WEAPONS[id]?.shield) {
+      this.ensureShield(id);
+      if (!this.cover) this.cover = 1;
+      this.gun = null; this.muzzle = null;
+      return;
+    }
+    const gun = makeGunModel(id, this.skins[id]);
     gun.scale.multiplyScalar(1.3);   // keeps the gun's own size
     gun.traverse((o) => { if (o.isMesh) o.castShadow = true; });
     this.gunMount.add(gun);
-    if (!sidearm) attachCharm(gun, this.charms[id]);
+    attachCharm(gun, this.charms[id]);
     this.gun = gun;
     this.muzzle = gun.userData.muzzle;
     this.muzzle.add(this.flash);
@@ -384,8 +387,6 @@ export class RemotePlayer {
     for (let i = 0; i < 4; i++) this.shieldPose[i] += (want[i] - this.shieldPose[i]) * k;
     this.shieldMount.position.set(this.shieldPose[0], Math.max(half + 0.02, this.shieldPose[1]), this.shieldPose[2]);
     this.shieldMount.rotation.set(0, this.shieldPose[3], 0);
-    // the pistol comes out past the shield's right edge while it's up
-    if (c === 1 || c === 2) this.gunMount.position.x = 0.3;
     this.shield.userData.charm?.update(dt, this.shieldMount.position);
   }
 

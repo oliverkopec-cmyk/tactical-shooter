@@ -4,14 +4,14 @@
 import * as THREE from 'three';
 import { WEAPONS } from '../../shared/weapons.js';
 import { FEEL } from '../../shared/constants.js';
-import { makeGunModel, animateGun, sidearmOf } from './gunModels.js';
+import { makeGunModel, animateGun } from './gunModels.js';
 import { attachCharm } from './charmModels.js';
 
 const REST = new THREE.Vector3(0.2, -0.2, -0.42);
 const ADS_Z = -0.4;     // aiming: the gun comes to the middle with its sights on the line of sight, this far ahead
 const VM_FOV = 62;
-// Aegis's shield in first person, held on the left arm: [x, y, z, yaw] raised, lowered (aiming or
-// reloading: the pistol comes up over it) and swung aside (sprinting)
+// Aegis's shield in first person (nothing else is in your hands): [x, y, z, yaw] raised, lowered
+// and swung aside (sprinting)
 const SHIELD_POSE = { up: [-0.5, -0.6, -0.86, 0.42], low: [-0.5, -0.92, -0.7, 0.5], aside: [-0.86, -0.68, -0.6, 1.05] };
 
 export { makeGunModel, animateGun };
@@ -25,6 +25,15 @@ function makeFlash() {
   flash.add(a, b, c);
   flash.visible = false;
   return flash;
+}
+
+/** Nothing in the hands (a shield is drawn): a group with what the code expects of a gun model. */
+function emptyHands() {
+  const g = new THREE.Group();
+  const muzzle = new THREE.Object3D();
+  g.add(muzzle);
+  g.userData = { muzzle, hold: [0, 0, 0], sightY: 0.04, parts: {}, anim: {} };
+  return g;
 }
 
 export class ViewModel {
@@ -55,9 +64,8 @@ export class ViewModel {
     this.visible = true;
   }
 
-  /** sidearmSkin: for a shield, the skin of the pistol fired past it (the shield itself takes skinId and the charm). */
-  setWeapon(id, skinId = null, charmId = null, sidearmSkin = null) {
-    const key = `${id}|${skinId || ''}|${charmId || ''}|${sidearmSkin || ''}`;
+  setWeapon(id, skinId = null, charmId = null) {
+    const key = `${id}|${skinId || ''}|${charmId || ''}`;
     if (key === this.weaponKey) return;
     const previous = this.weaponKey && this.weaponId !== id ? this.weaponId : null;   // only a different gun gets the draw animation
     this.weaponKey = key;
@@ -65,9 +73,9 @@ export class ViewModel {
     if (this.gun) this.holder.remove(this.gun);
     if (this.shield) { this.scene.remove(this.shieldHolder); this.shield = null; }
     if (previous) this.raise = 1;   // drawing a gun: lift it into view
-    const sidearm = sidearmOf(id);
-    if (sidearm) {
-      // A shield: it goes on the left arm in its own holder, the pistol in the right hand as usual
+    const shield = !!WEAPONS[id]?.shield;
+    if (shield) {
+      // A shield: it gets its own holder, and the hands hold nothing else (an empty stand-in keeps the gun code happy)
       this.shield = makeGunModel(id, skinId);
       attachCharm(this.shield, charmId);
       this.shieldHolder ||= new THREE.Group();
@@ -77,8 +85,8 @@ export class ViewModel {
       this.shieldPose = SHIELD_POSE.up.slice();
       this.scene.add(this.shieldHolder);
     }
-    this.gun = makeGunModel(sidearm || id, sidearm ? sidearmSkin : skinId);
-    if (!sidearm) attachCharm(this.gun, charmId);
+    this.gun = shield ? emptyHands() : makeGunModel(id, skinId);
+    if (!shield) attachCharm(this.gun, charmId);
     this.gun.position.set(...this.gun.userData.hold);
     this.holder.add(this.gun);
     this.gun.userData.muzzle.add(this.flash);
