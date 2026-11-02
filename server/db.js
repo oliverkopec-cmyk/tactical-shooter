@@ -48,6 +48,28 @@ const SCHEMA = `
   );
   CREATE UNIQUE INDEX IF NOT EXISTS friendships_pair_idx ON friendships (LEAST(requester, addressee), GREATEST(requester, addressee));
   CREATE INDEX IF NOT EXISTS friendships_addressee_idx ON friendships (addressee);
+  CREATE TABLE IF NOT EXISTS gifts (
+    id          BIGSERIAL PRIMARY KEY,
+    title       TEXT NOT NULL,
+    message     TEXT NOT NULL DEFAULT '',
+    contents    JSONB NOT NULL,
+    audience    TEXT NOT NULL,
+    created_by  TEXT NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+  );
+  CREATE TABLE IF NOT EXISTS gift_recipients (
+    gift_id     BIGINT NOT NULL REFERENCES gifts(id) ON DELETE CASCADE,
+    account_id  BIGINT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    PRIMARY KEY (gift_id, account_id)
+  );
+  CREATE INDEX IF NOT EXISTS gift_recipients_account_idx ON gift_recipients (account_id);
+  CREATE TABLE IF NOT EXISTS gift_claims (
+    gift_id     BIGINT NOT NULL REFERENCES gifts(id) ON DELETE CASCADE,
+    account_id  BIGINT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    claimed_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (gift_id, account_id)
+  );
+  CREATE INDEX IF NOT EXISTS gift_claims_account_idx ON gift_claims (account_id);
 `;
 
 /** Create or update the tables (safe to run every start). */

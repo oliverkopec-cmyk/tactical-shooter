@@ -5,7 +5,7 @@
 import { OPERATORS, operatorsFor } from '../../shared/operators.js';
 import { WEAPONS } from '../../shared/weapons.js';
 import { UTILITIES } from '../../shared/utilities.js';
-import { SKINS, RARITIES, skinList, hexColor, CRATE, crateContents } from '../../shared/skins.js';
+import { SKINS, RARITIES, CRATE_RARITIES, skinList, hexColor, CRATE, crateContents, isExclusive } from '../../shared/skins.js';
 import { gunIcon } from './gunIcons.js';
 import { operatorIcon, sideSymbol } from './operatorIcons.js';
 import { equipSkin, equipOperator, openCrate as openCrateRequest, devMoney, buyOperator, equipCharm, openCharmCrate } from './account.js';
@@ -16,11 +16,19 @@ import { MenuScene } from './menuScene.js';
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const pips = (n) => '●'.repeat(n) + '○'.repeat(3 - n);
+const EXCL_TAG = '<span class="excl-tag">EXCLUSIVE</span>';
+/** A skin's swatch: a stripe of its mark colour (Exclusive skins: all three of their colours, shimmering). */
+const swatch = (s) => (s.rarity === 'exclusive'
+  ? `<span class="skin-swatch excl-swatch" style="background:linear-gradient(120deg,${hexColor(s.c1)} 0%,${hexColor(s.c2)} 45%,${hexColor(s.c3)} 60%,${hexColor(s.c1)} 100%);background-size:200% 200%"></span>`
+  : `<span class="skin-swatch" style="background:linear-gradient(135deg,${hexColor(s.body)} 0%,${hexColor(s.body)} 45%,${hexColor(s.mark)} 46%,${hexColor(s.mark)} 54%,${hexColor(s.accent)} 55%)"></span>`);
 
 export class Menu {
   /** getAccount() -> the current profile; setAccount(profile) stores a new one. */
-  constructor({ getAccount, setAccount, onSettings, onTab = () => {} }) {
+  constructor({ getAccount, setAccount, onSettings, onTab = () => {}, claimGift }) {
     this.onTab = onTab;
+    this.claimGift = claimGift;   // (id) -> { result, account } or { error }, from the server
+    this.giftList = [];           // unopened gifts waiting as presents
+    this.giftOpen = null;         // the gift being unwrapped: { id, result, account }
     this.getAccount = getAccount;
     this.setAccount = setAccount;
     this.onSettings = onSettings;
@@ -59,6 +67,7 @@ export class Menu {
       if (card) { this.crateGun = card.dataset.crateGun; this.shopMessage = ''; this.renderShop(); }
     });
     this.bindCrateOverlay();
+    this.bindGifts();
     $('shop-detail').addEventListener('click', (e) => this.onShopDetailClick(e));
   }
 
@@ -70,6 +79,7 @@ export class Menu {
     if (!on) { this.scene?.stop(); return; }
     if (!this.scene) {
       try { this.scene = new MenuScene($('menu-canvas')); } catch { this.scene = null; $('menu-canvas').classList.add('hidden'); }
+      if (this.scene) { this.scene.onGiftClick = (id) => this.openGift(id); this.scene.setGifts(this.giftList); }
     }
     this.scene?.start();
     this.refresh();
@@ -85,7 +95,7 @@ export class Menu {
 
   /** The account changed (login, equip, match payout): redraw whatever is showing. */
   refresh() {
-    if (!this.active || !this.getAccount() || this.opening) return;
+    if (!this.active || !this.getAccount() || this.opening || this.giftOpen) return;
     this.scene?.setMode(this.tab === 'operators' ? 'operators' : this.tab === 'shop' ? 'shop' : 'play');
     if (this.tab === 'operators') this.renderOperators();
     else if (this.tab === 'shop') this.openShop();
@@ -137,7 +147,7 @@ export class Menu {
       return `<button type="button" class="gun-row${this.slot === slot ? ' selected' : ''}" data-slot="${slot}" data-gun="${w.id}">
         <span class="slot">${slot === 'primary' ? 1 : 2}</span>
         <span class="gun-name"><b>${esc(w.name)}</b><i>${esc(w.kind)}</i></span>
-        <span class="gun-skin"${rar ? ` style="color:${rar.color}"` : ''}>${skin ? esc(skin.name) : 'Default'}</span>
+        <span class="gun-skin${skin?.rarity === 'exclusive' ? ' excl-text' : ''}"${rar ? ` style="color:${rar.color}"` : ''}>${skin ? esc(skin.name) : 'Default'}</span>
       </button>`;
     };
     const w = WEAPONS[op.weapons[this.slot]];
@@ -145,11 +155,12 @@ export class Menu {
     const owns = new Set(a.ownedSkins[w.id] || []);
     const tiles = [`<button type="button" class="skin-tile${current === null ? ' equipped' : ''}" data-skin="" title="The gun's original look">
         <span class="skin-swatch" style="background:linear-gradient(135deg,${hexColor(w.color)},${hexColor(w.accent)})"></span><span class="skin-name">Default</span><span class="skin-rar" style="color:#8b95a3">Standard</span></button>`]
-      .concat(skinList().map((s) => {
-        const ok = owns.has(s.id);
-        return `<button type="button" class="skin-tile${current === s.id ? ' equipped' : ''}${ok ? '' : ' locked'}" data-skin="${s.id}" style="--rar:${s.rarityInfo.color}" title="${ok ? '' : 'Not owned for this gun yet: click to open its crate in the Shop'}">
-          <span class="skin-swatch" style="background:linear-gradient(135deg,${hexColor(s.body)} 0%,${hexColor(s.body)} 45%,${hexColor(s.mark)} 46%,${hexColor(s.mark)} 54%,${hexColor(s.accent)} 55%)"></span>
-          <span class="skin-name">${esc(s.name)}</span><span class="skin-rar" style="color:${s.rarityInfo.color}">${s.rarityInfo.name}${ok ? '' : ' · 🔒'}</span></button>`;
+      // Exclusive skins are gift-only, so they only show once you have one
+      .concat(skinList().filter((s) => s.rarity !== 'exclusive' || owns.has(s.id)).map((s) => {
+        const ok = owns.has(s.id), excl = s.rarity === 'exclusive';
+        return `<button type="button" class="skin-tile${current === s.id ? ' equipped' : ''}${ok ? '' : ' locked'}${excl ? ' exclusive' : ''}" data-skin="${s.id}" style="--rar:${s.rarityInfo.color}" title="${ok ? '' : 'Not owned for this gun yet: click to open its crate in the Shop'}">
+          ${swatch(s)}
+          <span class="skin-name">${esc(s.name)}</span><span class="skin-rar${excl ? ' excl-text' : ''}" style="color:${s.rarityInfo.color}">${excl ? EXCL_TAG : s.rarityInfo.name}${ok ? '' : ' · 🔒'}</span></button>`;
       })).join('');
 
     const ownedCharms = new Set(a.ownedCharms || []);
@@ -178,7 +189,7 @@ export class Menu {
       <div class="detail-sub">Utility <span class="muted">(pick one before each round)</span></div>
       ${op.utilities.map((id) => `<div class="util-row"><b>${esc(UTILITIES[id].name)}</b><span class="muted">×${UTILITIES[id].charges} · ${esc(UTILITIES[id].desc)}</span></div>`).join('')}
       <div class="detail-sub">Skins for ${esc(w.name)}</div>
-      <div class="rarity-legend">${Object.values(RARITIES).map((r) => `<span style="color:${r.color}">● ${r.name}</span>`).join('')}</div>
+      <div class="rarity-legend">${Object.values(RARITIES).map((r) => `<span class="${r.giftOnly ? 'excl-text' : ''}" style="color:${r.color}">● ${r.name}${r.giftOnly ? ' (gifts only)' : ''}</span>`).join('')}</div>
       <div class="skin-grid">${tiles}</div>
       <div class="detail-sub">Charm for ${esc(w.name)} <span class="muted">(hangs from the gun; other players see it)</span></div>
       <div class="skin-grid charm-grid">${charmTiles}</div>
@@ -260,8 +271,8 @@ export class Menu {
 
     if (this.crateGun === '__charm') return this.renderCharmCrate(a);
     const id = this.crateGun, w = WEAPONS[id], contents = crateContents(), owns = new Set(a.ownedSkins[id] || []);
-    const odds = Object.values(RARITIES).map((r) => `<div class="odds-row"><span style="color:${r.color}">● ${r.name}</span><b>${Math.round(CRATE.odds[r.id] * 100)}%</b></div>`).join('');
-    const lists = Object.values(RARITIES).map((r) => `
+    const odds = CRATE_RARITIES.map((r) => `<div class="odds-row"><span style="color:${r.color}">● ${r.name}</span><b>${Math.round(CRATE.odds[r.id] * 100)}%</b></div>`).join('');
+    const lists = CRATE_RARITIES.map((r) => `
       <div class="detail-sub" style="color:${r.color}">${r.name}</div>
       <div class="crate-skins">${contents[r.id].map((sid) => `<span class="crate-skin${owns.has(sid) ? ' owned' : ''}" style="--rar:${r.color}">${owns.has(sid) ? '✔ ' : ''}${esc(SKINS[sid].name)}</span>`).join('')}</div>`).join('');
     const need = CRATE.price - a.money;
@@ -283,8 +294,8 @@ export class Menu {
   /** The charm crate's detail panel: odds, every charm inside, and the open button. */
   renderCharmCrate(a) {
     const owns = new Set(a.ownedCharms || []), contents = charmCrateContents();
-    const odds = Object.values(RARITIES).map((r) => `<div class="odds-row"><span style="color:${r.color}">● ${r.name}</span><b>${Math.round(CHARM_CRATE.odds[r.id] * 100)}%</b></div>`).join('');
-    const lists = Object.values(RARITIES).map((r) => `
+    const odds = CRATE_RARITIES.map((r) => `<div class="odds-row"><span style="color:${r.color}">● ${r.name}</span><b>${Math.round(CHARM_CRATE.odds[r.id] * 100)}%</b></div>`).join('');
+    const lists = CRATE_RARITIES.map((r) => `
       <div class="detail-sub" style="color:${r.color}">${r.name}</div>
       <div class="crate-skins">${contents[r.id].map((cid) => `<span class="crate-skin${owns.has(cid) ? ' owned' : ''}" style="--rar:${r.color}">${owns.has(cid) ? '✔ ' : ''}${esc(CHARMS[cid].name)}</span>`).join('')}</div>`).join('');
     const need = CHARM_CRATE.price - a.money;
@@ -379,6 +390,103 @@ export class Menu {
     });
     $('crate-more').addEventListener('click', () => { const gun = this.pending.result.charm ? '__charm' : this.pending.result.weapon; this.closeOpening(); this.openCrate(gun); });
     $('crate-back').addEventListener('click', () => this.closeOpening());
+  }
+
+  // ---------------------------------------------------------------- gifts
+
+  /** Admin tab: show a skin on the operator's gun in the scene (nothing is equipped). */
+  previewSkin(skinId) {
+    const a = this.getAccount();
+    const id = a?.equippedOperators?.menu && OPERATORS[a.equippedOperators.menu] ? a.equippedOperators.menu : 'recruit_atk';
+    const op = OPERATORS[id];
+    this.scene?.setLook({ team: op.team, operatorId: id, weaponId: op.weapons.primary, skinId: SKINS[skinId] ? skinId : null });
+  }
+
+  /** The server's list of unopened gifts: presents in the 3D scene, and a button in the Play tab. */
+  setGifts(list) {
+    this.giftList = Array.isArray(list) ? list : [];
+    this.scene?.setGifts(this.giftList);
+    const n = this.giftList.length, el = $('gift-notice');
+    el.classList.toggle('hidden', n === 0);
+    el.classList.toggle('exclusive', this.giftList.some((g) => g.exclusive));
+    el.innerHTML = `<span class="gift-icon">🎁</span><span><b>${n === 1 ? 'You have a gift!' : `You have ${n} gifts!`}</b><br><span class="muted">${this.scene ? 'Click a present in front of your operator to open it.' : 'Click here to open it.'}</span></span>`;
+    if (!this.giftOpen) $('gift-next').classList.toggle('hidden', true);
+  }
+
+  /** Open a gift: the server adds what's inside, then the unwrapping plays and shows it. */
+  async openGift(id) {
+    if (this.giftOpen || this.opening || this.busy || !this.claimGift) return;
+    this.busy = true;
+    const res = await this.claimGift(id);
+    this.busy = false;
+    if (!res.result) { this.shopMessage = ''; $('home-error').textContent = res.error || 'Could not open the gift.'; return; }
+    this.giftOpen = { id, ...res };
+    document.getElementById('screen-home').classList.add('crate-mode');
+    $('gift-overlay').classList.remove('hidden');
+    $('gift-result').classList.add('hidden');
+    $('gift-hint').classList.remove('hidden');
+    if (this.scene) this.scene.playGift(id, res.result, { showGun: this.giftGun(), onReveal: () => this.showGiftResult() });
+    else this.showGiftResult();
+  }
+
+  /** The gun a gifted skin is shown on and equipped to: the menu operator's primary. */
+  giftGun() {
+    const a = this.getAccount();
+    const op = OPERATORS[a?.equippedOperators?.menu] || OPERATORS.recruit_atk;
+    return op.weapons.primary;
+  }
+
+  showGiftResult() {
+    const { result, account } = this.giftOpen;
+    $('gift-hint').classList.add('hidden');
+    $('gift-result').classList.remove('hidden');
+    $('gift-title').textContent = result.title;
+    $('gift-from').textContent = result.from ? `From ${result.from}` : '';
+    $('gift-message').textContent = result.message || '';
+    $('gift-message').classList.toggle('hidden', !result.message);
+    const items = [];
+    const rarityTag = (r) => (r === 'exclusive' ? EXCL_TAG : `<span style="color:${RARITIES[r].color}">${RARITIES[r].name}</span>`);
+    if (result.skin) {
+      const sk = SKINS[result.skin.id];
+      items.push(`<div class="gift-item${result.skin.rarity === 'exclusive' ? ' exclusive' : ''}">${rarityTag(result.skin.rarity)} <b>${esc(sk.name)}</b> skin · fits every gun${result.skin.duplicate ? ' <span class="muted">(you already had it)</span>' : ''}</div>`);
+    }
+    if (result.crate) {
+      const c = result.crate, what = c.kind === 'charm' ? `${esc(CHARMS[c.charm].name)} charm` : `${esc(SKINS[c.skin].name)} for the ${esc(WEAPONS[c.weapon].name)}`;
+      items.push(`<div class="gift-item">A ${c.kind === 'charm' ? 'charm' : esc(WEAPONS[c.weapon].name)} crate: ${rarityTag(c.rarity)} <b>${what}</b>${c.duplicate ? ` <span class="muted">(duplicate: +${c.refund.toLocaleString()} Money)</span>` : ''}</div>`);
+    }
+    if (result.charm) items.push(`<div class="gift-item">${rarityTag(result.charm.rarity)} <b>${esc(CHARMS[result.charm.id].name)}</b> charm${result.charm.duplicate ? ' <span class="muted">(you already had it)</span>' : ''}</div>`);
+    if (result.money) items.push(`<div class="gift-item money"><b>+${result.money.toLocaleString()} Money</b></div>`);
+    $('gift-items').innerHTML = items.join('');
+    const skinId = result.skin?.id;
+    $('gift-equip').classList.toggle('hidden', !skinId);
+    $('gift-equip').disabled = false;
+    $('gift-equip').textContent = skinId ? `Equip on ${WEAPONS[this.giftGun()].name}` : 'Equip';
+    $('gift-next').classList.toggle('hidden', this.giftList.length === 0);
+    this.setAccount(account);
+  }
+
+  closeGift() {
+    this.giftOpen = null;
+    document.getElementById('screen-home').classList.remove('crate-mode');
+    $('gift-overlay').classList.add('hidden');
+    this.scene?.stopGift();
+    this.refresh();
+  }
+
+  bindGifts() {
+    $('gift-notice').addEventListener('click', () => { if (this.giftList[0]) this.openGift(this.giftList[0].id); });
+    $('gift-overlay').addEventListener('click', (e) => { if (!e.target.closest('button')) this.scene?.opening?.skip(); });
+    $('menu-canvas').addEventListener('pointerdown', () => { if (this.giftOpen) this.scene?.opening?.skip(); });
+    $('gift-close').addEventListener('click', () => this.closeGift());
+    $('gift-next').addEventListener('click', () => { const next = this.giftList[0]; this.closeGift(); if (next) this.openGift(next.id); });
+    $('gift-equip').addEventListener('click', async () => {
+      const skin = this.giftOpen?.result.skin?.id;
+      if (!skin) return;
+      const res = await equipSkin(this.giftGun(), skin);
+      $('gift-equip').textContent = res.account ? 'Equipped ✔' : 'Could not equip';
+      $('gift-equip').disabled = !!res.account;
+      if (res.account) this.setAccount(res.account);
+    });
   }
 
   /** The gun a charm from the crate gets equipped on: the gun picked in the Operators tab (or the equipped operator's primary). */

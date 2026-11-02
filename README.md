@@ -2,7 +2,17 @@
 
 A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite on the client, Node.js + Socket.IO on an authoritative server. One Node process serves both the game client and the realtime server, so the whole thing deploys as a single Render web service.
 
-## Status: Stage B (movement physics)
+## Status: Stage C (announcements, gifts and Exclusive skins)
+
+- **Announcements** (Admin tab → Send to players → Announcement): type a message, choose 5, 10 or 30 seconds, and everyone online gets a banner across the top of the screen, in the menu and in matches, with a bar showing how long it stays (× closes it early). Nothing is stored, so offline players never see it.
+- **40 Exclusive skins** (`shared/exclusiveSkins.js`): a new **Exclusive** rarity above Legendary, gift-only (never in a crate or the shop) and owned on every gun once given. Each is drawn by an animated shader effect (`client/src/exclusiveSkins.js`) over the normal lighting: the body and furniture carry the pattern, the metal parts get a sheen sliding along them, the sights, vents and optic housing pulse with light, and many have particles floating around the gun (embers, snow, petals, sparks, bubbles, stars). Twenty effects, each used for two skins with different colours, scale, speed and particles: Molten Core / Cobalt Magma (flowing lava cracks), Deep Space / Nebula Bloom (drifting nebula and twinkling stars), Electric Storm / Violet Tempest (clouds and flashing lightning), Frozen Crystal / Rose Quartz (facets and sparkles), Neon City / Night Market (lit windows and scanlines), Dragon Scales / Wyrm Ember (colour-shifting scales), Golden Circuitry / Quantum Trace (traces with running pulses), Ocean Waves / Tidal Abyss (rolling swells with glowing crests), Aurora / Solar Flare (swaying curtains of light), Cherry Blossom / Midnight Sakura (turning petals), Carbon Gold / Carbon Frost (woven carbon with glinting inlay), Glitch / Corrupted Signal (jumping blocks and colour splits), Holographic / Prism Shard (rainbow foil that changes with the viewing angle), Plasma Core / Acid Rush (swirling plasma), Gold-Veined Marble / Obsidian Vein, Energy Shield / Hive Pulse (hex grids with energy waves), Phoenix Flame / Spirit Fire (rising flames), Toxic Bloom / Venom (swelling bubbles), Synthwave (neon grid), Damascus / Royal Damascus (folded steel), Pixel Shift (shifting pixel camo).
+- Exclusive skins show an animated white-gold-rainbow **EXCLUSIVE** tag wherever skins are shown (skin list, gun rows, gift results, the killcam) and a glowing tile. They only appear in your skin list once you own one; the rarity legend says "gifts only". Crate odds and contents leave them out.
+- **Gifts** (Admin tab → Gift): a title, a message and any mix of Money (up to 10,000,000), a skin (any, Exclusive ones included; 👁 shows it on your operator's gun first), a charm and a crate (a gun's crate or the charm crate). Send it to **one player** (username, with suggestions as you type), **everyone online**, or the **whole server** (every account that exists when it's sent; offline players find it at their next login). Online and whole-server sends ask to confirm. **Send Money** is the quick version: an amount, an optional message, the same three choices.
+- **Opening gifts:** each unopened gift is a wrapped present on the platform in front of your operator in the menu (more stack on top), hopping and glowing; one holding an Exclusive skin is white-gold and glows in the shifting Exclusive colours. The Play tab also says "You have N gifts!" (clicking it opens one). Clicking a present plays the unwrapping: the bow pops off, the lid flies away, confetti bursts out and the item rises from the box (the skin on your gun, the crate's prize, the charm, or a gold coin for Money). Then the title, who sent it, the message and everything inside show, with Equip (for a skin), Open the next gift, and Close.
+- **Safe on the server** (`server/gifts.js`): what is inside is only ever read from the database. A claim checks the gift is yours and unopened, works out the reward (a crate is opened then, with the usual duplicate refund), and writes the claim and the reward in one statement whose claim row can only exist once, so a gift can't be opened twice, by someone else, or faked. Money stops at the column's limit.
+- **Gifts sent** (Admin tab, right): the last 50 gifts with what they held, who they went to, who sent them and how many players have opened them out of how many could.
+
+### Earlier: Stage B (movement physics)
 
 - **All movement numbers are in one file: `shared/movementConfig.js`.** Speeds, acceleration, braking, strafe and backwards speed, momentum, stance and lean speeds, aiming, operator speed ratings, and the camera and gun feel. Rebuild and restart after changing it (the simulation part runs on the server too).
 - **Acceleration and braking:** you reach full speed in 0.15 s and stop in 0.1 s from walking (0.17 s from a sprint), instead of starting and stopping instantly.
@@ -282,14 +292,6 @@ Written down so they aren't forgotten (see Status for what is built). They are b
 - A short placing sound that others nearby can hear.
 - The server times the placement, so it can't be skipped by cheating.
 
-### Stage C - Admin announcements, gifts and exclusive skins
-
-- **Announcements** (admin tab): a message sent to everyone online, shown as a banner at the top of the screen (menu and matches) for 5, 10 or 30 seconds, chosen when sending. Offline players don't get it.
-- **40 Exclusive skins**, gift-only: not in any crate or the shop, only given by an admin. A new **Exclusive** rarity above Legendary with its own shifting colour and an "EXCLUSIVE" tag wherever skins are shown. The best-looking skins in the game, original and drawn in code, with effects regular skins don't have (animated patterns, pulsing glow, colour-shifting paint, shimmering metal, moving particles), each clearly different (molten lava, deep space, electric storm, frozen crystal, neon city, dragon scales, golden circuitry, ocean waves, aurora, cherry blossom, carbon fibre with gold inlay, glitch, holographic and more). Any of them fits any gun.
-- **Gifts** (admin tab): a title, a message and contents (any amount of Money, any skin including exclusives, a charm, or a crate), sent to one player (search by username), everyone online, or the whole server (every account; offline players get it at their next login). A quick **Send Money** option with the same three choices, an amount and an optional message.
-- In the menu, each unclaimed gift is a wrapped present on the platform in front of the operator, bouncing and glowing (in the exclusive colour for exclusive skins). Clicking it unwraps it (ribbon pops, lid flies off, confetti), shows what's inside and the message, and adds it to the account.
-- Each gift can be claimed once per account; the server handles everything. The admin tab lists past gifts and how many players claimed each.
-
 ### Stage D - Main menu remodel
 
 - A proper original 3D scene behind the operator (for example a dark rooftop at dusk near the target building, city lights in the distance, drifting fog, light rain or dust, a slow sweeping searchlight) with a slow cinematic camera drift.
@@ -360,6 +362,7 @@ shared/            Code used by BOTH client and server
   modes.js         the game modes and the Defuser numbers (7 s, 7 s, 45 s)
   progression.js   rank ladder, level maths, daily quest definitions
   skins.js         gun skin catalog: rarities, colours, patterns
+  exclusiveSkins.js  the 40 gift-only Exclusive skins (effect, colours, particles)
   charms.js        the 30 gun charms, level rewards and the charm crate odds
 server/
   index.js         Express static hosting + Socket.IO events
@@ -369,6 +372,7 @@ server/
   defuser.js       the Defuser mode: carrier, drop, plant, countdown, disable
   roles.js         owner and admin lookup from the environment variables
   admin.js         the admin tools: online list, matches, join as spectator or player
+  gifts.js         announcements, sending gifts, the gift list and claiming (one claim per account)
   db.js            Postgres connection (DATABASE_URL) or local PGlite fallback, table setup
   accounts.js      sign-up/log-in API, session cookies, socket login check
   profile.js       what an account's profile looks like to its owner
@@ -395,6 +399,8 @@ client/
   src/audio.js     synthesised sound effects, positional playback (range, direction, muffling)
   src/soundscape.js  footsteps, landing, reloads, drones, gadgets: what you hear and from where
   src/gadgets.js   visuals for operator gadgets and grenades
+  src/exclusiveSkins.js  the animated shader effects and particles of Exclusive skins
+  src/giftScene.js the presents in the menu and the unwrapping animation
   src/drones.js    drone models for everyone, smoothing, destroyed effect
   src/destruction.js  instanced wall panels, charges, explosions
   src/map.js       renders the shared map, lighting
@@ -422,6 +428,8 @@ Set two environment variables on the server:
 **On Render:** open the `breachline` service, then **Environment**, then **Add Environment Variable**. Add `OWNER_USERNAME` with your username as the value, and (if you want) `ADMIN_USERNAMES`. Save, and Render redeploys. **Create your account in the game first, then set the variable**: whoever registers that username owns the role, so don't leave it unregistered.
 
 **Locally:** put `OWNER_USERNAME=yourname` (and optionally `ADMIN_USERNAMES=...`) in the `.env` file in the project folder (git ignores it), then restart the server.
+
+Admins get an **Admin** tab: announcements, gifts and Send Money, the gifts sent so far, everyone online, and every match (spectate or join). Gifts are stored in the `gifts`, `gift_recipients` and `gift_claims` tables (created automatically).
 
 There is no in-game way to become owner or admin. Roles are worked out on the server from the username stored at login (`server/roles.js`), and each admin action (`server/admin.js`) checks again.
 

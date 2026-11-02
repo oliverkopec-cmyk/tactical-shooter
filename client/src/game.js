@@ -789,7 +789,7 @@ export class Game {
     const w = WEAPONS[data.weapon], skin = SKINS[data.skin], charm = CHARMS[data.charm];
     this.ui.showKillcam({
       name: data.name, op: OPERATORS[data.op]?.name || 'Unknown', team: data.team, health: data.health,
-      gun: w ? w.name : '', skin: skin ? skin.name : 'Default', charm: charm ? charm.name : null,
+      gun: w ? w.name : '', skin: skin ? skin.name : 'Default', exclusive: skin?.rarity === 'exclusive', charm: charm ? charm.name : null,
       skipKey: 'Click or Space to skip',
     });
   }

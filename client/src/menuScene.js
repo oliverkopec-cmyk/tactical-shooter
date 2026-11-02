@@ -9,6 +9,7 @@ import { RemotePlayer } from './avatars.js';
 import { makeGunModel } from './weapons.js';
 import { attachCharm } from './charmModels.js';
 import { CrateSequence } from './crateScene.js';
+import { GiftPile, GiftOpening } from './giftScene.js';
 
 const CAMERA = { y: 1.6, z: 6.8, lookY: 1.15 };
 
@@ -61,10 +62,27 @@ export class MenuScene {
     this.time = 0;
     this.running = false;
     this.dragging = false;
+    this.gifts = new GiftPile(this.scene);   // unopened gifts, as presents in front of the operator
+    this.giftList = [];
+    this.opening = null;                       // a present being unwrapped
+    this.onGiftClick = null;
 
-    canvas.addEventListener('pointerdown', (e) => { this.dragging = true; this.lastX = e.clientX; canvas.setPointerCapture?.(e.pointerId); });
-    canvas.addEventListener('pointermove', (e) => { if (this.dragging) { this.userYaw += (e.clientX - this.lastX) * 0.012; this.lastX = e.clientX; } });
+    canvas.addEventListener('pointerdown', (e) => { this.dragging = true; this.lastX = e.clientX; this.downAt = [e.clientX, e.clientY]; canvas.setPointerCapture?.(e.pointerId); });
+    canvas.addEventListener('pointermove', (e) => {
+      if (this.dragging) { this.userYaw += (e.clientX - this.lastX) * 0.012; this.lastX = e.clientX; }
+      const id = this.giftsShown() ? this.gifts.pick(this.ndc(e), this.camera) : null;
+      this.gifts.hover = id;
+      canvas.style.cursor = id !== null ? 'pointer' : '';
+    });
     const release = () => { this.dragging = false; };
+    // A click (not a drag) on a present opens it
+    canvas.addEventListener('pointerup', (e) => {
+      const d = this.downAt ? Math.hypot(e.clientX - this.downAt[0], e.clientY - this.downAt[1]) : 99;
+      if (d < 6 && this.giftsShown()) {
+        const id = this.gifts.pick(this.ndc(e), this.camera);
+        if (id !== null) this.onGiftClick?.(id);
+      }
+    });
     canvas.addEventListener('pointerup', release);
     canvas.addEventListener('pointercancel', release);
     window.addEventListener('resize', () => this.resize());
@@ -90,6 +108,35 @@ export class MenuScene {
     this.targetX = mode === 'operators' ? -0.8 : 0;
     this.applyShowcaseLayout();
     if (mode !== 'crate') this.stopCrate();
+  }
+
+  ndc(e) {
+    const r = this.canvas.getBoundingClientRect();
+    return new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  }
+
+  giftsShown() { return this.mode === 'play' && !this.opening && !this.crate; }
+
+  /** The unopened gifts: [{ id, title, exclusive }]. */
+  setGifts(list) {
+    this.giftList = list;
+    this.gifts.set(list, this.opening?.box.gift.id);
+  }
+
+  /** Unwrap a present: result is what the server says was inside; onReveal runs when it is up. showGun: the gun a gifted skin is shown on. */
+  playGift(id, result, { showGun, onReveal }) {
+    const box = this.gifts.take(id);
+    if (!box) { onReveal?.(); return; }
+    this.stopGift();
+    this.opening = new GiftOpening(this.scene, box, result, { showGun, onReveal });
+    this.gifts.setVisible(false);
+  }
+
+  stopGift() {
+    this.opening?.dispose();
+    this.opening = null;
+    this.gifts.setVisible(true);
+    this.gifts.set(this.giftList);
   }
 
   /** Play the crate opening for a result { weapon, skin, rarity }; onReveal runs when the gun appears. */
@@ -183,8 +230,11 @@ export class MenuScene {
       const yaw = Math.PI - 0.7 + Math.sin(this.time * 0.5) * 0.22 + this.userYaw;   // turned a little so the gun is seen from the side
       this.avatar.push(now, { x: this.x, y: 0, z: 0, yaw, pitch: 0, crouch: 0, prone: 0, lean: 0, vx: 0, vy: 0, vz: 0, onGround: true, alive: true });
       this.avatar.update(now, dt);
-      this.avatar.root.visible = this.mode !== 'shop' && this.mode !== 'crate';
+      this.avatar.root.visible = this.mode !== 'shop' && this.mode !== 'crate' && !this.opening;   // stepped aside while a gift is unwrapped
     }
+    this.gifts.setVisible(this.giftsShown());
+    this.gifts.update(this.time);
+    this.opening?.update(dt, this.time);
     this.camera.position.y = CAMERA.y * 1 + 0;      // undo the landing thump from last frame
     if (this.crate) this.crate.update(dt, this.camera);
     if (this.showcase?.visible) {

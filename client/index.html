@@ -9,6 +9,13 @@
 <body>
   <canvas id="game"></canvas>
 
+  <!-- An admin announcement: a banner across the top, in the menu and in matches -->
+  <div id="announcement" class="hidden" role="status" aria-live="polite">
+    <span class="ann-icon">📣</span><span id="ann-text"></span><span id="ann-from" class="muted"></span>
+    <button type="button" id="ann-close" aria-label="Dismiss">×</button>
+    <i id="ann-timer"></i>
+  </div>
+
   <!-- Log in / sign up -->
   <div id="screen-auth" class="screen hidden">
     <form id="auth-form" class="panel" novalidate>
@@ -72,6 +79,7 @@
           <p id="home-error" class="error"></p>
           <p id="party-note" class="muted small-note"></p>
         </div>
+        <button type="button" id="gift-notice" class="gift-notice hidden"></button>
       </div>
       <div class="side-col right">
         <div class="card quests">
@@ -117,11 +125,29 @@
       </div>
     </div>
 
+    <!-- Unwrapping a gift: click to skip, then what was inside -->
+    <div id="gift-overlay" class="hidden">
+      <div id="gift-hint" class="muted">Click to skip</div>
+      <div id="gift-result" class="hidden">
+        <div id="gift-title" class="gift-title"></div>
+        <div id="gift-from" class="muted"></div>
+        <div id="gift-message" class="gift-message"></div>
+        <div id="gift-items" class="gift-items"></div>
+        <div class="crate-buttons">
+          <button type="button" id="gift-equip" class="primary hidden">Equip</button>
+          <button type="button" id="gift-next" class="hidden">Open the next gift</button>
+          <button type="button" id="gift-close">Close</button>
+        </div>
+      </div>
+    </div>
+
     <section id="tab-admin" class="tab-panel hidden">
       <div class="side-col left wide-left">
+        <div id="admin-send" class="card"></div>
         <div id="admin-matches" class="card"></div>
       </div>
       <div class="side-col right">
+        <div id="admin-history" class="card"></div>
         <div id="admin-online" class="card"></div>
       </div>
     </section>

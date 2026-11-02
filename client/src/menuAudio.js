@@ -61,6 +61,14 @@ export const menuAudio = {
     [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, 0.7, { type: 'triangle', gain: 0.14, at: i * 0.09 }));
     tone(130, 1.2, { type: 'sawtooth', gain: 0.1, slideTo: 260 });
   },
+  /** A gift's bow pops off. */
+  pop() { tone(620, 0.12, { type: 'square', gain: 0.08, slideTo: 1240 }); noise(0.08, { gain: 0.15, freq: 4000 }); },
+  /** A gift bursts open: a party popper and a bright chime. */
+  giftBurst(exclusive) {
+    noise(0.35, { gain: 0.25, freq: 5000 });
+    [784, 988, 1175].forEach((f, i) => tone(f, 0.5, { type: 'triangle', gain: 0.1, at: 0.05 + i * 0.07 }));
+    if (exclusive) this.legendary();
+  },
   /** The gun is revealed. */
   reveal() { tone(880, 0.4, { type: 'sine', gain: 0.1 }); tone(1320, 0.5, { type: 'sine', gain: 0.08, at: 0.08 }); },
 };
