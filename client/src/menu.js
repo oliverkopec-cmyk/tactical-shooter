@@ -12,6 +12,7 @@ import { equipSkin, equipOperator, openCrate as openCrateRequest, devMoney, buyO
 import { CHARMS, charmList, charmUnlockLevel, charmCrateContents, CHARM_CRATE } from '../../shared/charms.js';
 import { fillKeys } from './controls.js';
 import { MenuScene } from './menuScene.js';
+import { menuMusic } from './menuMusic.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -47,6 +48,7 @@ export class Menu {
     for (const btn of document.querySelectorAll('#menu-tabs .tab')) {
       btn.addEventListener('click', () => (btn.dataset.tab === 'settings' ? this.onSettings() : this.setTab(btn.dataset.tab)));
     }
+    window.addEventListener('resize', () => this.moveIndicator());
     $('op-list').addEventListener('click', (e) => {
       const card = e.target.closest('[data-op]');
       if (card) { this.selectedOp = card.dataset.op; this.error = ''; this.renderOperators(); }
@@ -74,6 +76,7 @@ export class Menu {
   /** Called when the main menu screen is shown or hidden. */
   setActive(on) {
     this.active = on;
+    menuMusic.setWanted(on);   // ambient music while the menu shows, fading out for a match
     $('menu-canvas').classList.toggle('hidden', !on);
     this.onTab(on ? this.tab : null);
     if (!on) { this.scene?.stop(); return; }
@@ -83,6 +86,15 @@ export class Menu {
     }
     this.scene?.start();
     this.refresh();
+    requestAnimationFrame(() => this.moveIndicator());
+  }
+
+  /** Slide the glowing bar under the tabs to the active one. */
+  moveIndicator() {
+    const active = document.querySelector('#menu-tabs .tab.active'), bar = document.querySelector('#menu-tabs .tab-indicator');
+    if (!active || !bar || !active.offsetWidth) return;
+    bar.style.width = `${active.offsetWidth}px`;
+    bar.style.transform = `translateX(${active.offsetLeft}px)`;
   }
 
   setTab(tab) {
@@ -90,6 +102,7 @@ export class Menu {
     this.onTab(tab);
     for (const btn of document.querySelectorAll('#menu-tabs .tab')) btn.classList.toggle('active', btn.dataset.tab === tab);
     for (const panel of document.querySelectorAll('.tab-panel')) panel.classList.toggle('hidden', panel.id !== `tab-${tab}`);
+    this.moveIndicator();
     this.refresh();
   }
 

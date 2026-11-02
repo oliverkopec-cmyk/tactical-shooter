@@ -47,7 +47,7 @@ export class UI {
   // ---------------------------------------------------------------- settings
 
   bindSettings() {
-    const fmt = { sensitivity: (v) => `${Number(v).toFixed(2)}×`, aimSensitivity: (v) => `${Number(v).toFixed(2)}×`, volume: (v) => `${Math.round(v * 100)}%`, fov: (v) => `${Math.round(v)}°`, voice: (v) => (Number(v) <= 0 ? 'off' : `${Math.round(v * 100)}%`) };
+    const fmt = { sensitivity: (v) => `${Number(v).toFixed(2)}×`, aimSensitivity: (v) => `${Number(v).toFixed(2)}×`, volume: (v) => `${Math.round(v * 100)}%`, fov: (v) => `${Math.round(v)}°`, voice: (v) => (Number(v) <= 0 ? 'off' : `${Math.round(v * 100)}%`), menuMusic: (v) => (Number(v) <= 0 ? 'off' : `${Math.round(v * 100)}%`) };
     for (const name of Object.keys(fmt)) {
       const input = $(`set-${name}`);
       input.value = settings[name];
@@ -57,7 +57,7 @@ export class UI {
         $(`val-${name}`).textContent = fmt[name](settings[name]);
       });
     }
-    const choices = ['leanMode', 'aimMode'];
+    const choices = ['leanMode', 'aimMode', 'graphics'];
     for (const name of choices) {
       const select = $(`set-${name}`);
       select.value = settings[name];

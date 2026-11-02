@@ -1,6 +1,7 @@
-// The 3D scene behind the main menu: your operator standing on a lit platform
-// holding their gun (with its skin), and in the Operators tab a big slowly
-// turning copy of the gun to show the skin off. Drag to turn the operator.
+// The 3D scene behind the main menu: your operator standing on a lit pad on a rooftop at dusk
+// (client/src/menuBackdrop.js) holding their gun (with its skin), and in the Operators tab a big
+// slowly turning copy of the gun to show the skin off. The camera drifts slowly so the scene is
+// never quite still. Drag to turn the operator. The Low graphics setting turns the effects down.
 
 import * as THREE from 'three';
 import { TEAM_COLORS } from '../../shared/constants.js';
@@ -10,45 +11,76 @@ import { makeGunModel } from './weapons.js';
 import { attachCharm } from './charmModels.js';
 import { CrateSequence } from './crateScene.js';
 import { GiftPile, GiftOpening } from './giftScene.js';
+import { MenuBackdrop } from './menuBackdrop.js';
+import { lowGraphics } from './graphics.js';
+import { onSettingsChange } from './settings.js';
 
 const CAMERA = { y: 1.6, z: 6.8, lookY: 1.15 };
+
+/** A soft round glow (for the light pooling under the operator). */
+function glowTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  grad.addColorStop(0, 'rgba(255,255,255,0.8)');
+  grad.addColorStop(0.5, 'rgba(255,255,255,0.25)');
+  grad.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 128, 128);
+  return new THREE.CanvasTexture(c);
+}
 
 export class MenuScene {
   constructor(canvas) {
     this.canvas = canvas;
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    this.renderer.shadowMap.enabled = true;
+    this.low = lowGraphics();
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: !this.low });
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x0b0f15);
-    this.scene.fog = new THREE.Fog(0x0b0f15, 7, 16);
-    this.camera = new THREE.PerspectiveCamera(32, 1, 0.1, 40);
+    this.scene.fog = new THREE.FogExp2(0x2c2536, 0.0085);
+    this.camera = new THREE.PerspectiveCamera(32, 1, 0.1, 300);
 
-    this.scene.add(new THREE.HemisphereLight(0xb8ccff, 0x141a22, 1.1));
-    const key = new THREE.DirectionalLight(0xfff0dd, 2.2);
-    key.position.set(2.5, 4, 3.5);
+    // Lighting: a cool sky fill, a warm key light from the low sun on the left (casting soft shadows),
+    // a rim light from behind in the operator's colour, and a faint blue bounce from the city
+    this.scene.add(new THREE.HemisphereLight(0x8a9cd0, 0x1a1420, 0.75));
+    const key = new THREE.DirectionalLight(0xffc8a0, 2.4);
+    key.position.set(-3.5, 4, 3.5);
     key.castShadow = true;
     key.shadow.mapSize.set(1024, 1024);
-    key.shadow.camera.left = -3; key.shadow.camera.right = 3; key.shadow.camera.top = 3; key.shadow.camera.bottom = -2;
+    key.shadow.radius = 5;
+    key.shadow.bias = -0.0005;
+    key.shadow.camera.left = -3.5; key.shadow.camera.right = 3.5; key.shadow.camera.top = 3.5; key.shadow.camera.bottom = -1.5;
+    this.key = key;
     this.scene.add(key);
-    this.rim = new THREE.DirectionalLight(0xffffff, 2.4);
-    this.rim.position.set(-3, 2.5, -3);
+    this.rim = new THREE.DirectionalLight(0xffffff, 3.2);
+    this.rim.position.set(2.5, 3, -4);
     this.scene.add(this.rim);
+    const bounce = new THREE.DirectionalLight(0x5a7ad0, 0.5);
+    bounce.position.set(3, 1, -2);
+    this.scene.add(bounce);
 
-    // Platform with a glowing ring, and a dark backdrop
-    const floor = new THREE.Mesh(new THREE.CylinderGeometry(1.7, 1.8, 0.1, 48), new THREE.MeshStandardMaterial({ color: 0x151b24, roughness: 0.6, metalness: 0.5 }));
-    floor.position.y = -0.05;
-    floor.receiveShadow = true;
+    // The pad: dark metal with a glowing ring in the operator's colour and light pooling under their feet
+    const pad = new THREE.Mesh(new THREE.CylinderGeometry(1.7, 1.8, 0.1, 48), new THREE.MeshStandardMaterial({ color: 0x1a2029, roughness: 0.45, metalness: 0.7 }));
+    pad.position.y = -0.05;
+    pad.receiveShadow = true;
     this.ringMat = new THREE.MeshBasicMaterial({ color: 0xe8833a });
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(1.72, 0.02, 8, 64), this.ringMat);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(1.72, 0.022, 8, 64), this.ringMat);
     ring.rotation.x = Math.PI / 2;
     ring.position.y = 0.002;
-    const wall = new THREE.Mesh(new THREE.PlaneGeometry(30, 12), new THREE.MeshStandardMaterial({ color: 0x0f141b, roughness: 1 }));
-    wall.position.set(0, 4, -5);
-    const ground = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), new THREE.MeshStandardMaterial({ color: 0x0c1016, roughness: 1 }));
-    ground.rotation.x = -Math.PI / 2;
-    ground.position.y = -0.1;
-    this.scene.add(floor, ring, wall, ground);
+    const inner = new THREE.Mesh(new THREE.TorusGeometry(1.15, 0.008, 6, 64), this.ringMat);
+    inner.rotation.x = Math.PI / 2;
+    inner.position.y = 0.004;
+    this.glowMat = new THREE.MeshBasicMaterial({ map: glowTexture(), color: 0xe8833a, transparent: true, opacity: 0.45, depthWrite: false, blending: THREE.AdditiveBlending });
+    const glow = new THREE.Mesh(new THREE.PlaneGeometry(3.8, 3.8), this.glowMat);
+    glow.rotation.x = -Math.PI / 2;
+    glow.position.y = 0.006;
+    this.padLight = new THREE.PointLight(0xe8833a, 1.4, 3.5, 1.6);
+    this.padLight.position.set(0, 0.35, 0.6);
+    this.scene.add(pad, ring, inner, glow, this.padLight);
+
+    this.applyQuality();
+    this.offSettings = onSettingsChange((name) => { if (name === 'graphics') this.applyQuality(); });
 
     this.avatar = null;
     this.avatarTeam = null;
@@ -89,14 +121,34 @@ export class MenuScene {
     this.resize();
   }
 
+  /** Build (or rebuild) the rooftop for the graphics setting: Low has fewer effects, no shadows, no extra lights. */
+  applyQuality() {
+    this.low = lowGraphics();
+    this.renderer.setPixelRatio(this.low ? 1 : Math.min(window.devicePixelRatio || 1, 2));
+    this.renderer.shadowMap.enabled = !this.low;
+    this.renderer.shadowMap.needsUpdate = true;
+    this.padLight.visible = !this.low;
+    this.backdrop?.dispose();
+    this.backdrop = new MenuBackdrop(this.scene, { low: this.low });
+    this.scene.traverse((o) => { if (o.material) o.material.needsUpdate = true; });   // shadows on/off need the shaders rebuilt
+    this.resize();
+  }
+
   resize() {
     const w = window.innerWidth, h = window.innerHeight;
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
     // Keep the whole platform in view on tall or narrow screens
-    this.camera.position.set(0, CAMERA.y, CAMERA.z * Math.max(1, 1.5 / this.camera.aspect));
-    this.camera.lookAt(0, CAMERA.lookY, 0);
+    this.camDist = CAMERA.z * Math.max(1, 1.5 / this.camera.aspect);
+    this.placeCamera(this.time || 0);
     this.camera.updateProjectionMatrix();
+  }
+
+  /** The slow cinematic drift: the camera sways gently around its spot and keeps the operator framed. */
+  placeCamera(t) {
+    const d = this.camDist || CAMERA.z;
+    this.camera.position.set(Math.sin(t * 0.13) * 0.22 + Math.sin(t * 0.051) * 0.12, CAMERA.y + Math.sin(t * 0.17) * 0.06, d + Math.sin(t * 0.09) * 0.18);
+    this.camera.lookAt(Math.sin(t * 0.11) * 0.05, CAMERA.lookY + Math.sin(t * 0.07) * 0.03, 0);
   }
 
   /**
@@ -173,7 +225,9 @@ export class MenuScene {
     this.avatar.setWeapon(weaponId);
     const color = OPERATORS[operatorId]?.color ?? TEAM_COLORS[team];
     this.ringMat.color.setHex(color);
-    this.rim.color.setHex(color);
+    this.glowMat.color.setHex(color);
+    this.padLight.color.setHex(color);
+    this.rim.color.setHex(color).lerp(new THREE.Color(0xffffff), 0.35);
 
     const key = `${weaponId}|${skinId || ''}|${charmId || ''}`;
     if (key !== this.showcaseKey) {
@@ -235,7 +289,9 @@ export class MenuScene {
     this.gifts.setVisible(this.giftsShown());
     this.gifts.update(this.time);
     this.opening?.update(dt, this.time);
-    this.camera.position.y = CAMERA.y * 1 + 0;      // undo the landing thump from last frame
+    this.placeCamera(this.time);                     // drifts (and undoes the crate's landing thump from last frame)
+    this.backdrop.update(dt);
+    if (this.padLight.visible) this.padLight.intensity = 1.2 + Math.sin(this.time * 1.6) * 0.25;
     if (this.crate) this.crate.update(dt, this.camera);
     if (this.showcase?.visible) {
       this.showcase.rotation.y = this.time * 0.7;

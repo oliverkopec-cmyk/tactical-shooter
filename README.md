@@ -2,7 +2,17 @@
 
 A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite on the client, Node.js + Socket.IO on an authoritative server. One Node process serves both the game client and the realtime server, so the whole thing deploys as a single Render web service.
 
-## Status: Stage C (announcements, gifts and Exclusive skins)
+## Status: Stage D (main menu remodel)
+
+- **A rooftop at dusk** behind the operator (`client/src/menuBackdrop.js`, all built in code): a wet concrete roof with a parapet, air-conditioning units with turning fans, a stair hut with a lamp over its door, a water tower, crates, vent pipes and a mast with a blinking red light. Across the gap the target building rises with its windows lit and red warning lights on top. A city of towers spreads to the horizon (one draw call; the windows are worked out in a shader from the world position, so they are the same size on every tower, and a few flicker). A dusk sky fades from the last orange of the sun on the left to deep blue with twinkling stars. A searchlight sweeps slowly through the haze, banks of fog drift past, light rain falls, and every so often an aircraft light crosses the sky.
+- **Cinematic camera drift:** the camera sways slowly around its spot (a few combined slow waves, so it never repeats quickly) and keeps the operator framed; the scene is never fully still.
+- **Operator lighting:** a warm key light from the low sun with soft shadows, a rim light from behind in the operator's colour, a cool sky fill and a faint blue bounce from the city. The pad is dark metal with two glowing rings in the operator's colour, a pool of light under their feet and a gently pulsing light.
+- **Restyled top bar, tabs and panels:** Rajdhani for headings, tabs and main buttons and Inter for text (Google Fonts, falling back to system fonts), a dark glass top bar with a glowing line under it and a diamond by the name, spaced capital tabs with a glow on hover and a bar that slides to the active tab, darker glass panels that slide in when their tab opens, buttons that lift and glow on hover and press in on click, and tiles that rise on hover. A soft vignette keeps the panels readable over the scene. Turned off for people who ask their system for reduced motion.
+- **Menu music** (`client/src/menuMusic.js`): an original slow ambient piece played live with Web Audio (no audio files): a warm pad drifting through four chords over a soft bass, a few plucked notes echoing, and light rain. It fades in on the menu and out when a match starts, pauses in a background tab, and has its own **Menu music** volume in Settings (0 turns it off). Browsers only start sound after the first click or key press.
+- **Graphics setting** (Settings: Auto, High, Low). Low: 1x resolution, no shadows, no extra lights, fewer city towers (120 instead of 300), raindrops (350 instead of 1300) and fog banks; about 40% fewer draw calls in the menu. In matches Low also renders at 1x without shadows. Auto picks Low on devices with 4 GB of memory or less, two cores or less, or a phone.
+- Everything is generated in code, so the page loads nothing new apart from two web fonts.
+
+### Earlier: Stage C (announcements, gifts and Exclusive skins)
 
 - **Announcements** (Admin tab → Send to players → Announcement): type a message, choose 5, 10 or 30 seconds, and everyone online gets a banner across the top of the screen, in the menu and in matches, with a bar showing how long it stays (× closes it early). Nothing is stored, so offline players never see it.
 - **40 Exclusive skins** (`shared/exclusiveSkins.js`): a new **Exclusive** rarity above Legendary, gift-only (never in a crate or the shop) and owned on every gun once given. Each is drawn by an animated shader effect (`client/src/exclusiveSkins.js`) over the normal lighting: the body and furniture carry the pattern, the metal parts get a sheen sliding along them, the sights, vents and optic housing pulse with light, and many have particles floating around the gun (embers, snow, petals, sparks, bubbles, stars). Twenty effects, each used for two skins with different colours, scale, speed and particles: Molten Core / Cobalt Magma (flowing lava cracks), Deep Space / Nebula Bloom (drifting nebula and twinkling stars), Electric Storm / Violet Tempest (clouds and flashing lightning), Frozen Crystal / Rose Quartz (facets and sparkles), Neon City / Night Market (lit windows and scanlines), Dragon Scales / Wyrm Ember (colour-shifting scales), Golden Circuitry / Quantum Trace (traces with running pulses), Ocean Waves / Tidal Abyss (rolling swells with glowing crests), Aurora / Solar Flare (swaying curtains of light), Cherry Blossom / Midnight Sakura (turning petals), Carbon Gold / Carbon Frost (woven carbon with glinting inlay), Glitch / Corrupted Signal (jumping blocks and colour splits), Holographic / Prism Shard (rainbow foil that changes with the viewing angle), Plasma Core / Acid Rush (swirling plasma), Gold-Veined Marble / Obsidian Vein, Energy Shield / Hive Pulse (hex grids with energy waves), Phoenix Flame / Spirit Fire (rising flames), Toxic Bloom / Venom (swelling bubbles), Synthwave (neon grid), Damascus / Royal Damascus (folded steel), Pixel Shift (shifting pixel camo).
@@ -292,14 +302,6 @@ Written down so they aren't forgotten (see Status for what is built). They are b
 - A short placing sound that others nearby can hear.
 - The server times the placement, so it can't be skipped by cheating.
 
-### Stage D - Main menu remodel
-
-- A proper original 3D scene behind the operator (for example a dark rooftop at dusk near the target building, city lights in the distance, drifting fog, light rain or dust, a slow sweeping searchlight) with a slow cinematic camera drift.
-- Better operator lighting: rim light, soft shadows, a subtle platform glow.
-- Restyled top bar, tabs and panels: sharper fonts, cleaner spacing, subtle animations on tab switches and button hovers.
-- Short menu music or ambient sound with a volume setting.
-- Fast to load and light on low-end laptops (fewer effects on the low graphics setting).
-
 ### Stage E - 8 new operators
 
 Bought with Money like the other new ones, each with its own icon, primary and secondary gun and 2 utility options. Bots can play them.
@@ -389,7 +391,10 @@ client/
   src/account.js   calls the account API (session, sign-up, log-in, settings)
   src/controls.js  current keybinds: action for a key, key name for an action
   src/menu.js      main menu tabs and the Operators tab
-  src/menuScene.js 3D scene behind the main menu
+  src/menuScene.js 3D scene behind the main menu: operator, lights, camera drift, gifts and crates
+  src/menuBackdrop.js  the rooftop at dusk: sky, city, target building, searchlight, fog, rain
+  src/menuMusic.js the ambient menu music (Web Audio)
+  src/graphics.js  the graphics setting (auto / high / low)
   src/network.js   Socket.IO wrapper, server clock estimate
   src/game.js      Three.js scene and frame loop
   src/player.js    local player: input, prediction, reconciliation, camera

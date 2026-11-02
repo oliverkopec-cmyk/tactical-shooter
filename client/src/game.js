@@ -34,6 +34,7 @@ import { findOpening } from '../../shared/map.js';
 import { OPERATORS } from '../../shared/operators.js';
 import { UTILITIES } from '../../shared/utilities.js';
 import { settings, onSettingsChange } from './settings.js';
+import { lowGraphics } from './graphics.js';
 import { DRONE } from '../../shared/drone.js';
 import { actionFor, mouseCode, keyFor } from './controls.js';
 
@@ -47,8 +48,9 @@ export class Game {
     this.ui = ui;
 
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    this.renderer.shadowMap.enabled = true;
+    // Low graphics: render at 1x resolution and without shadows
+    this.renderer.setPixelRatio(lowGraphics() ? 1 : Math.min(window.devicePixelRatio, 2));
+    this.renderer.shadowMap.enabled = !lowGraphics();
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
     this.scene = new THREE.Scene();
@@ -116,6 +118,12 @@ export class Game {
     onSettingsChange((name, v) => {
       if (name === 'fov') { this.camera.fov = v; this.camera.updateProjectionMatrix(); }
       if (name === 'volume') this.audio.setVolume(v);
+      if (name === 'graphics') {
+        this.renderer.setPixelRatio(lowGraphics() ? 1 : Math.min(window.devicePixelRatio, 2));
+        this.renderer.shadowMap.enabled = !lowGraphics();
+        this.scene.traverse((o) => { if (o.material) o.material.needsUpdate = true; });
+        this.resize?.();
+      }
     });
     this.stats = {};
     this.runout = { left: null, detected: false };   // the defenders' run-out countdown
