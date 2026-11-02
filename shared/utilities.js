@@ -78,4 +78,14 @@ export const ABILITY_STATS = {
   shock: { reach: 3.5, touch: 0.8, damage: 30, slowMs: 2000, slow: 0.4, markMs: 4000 },        // Volt: floor trap
   heal: { reach: 3.5, radius: 3, hps: 5, durationMs: 10000 },         // Tonic: healing field
   sensor: { reach: 3, markMs: 3000, cooldownMs: 3000 },               // Picket: alarm lines
+  // Stage E
+  empGrenade: { speed: 13, fuse: 2, radius: 5 },                      // Blackout: through walls
+  zap: { range: 5, perDrone: 6, cooldownMs: 1200, damage: 8 },        // Wasp: shock drone taser
+  pellets: { range: 20, panels: 0.75, reinforced: 1, damage: 35, radius: 1.6 },   // Flint: per volley (panel radius, reinforced panels)
+  hammer: { reach: 2.2, panels: 1.05, panelHits: 2 },                 // Ram: soft-wall hole radius, swings per armour panel
+  dash: { time: 0.32, reach: 1.4, panels: 1.0, dazeMs: 1500, damage: 25 },   // Aegis: breaks soft walls within reach of the path
+  wire: { reach: 2.5, pulseMs: 500, damage: 12, touch: 0.6 },        // Current: battery on reinforced walls, hatches, armour panels
+  armor: { reach: 2.5, channelMs: 1500, meleeHits: 12 },              // Rampart: bulletproof panel over an opening
+  stim: { range: 30, heal: 40, max: 140, drain: 1 },                  // Medic: +40, overheal to 140, drains 1 HP/s back to 100
+  intercept: { reach: 2.5, radius: 4.5, catches: 2 },                 // Interceptor: grenades shot down
 };

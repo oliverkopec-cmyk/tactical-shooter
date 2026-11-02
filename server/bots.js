@@ -14,8 +14,9 @@
 // head aim, turn speed and hearing; Normal and Hard share the same movement and tactics.
 
 import { PHASE, KEY, MAX_INPUT_DT } from '../shared/constants.js';
+import { ABILITY_STATS } from '../shared/utilities.js';
 import { OPERATORS, operatorsFor } from '../shared/operators.js';
-import { WEAPONS, aimDirection } from '../shared/weapons.js';
+import { WEAPONS, aimDirection, shieldCover } from '../shared/weapons.js';
 import { getEyePosition, findRope, eyeHeight, bodyHeight } from '../shared/movement.js';
 import { raycastWorld } from '../shared/raycast.js';
 import { inObjectiveZone } from '../shared/rules.js';
@@ -307,7 +308,10 @@ export class BotBrains {
     // ---- a barricade in the way: smash it
     if (phase === PHASE.ACTION && !b.target && (b.wantMove || b.stuckT > 0.3) && !p.state.rap && now > (b.nextMelee || 0)) {
       const ahead = raycastWorld(g.world, [origin[0], origin[1] - 0.5, origin[2]], aimDirection(b.moveYaw ?? b.yaw, 0), 1.4);
-      if (ahead?.box.kind === 'barricade') { b.nextMelee = now + 850; b.faceFor = { yaw: b.moveYaw ?? b.yaw, until: now + 900 }; g.handleAction(id, 'melee'); }
+      const abId = OPERATORS[p.operator]?.ability?.id;
+      if ((abId === 'hammer' || abId === 'shieldDash') && p.ability?.charges > 0 && (ahead?.box.kind === 'barricade' || (ahead?.box.kind === 'panel' && !g.world.isReinforcedPanel(ahead.box.id) && (b.stuckT > 0.3 || this.nearSite(p, 10))))) {
+        b.nextMelee = now + 1200; b.faceFor = { yaw: b.moveYaw ?? b.yaw, until: now + 900 }; g.handleAction(id, 'ability');
+      } else if (ahead?.box.kind === 'barricade') { b.nextMelee = now + 850; b.faceFor = { yaw: b.moveYaw ?? b.yaw, until: now + 900 }; g.handleAction(id, 'melee'); }
     }
     // ---- progress check over the last second: stuck -> hop (vaults low things), then sidestep
     const pos = [p.state.x, p.state.z];
@@ -335,6 +339,10 @@ export class BotBrains {
     const q = g.players.get(t.id);
     if (!q) return null;
     const s = q.state;
+    // A raised ballistic shield: go for the feet; lowered to aim, for the head
+    const cover = shieldCover(q.weapon, s);
+    if (cover === 1) return [s.x, s.y + 0.25, s.z, s.y + 0.25];
+    if (cover === 2) { const y = s.y + eyeHeight(s.crouch, s.prone || 0) - 0.05; return [s.x, y, s.z, y]; }
     return [s.x, s.y + eyeHeight(s.crouch, s.prone || 0) - 0.05, s.z, s.y + bodyHeight(s.crouch, s.prone || 0) * 0.6];
   }
 
@@ -379,8 +387,15 @@ export class BotBrains {
   useGadgets(b, id, p, now) {
     const g = this.game, team = p.member.team, util = p.utility;
     const d = b.diff;
-    // Ability: in a fight, or now and then while pushing
-    if (now > b.nextAbility && (b.target || b.alert || Math.random() < 0.05)) { b.nextAbility = now + rand(14000, 28000); g.handleAction(id, 'ability'); }
+    // Ability: in a fight, or now and then while pushing (Stage E operators with their own timing first)
+    const ab = OPERATORS[p.operator]?.ability?.id;
+    if (ab === 'stimPistol') {
+      if (p.health < 65 && p.ability?.charges > 0 && now > (b.nextAbility || 0)) { b.nextAbility = now + 1500; g.handleAction(id, 'ability'); }
+    } else if (ab === 'pellets' && p.ability?.volley) {
+      if (now > (b.detonateAt ||= now + 1500)) { b.detonateAt = 0; g.handleAction(id, 'ability'); }
+    } else if (ab !== 'armorPanel' && ab !== 'shockWire' && ab !== 'hammer' && ab !== 'shockDrone' && now > b.nextAbility && (b.target || b.alert || Math.random() < 0.05)) {
+      b.nextAbility = now + rand(14000, 28000); g.handleAction(id, 'ability');
+    }
     if (!util || util.charges <= 0 || now < b.threw || Math.random() > d.utility) return;
     const type = util.id;
     const contacts = this.contactsFor(team, b.eye);
@@ -433,7 +448,7 @@ export class BotBrains {
 
   // ---------------------------------------------------------------- prep
 
-  prepAttacker(b, id, p) {
+  prepAttacker(b, id, p, now) {
     const g = this.game;
     if (!b.spawnPicked) { b.spawnPicked = true; g.setSpawnChoice(id, 1 + Math.floor(Math.random() * g.map.spawns.attack.length)); }
     // Drive the drone to a site; whatever it sees, the team remembers
@@ -450,6 +465,24 @@ export class BotBrains {
         if (d > 25) continue;
         const hit = raycastWorld(g.world, e, v.map((c) => c / d), d);
         if (!hit || hit.t >= d - 0.3) this.contact('attack', qid, [q.state.x, q.state.y, q.state.z], false, DRONE_CONTACT_MS);
+      }
+      // Wasp: turn the drone to a defender gadget in taser range and zap it
+      b.droneAim = null;
+      if (drone.zaps > 0 && !drone.jammed) {
+        const Z = ABILITY_STATS.zap;
+        for (const el of g.gadgets.electronics()) {
+          const v = el.pos.map((c, i) => c - e[i]);
+          const d = Math.hypot(...v);
+          if (d > Z.range - 0.3 || d < 0.2) continue;
+          const hit = raycastWorld(g.world, e, v.map((c) => c / d), d);
+          if (hit && hit.t < d - 0.3) continue;
+          b.droneAim = { yaw: yawTo(v[0], v[2]), pitch: Math.atan2(v[1], Math.hypot(v[0], v[2])) };
+          if (Math.abs(wrap(b.yaw - b.droneAim.yaw)) < 0.06 && Math.abs(b.pitch - b.droneAim.pitch) < 0.08 && now > (b.nextZap || 0)) {
+            b.nextZap = now + ABILITY_STATS.zap.cooldownMs + 100;
+            g.handleAction(id, 'ability');
+          }
+          break;
+        }
       }
     }
   }
@@ -486,6 +519,12 @@ export class BotBrains {
     return list;
   }
 
+  /** Within r metres (flat) of the active site. */
+  nearSite(p, r) {
+    const st = this.game.activeSite();
+    return !!st && Math.hypot(p.state.x - st.x, p.state.z - st.z) < r;
+  }
+
   /** My index among my team's living bots (to share out entrances). */
   rank(id, team) {
     let i = 0;
@@ -498,11 +537,20 @@ export class BotBrains {
     const g = this.game, s = g.activeSite(), out = [];
     const ents = this.entrances();
     const mine = ents.length ? ents[this.rank(p.member.id, 'defense') % ents.length] : null;
-    if (mine && !g.gadgets.barricadeAt(mine.o.id)) {
-      const { o, c } = mine;
+    const ab = OPERATORS[p.operator]?.ability?.id;
+    const doorTask = ({ o, c }, action) => {
       const side = o.axis === 'x' ? Math.sign(s.z - o.fixed) || 1 : Math.sign(s.x - o.fixed) || 1;
       const stand = o.axis === 'x' ? [c[0], s.y, o.fixed + side * 1.2] : [o.fixed + side * 1.2, s.y, c[2]];
-      out.push(this.aimTask(stand, [c[0], (o.y0 + o.y1) / 2, c[2]], 'barricade'));
+      return this.aimTask(stand, [c[0], (o.y0 + o.y1) / 2, c[2]], action);
+    };
+    if (ab === 'armorPanel') {
+      // Rampart: armour panels on the entrances nearest the site, starting with my own
+      const list = mine ? [mine, ...ents.filter((e) => e !== mine)] : ents;
+      for (const e of list.slice(0, 3)) if (!g.gadgets.armorAt(e.o.id)) out.push(doorTask(e, 'ability'));
+    } else if (mine && !g.gadgets.barricadeAt(mine.o.id) && !g.gadgets.armorAt(mine.o.id)) out.push(doorTask(mine, 'barricade'));
+    if (ab === 'interceptor') {
+      // Interceptor: devices on the floor near the middle of the site
+      for (const [dx, dz] of [[1.2, 0.6], [-1.2, -0.6]]) out.push(this.aimTask([s.x + dx * 1.6, s.y, s.z + dz * 1.6], [s.x + dx, s.y + 0.02, s.z + dz], 'ability'));
     }
     if (mine && p.utility?.id === 'claymore') {
       const { o, c } = mine;
@@ -520,6 +568,10 @@ export class BotBrains {
       const side = thinX ? Math.sign(s.x - c[0]) || 1 : Math.sign(s.z - c[2]) || 1;
       const stand = thinX ? [c[0] + side * 1.1, s.y, c[2]] : [c[0], s.y, c[2] + side * 1.1];
       out.push(this.aimTask(stand, [c[0], s.y + 1.2, c[2]], 'reinforce'));
+    }
+    // Current: once those walls are reinforced, electrify them
+    if (ab === 'shockWire') {
+      for (const t of out.filter((x) => x.action === 'reinforce')) out.push({ ...this.aimTask(t.stand, t.look, 'ability') });
     }
     return out;
   }
@@ -800,6 +852,8 @@ export class BotBrains {
       lookYaw = yawTo(a[0] - eye.x, a[2] - eye.z);
       lookPitch = Math.atan2(a[1] - eye.y, h) + Math.min(0.45, h * 0.03);
       if (Math.abs(wrap(b.yaw - lookYaw)) < 0.05 && Math.abs(b.pitch - lookPitch) < 0.05) { g.handleAction(id, 'utility'); b.throwAt = null; b.threw = now + 6000; }
+    } else if (drone && b.droneAim) {
+      lookYaw = b.droneAim.yaw; lookPitch = b.droneAim.pitch;
     } else if (b.look) {
       const eye = getEyePosition(s, g.world);
       const dx = b.look[0] - eye.x, dy = b.look[1] - eye.y, dz = b.look[2] - eye.z;

@@ -7,6 +7,10 @@ import { bodyHeight } from '../../shared/movement.js';
 import { makeGunModel, animateGun } from './weapons.js';
 import { attachCharm } from './charmModels.js';
 import { OPERATORS } from '../../shared/operators.js';
+import { WEAPONS } from '../../shared/weapons.js';
+import { SHIELD_HEIGHT } from '../../shared/raycast.js';
+
+const SHIELD_ID = Object.values(WEAPONS).find((w) => w.shield)?.id;
 
 const LEAN_ANGLE = Math.atan2(LEAN_OFFSET, STAND_EYE);
 const BUFFER_MS = 1000;
@@ -167,6 +171,12 @@ export class RemotePlayer {
     // Held weapon: a scaled-down copy of the first-person model
     this.gunMount = new THREE.Group();
     this.lean.add(this.gunMount);
+    // Aegis's ballistic shield, built the first time the snapshots say they carry one (cover > 0)
+    this.shield = null;
+    this.shieldMount = new THREE.Group();
+    this.shieldMount.visible = false;
+    this.lean.add(this.shieldMount);
+    this.cover = 0;              // shieldCover(): 0 none or swung aside, 1 raised, 2 lowered, 3 slung
     this.weaponId = null;
     this.flash = new THREE.Mesh(
       new THREE.SphereGeometry(0.07, 8, 6),
@@ -197,14 +207,27 @@ export class RemotePlayer {
     if (!id || id === this.weaponId) return;
     this.weaponId = id;
     this.gunMount.clear();
-    const gun = makeGunModel(id, this.skins[id]);
+    // A shield: the body holds its sidearm, and the shield goes on its own mount
+    const sidearm = WEAPONS[id]?.sidearm;
+    if (sidearm) { this.ensureShield(id); if (!this.cover) this.cover = 1; }
+    const gunId = sidearm || id;
+    const gun = makeGunModel(gunId, this.skins[gunId]);
     gun.scale.multiplyScalar(1.3);   // keeps the gun's own size
     gun.traverse((o) => { if (o.isMesh) o.castShadow = true; });
     this.gunMount.add(gun);
-    attachCharm(gun, this.charms[id]);
+    if (!sidearm) attachCharm(gun, this.charms[id]);
     this.gun = gun;
     this.muzzle = gun.userData.muzzle;
     this.muzzle.add(this.flash);
+  }
+
+  ensureShield(id = SHIELD_ID) {
+    if (this.shield || !id) return;
+    this.shield = makeGunModel(id, this.skins[id]);
+    attachCharm(this.shield, this.charms[id]);
+    this.shield.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+    this.shieldMount.add(this.shield);
+    this.shieldPose = null;
   }
 
   /** World position of the muzzle, for tracers. */
@@ -228,6 +251,9 @@ export class RemotePlayer {
     if (s.w) this.setWeapon(s.w.id);
     if (s.o) this.setOperator(s.o);
     this.reloading = !!(s.w && s.w.reload > 0);
+    // (the menu's stand-in poses carry no id and no shield state: a shield is shown raised there)
+    this.cover = 'id' in s ? s.sh || 0 : WEAPONS[this.weaponId]?.shield ? 1 : 0;
+    if (this.cover) this.ensureShield();
     this.detected = !!s.det;
     this.rap = s.rk ? s.rk[0] : 0;
     this.rapFlip = s.rk ? s.rk[2] : 0;
@@ -273,6 +299,7 @@ export class RemotePlayer {
     p.yaw = lerpAngle(a.s.yaw, b.s.yaw, t);
     p.pitch = lerpAngle(a.s.pitch, b.s.pitch, t);
     p.crouch = crouch; p.prone = prone; p.lean = L('lean');
+    p.sh = this.cover;   // the client's own shot prediction tests the shield too
     this.root.position.set(p.x, p.y, p.z);
     this.root.rotation.y = p.yaw;
     // The charm swings with the player's movement (seen from the player's own side) and with each shot
@@ -333,11 +360,33 @@ export class RemotePlayer {
     this.arms[1].rotation.set(armBase + strike * 0.9, -0.5 + strike * 0.3, 0);
     this.gunMount.position.set(0.1, shoulderY - 0.1 - (sprinting ? 0.12 : 0) + 0.3 * prone, -0.3 - strike * 0.25 + 0.41 * prone);
     this.gunMount.rotation.x = sprinting ? -0.2 : p.pitch + lie + strike * 0.5;
+    if (this.shield) this.poseShield(dt, h, strike, prone);
     const top = bodyHeight(crouch, prone);   // real height above the floor, for the name tag and marker
     this.label.position.y = top + 0.35;
     this.markerPhase = (this.markerPhase || 0) + dt * 5;
     this.marker.position.y = top + 0.75 + Math.sin(this.markerPhase) * 0.05;
     this.carryMark.position.y = top + 0.75 + Math.sin(this.markerPhase) * 0.05;
+  }
+
+  /** Put the shield where shieldCover() says it is (eased): raised or lowered in front, aside, or on the back. Matches shieldBox() in shared/raycast.js. */
+  poseShield(dt, h, strike, prone) {
+    const c = this.cover, half = SHIELD_HEIGHT / 2;
+    const carried = c > 0 || WEAPONS[this.weaponId]?.shield;
+    this.shieldMount.visible = carried && prone < 0.5;
+    if (!this.shieldMount.visible) return;
+    // [x, y (centre), z, yaw]
+    const want = c === 1 ? [-0.02, h + 0.06 - half, -0.48 - strike * 0.25, 0]
+      : c === 2 ? [-0.06, h - 0.5 - half, -0.46, 0.12]
+        : c === 3 ? [0, h - 0.3 - half + 0.1, 0.27, Math.PI]
+          : [-0.42, h * 0.5, -0.12, 1.2];   // sprinting: swung aside
+    if (!this.shieldPose || Math.abs(this.shieldPose[3] - want[3]) > 2) this.shieldPose = want.slice();
+    const k = Math.min(1, dt * 10);
+    for (let i = 0; i < 4; i++) this.shieldPose[i] += (want[i] - this.shieldPose[i]) * k;
+    this.shieldMount.position.set(this.shieldPose[0], Math.max(half + 0.02, this.shieldPose[1]), this.shieldPose[2]);
+    this.shieldMount.rotation.set(0, this.shieldPose[3], 0);
+    // the pistol comes out past the shield's right edge while it's up
+    if (c === 1 || c === 2) this.gunMount.position.x = 0.3;
+    this.shield.userData.charm?.update(dt, this.shieldMount.position);
   }
 
   dispose() {

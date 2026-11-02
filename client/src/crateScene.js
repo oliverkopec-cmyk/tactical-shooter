@@ -69,7 +69,7 @@ export class CrateSequence {
       this.gun.add(charm);
     } else {
       this.gun = makeGunModel(result.weapon, result.skin);
-      this.gun.scale.multiplyScalar(1.9);
+      this.gun.scale.multiplyScalar(1.9 * this.gun.userData.display);
     }
     this.gunHolder = new THREE.Group();
     this.gunHolder.add(this.gun);

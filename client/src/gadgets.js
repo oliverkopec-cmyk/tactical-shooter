@@ -6,7 +6,7 @@
 
 import * as THREE from 'three';
 import { claymoreLines, UTIL_STATS } from '../../shared/utilities.js';
-import { barricadePlanks, barricadeFront } from '../../shared/barricade.js';
+import { barricadePlanks, barricadeFront, armorBox } from '../../shared/barricade.js';
 import { BARRICADE } from '../../shared/constants.js';
 
 const shieldMat = new THREE.MeshStandardMaterial({
@@ -23,7 +23,7 @@ const woodMats = [0x3f7a2e, 0x387028, 0x468533].map((c) => new THREE.MeshStandar
 const xMat = new THREE.MeshStandardMaterial({ color: 0xb58a4a, roughness: 0.9 });
 const grenadeMat = new THREE.MeshStandardMaterial({ color: 0xe8e8ff, emissive: 0x9999ff, emissiveIntensity: 0.8, roughness: 0.3 });
 // One look per thrown grenade type, so you can tell what is flying at you
-const GRENADE_LOOK = { stun: null, flash: null, frag: 0x3f5a3a, impact: 0xd2502f, smoke: 0x9aa0a6 };
+const GRENADE_LOOK = { stun: null, flash: null, frag: 0x3f5a3a, impact: 0xd2502f, smoke: 0x9aa0a6, emp: 0x4f7cff };
 const grenadeMats = {};
 function grenadeMaterial(kind) {
   const color = GRENADE_LOOK[kind];
@@ -138,6 +138,86 @@ function makeHealField(radius) {
   return g;
 }
 
+// ---------------------------------------------------------------- Stage E gadgets
+
+const blueLed = new THREE.MeshBasicMaterial({ color: 0x7ab8ff });
+const amberLed = new THREE.MeshBasicMaterial({ color: 0xffa040 });
+const batteryMat = new THREE.MeshStandardMaterial({ color: 0x2a3550, roughness: 0.5, metalness: 0.6 });
+const hazardMat = new THREE.MeshStandardMaterial({ color: 0xffd23c, roughness: 0.6 });
+const armorFaceMat = new THREE.MeshStandardMaterial({ color: 0x3a3e44, roughness: 0.55, metalness: 0.7 });
+const armorFrameMat = new THREE.MeshStandardMaterial({ color: 0xd9b45a, roughness: 0.5, metalness: 0.4 });
+const pelletMat = new THREE.MeshStandardMaterial({ color: 0xff4a6a, emissive: 0xff2a40, emissiveIntensity: 1.2, roughness: 0.4 });
+
+/** Current's battery: a squat box with a blue light and two clamps biting into the wall. It faces +z. */
+function makeBattery() {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.26, 0.1), batteryMat);
+  const band = new THREE.Mesh(new THREE.BoxGeometry(0.205, 0.04, 0.104), hazardMat);
+  band.position.y = 0.07;
+  for (const sx of [-0.07, 0.07]) {
+    const clamp = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.06, 0.08), darkMat);
+    clamp.position.set(sx, -0.15, -0.02);
+    g.add(clamp);
+  }
+  const led = new THREE.Mesh(new THREE.SphereGeometry(0.018, 8, 6), blueLed);
+  led.position.set(0, -0.05, 0.055);
+  g.add(body, band, led);
+  g.userData.led = led;
+  return g;
+}
+
+/** Interceptor's device: a round base with a little turret and an amber light. It faces +z (away from the surface). */
+function makeInterceptor() {
+  const g = new THREE.Group();
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.12, 0.05, 14).rotateX(Math.PI / 2), darkMat);
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(0.075, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2).rotateX(Math.PI / 2), camBodyMat);
+  dome.position.z = 0.025;
+  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.09, 8).rotateX(Math.PI / 2), darkMat);
+  barrel.position.set(0, 0.03, 0.09);
+  const led = new THREE.Mesh(new THREE.SphereGeometry(0.016, 8, 6), amberLed);
+  led.position.set(0.05, 0.05, 0.03);
+  g.add(base, dome, barrel, led);
+  g.userData.led = led;
+  return g;
+}
+
+/** Rampart's armour panel over an opening: a dark composite slab with a yellow frame, bolts and hazard corners. */
+function makeArmor(o) {
+  const g = new THREE.Group();
+  const b = armorBox(o);
+  const size = b.max.map((v, i) => v - b.min[i]);
+  const c = b.min.map((v, i) => (v + b.max[i]) / 2);
+  g.position.set(...c);
+  const flat = o.axis === 'x';
+  const W = flat ? size[0] : size[2], H = size[1], T = flat ? size[2] : size[0];
+  const inner = new THREE.Group();
+  if (!flat) inner.rotation.y = Math.PI / 2;
+  g.add(inner);
+  const face = new THREE.Mesh(new THREE.BoxGeometry(W - 0.02, H - 0.02, T), armorFaceMat.clone());
+  inner.add(face);
+  for (const side of [-1, 1]) {
+    // frame, horizontal ribs and bolts on both faces
+    const z = side * (T / 2 + 0.008);
+    for (const [w, h, x, y] of [[W, 0.06, 0, H / 2 - 0.03], [W, 0.06, 0, -H / 2 + 0.03], [0.06, H, W / 2 - 0.03, 0], [0.06, H, -W / 2 + 0.03, 0]]) {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.02), armorFrameMat);
+      m.position.set(x, y, z);
+      inner.add(m);
+    }
+    for (let i = 1; i < 4; i++) {
+      const rib = new THREE.Mesh(new THREE.BoxGeometry(W - 0.16, 0.025, 0.014), darkMat);
+      rib.position.set(0, -H / 2 + (H * i) / 4, z);
+      inner.add(rib);
+    }
+    for (const x of [-W / 2 + 0.03, W / 2 - 0.03]) for (const y of [-H / 2 + 0.03, H / 2 - 0.03, 0]) {
+      const bolt = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.02, 8).rotateX(Math.PI / 2), spikeMat);
+      bolt.position.set(x, y, z + side * 0.008);
+      inner.add(bolt);
+    }
+  }
+  g.userData.face = face;
+  return g;
+}
+
 export class GadgetView {
   constructor(scene, world) {
     this.scene = scene;
@@ -205,6 +285,18 @@ export class GadgetView {
       group = makeCamera();
       group.position.set(...rec.pos);
       group.lookAt(rec.pos[0] + rec.dir[0], rec.pos[1] + rec.dir[1], rec.pos[2] + rec.dir[2]);
+    } else if (rec.kind === 'battery' || rec.kind === 'interceptor') {
+      group = rec.kind === 'battery' ? makeBattery() : makeInterceptor();
+      group.position.set(...rec.pos);
+      // face away from the surface; on a floor, "up" would be the facing direction, so pick another up
+      if (Math.abs(rec.dir[1]) > 0.9) group.up.set(0, 0, 1);
+      group.lookAt(rec.pos[0] + rec.dir[0], rec.pos[1] + rec.dir[1], rec.pos[2] + rec.dir[2]);
+    } else if (rec.kind === 'armor') {
+      const o = this.world.map.openings.find((x) => x.id === rec.openingId);
+      if (!o) return;
+      group = makeArmor(o);
+      const b = armorBox(o);
+      this.world.addBox({ id: `armor-${rec.id}`, kind: 'armor', armorId: rec.id, openingId: o.id, min: b.min, max: b.max });
     } else return;
     group.traverse((o) => { if (o.isMesh) o.castShadow = rec.kind !== 'shield'; });
     this.scene.add(group);
@@ -228,6 +320,7 @@ export class GadgetView {
     const it = this.items.get(key);
     if (!it) return;
     if (kind === 'shield') this.world.removeBox(`shield-${id}`);
+    if (kind === 'armor') this.world.removeBox(`armor-${id}`);
     if (kind === 'barricade') for (const i of it.group.userData.meshes.keys()) this.world.removeBox(`bar-${id}-${i}`);
     this.scene.remove(it.group);
     for (const m of it.lines || []) { this.scene.remove(m); m.material.dispose(); }
@@ -290,7 +383,44 @@ export class GadgetView {
     return [...this.items.values()].filter((i) => i.kind === 'camera').map((i) => i.rec);
   }
 
+  /** An armour panel took a hit: it darkens and scorches as it wears down (left: 1 new ... 0 gone). */
+  armorDamage(id, left) {
+    const face = this.items.get(`armor:${id}`)?.group.userData.face;
+    if (face) face.material.color.setHex(0x3a3e44).lerp(new THREE.Color(0x1a1612), 1 - left);
+  }
+
+  /** Flint's pellets stuck to a surface: six glowing studs in a ring, blinking until they go off. */
+  addPellets({ id, pos, normal }) {
+    this.pellets ||= new Map();
+    const g = new THREE.Group();
+    g.position.set(...pos);
+    if (Math.abs(normal[1]) > 0.9) g.up.set(0, 0, 1);
+    g.lookAt(pos[0] + normal[0], pos[1] + normal[1], pos[2] + normal[2]);
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      const m = new THREE.Mesh(new THREE.SphereGeometry(0.022, 8, 6), pelletMat);
+      m.position.set(Math.cos(a) * 0.12, Math.sin(a) * 0.12, 0.01);
+      g.add(m);
+    }
+    const led = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 6), redLed);
+    g.add(led);
+    g.userData.led = led;
+    this.scene.add(g);
+    this.pellets.set(id, g);
+    this.items.set(`pellets:${id}`, { kind: 'pellets', group: g, rec: { id } });   // so the light blinks with the rest
+  }
+
+  removePellets(id) {
+    const g = this.pellets?.get(id);
+    if (!g) return;
+    this.scene.remove(g);
+    this.pellets.delete(id);
+    this.items.delete(`pellets:${id}`);
+  }
+
   clear() {
+    for (const g of this.pellets?.values() || []) this.scene.remove(g);
+    this.pellets?.clear();
     for (const it of this.items.values()) {
       this.scene.remove(it.group);
       for (const m of it.lines || []) this.scene.remove(m);

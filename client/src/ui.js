@@ -17,6 +17,12 @@ import { PING_TYPES } from '../../shared/voiceLines.js';
 
 const $ = (id) => document.getElementById(id);
 
+// Kill feed names for kills that weren't a gun or a utility
+const KILL_NAMES = {
+  melee: 'Melee', breach: 'Breach charge', fire: 'Fire', shock: 'Shock trap',
+  zap: 'Shock drone', pellets: 'Pellets', shockWire: 'Shock wire',
+};
+
 export class UI {
   constructor() {
     this.screens = { auth: $('screen-auth'), home: $('screen-home'), lobby: $('screen-lobby') };
@@ -542,8 +548,9 @@ export class UI {
     if (health !== this.lastHealth) {
       this.lastHealth = health;
       $('health-value').textContent = Math.ceil(health);
-      $('health-bar').style.width = `${(health / MAX_HEALTH) * 100}%`;
+      $('health-bar').style.width = `${Math.min(100, (health / MAX_HEALTH) * 100)}%`;
       $('health-box').classList.toggle('low', health <= 30);
+      $('health-box').classList.toggle('overheal', health > MAX_HEALTH);   // Medic's stim, above 100
     }
     if (weapon) {
       const w = WEAPONS[weapon.id];
@@ -607,7 +614,7 @@ export class UI {
     k.className = killer.team; k.textContent = killer.name;
     if (killer.owner) k.appendChild(ownerTagEl());
     const w = document.createElement('span');
-    w.className = 'weapon'; w.textContent = `${WEAPONS[weapon]?.name || UTILITIES[weapon]?.name || weapon}${head ? ' · head' : ''}`;
+    w.className = 'weapon'; w.textContent = `${WEAPONS[weapon]?.name || UTILITIES[weapon]?.name || KILL_NAMES[weapon] || weapon}${head ? ' · head' : ''}`;
     const v = document.createElement('span');
     v.className = victim.team; v.textContent = victim.name;
     if (victim.owner) v.appendChild(ownerTagEl());
@@ -664,6 +671,14 @@ export class UI {
     if (text === this.lastSiteChip) return;
     this.lastSiteChip = text;
     $('site-chip').textContent = text;
+  }
+
+  /** A stim dart landed: the health panel flashes. */
+  flashHeal() {
+    const box = $('health-box');
+    box.classList.remove('healed');
+    void box.offsetWidth;   // restart the animation
+    box.classList.add('healed');
   }
 
   /** White-out after a stun grenade. frac 1 = fully blind, 0 = clear. */

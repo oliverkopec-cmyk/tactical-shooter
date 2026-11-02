@@ -4,7 +4,7 @@
 // ability's server handler in server/abilities.js under the same `ability.id`.
 //
 //   team:    'attack' | 'defense'
-//   weapons: { primary, secondary }, ids from shared/weapons.js (unique to each operator)
+//   weapons: { primary, secondary }, ids from shared/weapons.js (a gun is shared by at most 2 operators)
 //   utilities: two ids from shared/utilities.js; the player picks one before each round
 //   speed:   1-3 rating (1 slow ... 3 fast)         armor: 1-3 rating (1 fragile ... 3 tough)
 //   price:   Money to buy it in the Operators tab (no price = free for everyone)
@@ -51,6 +51,32 @@ export const OPERATORS = {
     ability: { id: 'emp', name: 'EMP burst', charges: 2,
       desc: 'Destroy defender cameras and signal jammers within 10 m of where you aim.' },
   },
+  // Stage E: each built around a real Siege operator's gadget (in brackets)
+  blackout: {   // (Thatcher)
+    name: 'Blackout', team: 'attack', color: 0x4f7cff, weapons: { primary: 'ember', secondary: 'jolt' }, utilities: ['claymore', 'impact'], speed: 2, armor: 2, price: 3000,
+    ability: { id: 'empGrenade', name: 'EMP grenade', charges: 3,
+      desc: 'Throw a grenade that goes off after 2 s and reaches through walls, destroying every defender electronic within 5 m: cameras, jammers, shock traps, alarm sensors, shock wires and interceptors.' },
+  },
+  wasp: {   // (Twitch)
+    name: 'Wasp', team: 'attack', color: 0xd8f03a, weapons: { primary: 'longview', secondary: 'needle' }, utilities: ['smoke', 'claymore'], speed: 2, armor: 2, price: 3000, extraDrones: 1,
+    ability: { id: 'shockDrone', name: 'Shock drones', charges: 0,
+      desc: 'Both your drones are shock drones. While driving one in prep, press {ability} to fire its taser (6 zaps each, 5 m): it destroys defender gadgets and stings defenders.' },
+  },
+  flint: {   // (Hibana)
+    name: 'Flint', team: 'attack', color: 0xff4a6a, weapons: { primary: 'gale', secondary: 'tick' }, utilities: ['flash', 'impact'], speed: 3, armor: 1, price: 3000,
+    ability: { id: 'pellets', name: 'Pellet launcher', charges: 3,
+      desc: 'Fire a volley of sticky pellets at a wall up to 20 m away, then press {ability} again to set it off. Each volley opens a hole in a soft wall, hatch, barricade or armour panel, and one panel of a reinforced wall.' },
+  },
+  ram: {   // (Sledge)
+    name: 'Ram', team: 'attack', color: 0xc9a27a, weapons: { primary: 'rifle', secondary: 'sting' }, utilities: ['frag', 'flash'], speed: 2, armor: 2, price: 3000,
+    ability: { id: 'hammer', name: 'Breaching hammer', charges: 20, cooldown: 1.1,
+      desc: 'Swing a hammer at what is in front of you: a big hole in a soft wall, a barricade or the hatch under you gone in one hit, an armour panel in two. Not reinforced walls, not people. Loud.' },
+  },
+  aegis: {   // (Blackbeard, and how shield operators work)
+    name: 'Aegis', team: 'attack', color: 0x2fd6b0, weapons: { primary: 'breakwater', secondary: 'anvil' }, utilities: ['claymore', 'flash'], speed: 2, armor: 2, price: 3500,
+    ability: { id: 'shieldDash', name: 'Shield charge', charges: 3, cooldown: 8,
+      desc: 'With the shield up, dash a few metres forward, smashing through soft walls and barricades in the way. Breaking through leaves you dazed for a moment.' },
+  },
   recruit_atk: {
     name: 'Recruit', team: 'attack', color: 0xb0b6bd, weapons: { primary: 'rifle', secondary: 'sidekick' }, utilities: ['frag', 'smoke'], speed: 2, armor: 2, unique: false,
     ability: null,
@@ -91,6 +117,26 @@ export const OPERATORS = {
     name: 'Picket', team: 'defense', color: 0xd8c84a, weapons: { primary: 'watchman', secondary: 'chirp' }, utilities: ['claymore', 'frag'], speed: 3, armor: 2, price: 2000,
     ability: { id: 'alarmSensor', name: 'Alarm sensor', charges: 3,
       desc: 'Stick a sensor to a wall or floor. Three faint lines mark any attacker who touches them for 3 s. It never goes off.' },
+  },
+  current: {   // (Bandit)
+    name: 'Current', team: 'defense', color: 0x4d8bff, weapons: { primary: 'pulse', secondary: 'static' }, utilities: ['frag', 'impact'], speed: 3, armor: 1, price: 3000,
+    ability: { id: 'shockWire', name: 'Shock wire', charges: 4,
+      desc: 'Clip a battery to a reinforced wall, a hatch or an armour panel. It destroys breach charges and pellets stuck to it and shocks attackers who touch it.' },
+  },
+  rampart: {   // (Castle)
+    name: 'Rampart', team: 'defense', color: 0xd9b45a, weapons: { primary: 'shotgun', secondary: 'holdout' }, utilities: ['impact', 'claymore'], speed: 2, armor: 2, price: 3000,
+    ability: { id: 'armorPanel', name: 'Armour panel', charges: 3,
+      desc: 'Fit a bulletproof panel over the doorway or window you aim at (it replaces a wooden barricade). It takes 12 melee hits, 2 hammer swings, a breach charge or a pellet volley to break.' },
+  },
+  medic: {   // (Doc)
+    name: 'Medic', team: 'defense', color: 0xff5d6c, weapons: { primary: 'syringe', secondary: 'trowel' }, utilities: ['claymore', 'smoke'], speed: 1, armor: 3, price: 3000,
+    ability: { id: 'stimPistol', name: 'Stim pistol', charges: 3,
+      desc: 'Fire a stim dart: +40 health to the teammate under your crosshair (up to 30 m), or to yourself. It can go up to 140, which drains back to 100 slowly.' },
+  },
+  interceptor: {   // (Jäger)
+    name: 'Interceptor', team: 'defense', color: 0xf0783c, weapons: { primary: 'livewire', secondary: 'peep' }, utilities: ['frag', 'smoke'], speed: 3, armor: 1, price: 3000,
+    ability: { id: 'interceptor', name: 'Grenade interceptor', charges: 2,
+      desc: 'Place a device on a wall or floor. It shoots down the first 2 thrown grenades that come within 4.5 m. One bullet destroys it.' },
   },
   recruit_def: {
     name: 'Recruit', team: 'defense', color: 0xb0b6bd, weapons: { primary: 'garrison', secondary: 'holdout' }, utilities: ['frag', 'flash'], speed: 2, armor: 2, unique: false,

@@ -4,7 +4,7 @@
 import {
   PLAYER_RADIUS, STAND_HEIGHT, CROUCH_HEIGHT, PRONE_HEIGHT, STAND_EYE, CROUCH_EYE, PRONE_EYE, PRONE_EYE_FORWARD,
   VAULT, RAPPEL, STEP_HEIGHT, WALK_SPEED, SPRINT_SPEED, CROUCH_SPEED, PRONE_SPEED, MOVE,
-  CROUCH_TRANSITION, PRONE_TRANSITION, LEAN_SPEED, LEAN_OFFSET, KEY, SPRINT_FIRE_DELAY, ADS,
+  CROUCH_TRANSITION, PRONE_TRANSITION, LEAN_SPEED, LEAN_OFFSET, KEY, SPRINT_FIRE_DELAY, ADS, DASH_SPEED,
 } from './constants.js';
 
 const EPS = 1e-4;
@@ -31,6 +31,7 @@ export function createPlayerState(spawn) {
     // rappel: rap = rope number (1-based, 0 = not on a rope), rapSide = metres along the wall, rapFlip 0..1 upside down
     rap: 0, rapSide: 0, rapFlip: 0, rapPrev: 0, rapCd: 0,
     swing: -1,     // set to an opening id when the player just swung in through it (the server breaks its barricade)
+    dash: 0, dashX: 0, dashZ: 0,   // Aegis's shield charge: seconds left and direction, set by the server
   };
 }
 
@@ -229,6 +230,12 @@ export function stepPlayer(s, input, dt, world) {
     const v = Math.hypot(s.vx, s.vz);
     const keep = v > 0 ? Math.max(0, v - down) / v : 0;
     s.vx *= keep; s.vz *= keep;
+  }
+
+  // Aegis's shield charge: a short burst straight ahead, set by the server
+  if (s.dash > 0) {
+    s.vx = s.dashX * DASH_SPEED; s.vz = s.dashZ * DASH_SPEED;
+    s.dash = Math.max(0, s.dash - dt);
   }
 
   moveHorizontal(s, s.vx * dt, s.vz * dt, h, world);
@@ -457,7 +464,7 @@ function swingIn(s, r, world) {
   const ops = world.map.openings;
   const along = r.wallAxis === 'x' ? s.x : s.z;
   for (const o of ops) {
-    if (!o.exterior || o.axis !== r.wallAxis || Math.abs(o.fixed - r.wallFixed) > 0.01) continue;
+    if (!o.exterior || o.axis !== r.wallAxis || Math.abs(o.fixed - r.wallFixed) > 0.01 || world.armored?.has(o.id)) continue;
     const hips = s.y + RAPPEL.hang;
     if (along < o.from - 0.2 || along > o.to + 0.2 || hips < o.y0 - 0.2 || hips > o.y1 + 0.2) continue;
     const into = 0.9;                                            // inside, past the wall

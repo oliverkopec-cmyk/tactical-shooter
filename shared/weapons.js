@@ -4,7 +4,7 @@
 
 import { KEY, WALK_SPEED, ADS } from './constants.js';
 
-// Every operator has a unique primary and a unique secondary (see operators.js).
+// A gun is used by at most 2 operators (see operators.js).
 // Fields:
 //   kind        shown in menus and the kill feed       model   which first-person model to draw
 //   auto        hold to keep firing (false = one shot per click)
@@ -256,6 +256,15 @@ export const WEAPONS = {
   }),
 };
 
+// Aegis's ballistic shield (Stage E). Held up in front, with its sidearm fired past the edge: the
+// same pistol as the secondary, sharing its ammo, but hip fire behind a shield is less accurate and
+// the shield is heavy. shieldCover() below says what it covers.
+WEAPONS.breakwater = gun({
+  ...WEAPONS.anvil, id: 'breakwater', name: 'Breakwater shield', kind: 'Ballistic shield', model: 'shield', shield: true, sidearm: 'anvil',
+  scale: 1, color: 0x3a434d, accent: 0x2fd6b0, baseSpread: 0.012, moveSpread: 0.032, mobility: 0.9, reserve: WEAPONS.anvil.reserve,
+  desc: 'A full-height ballistic shield that stops every bullet from the front. You fire the Anvil .45 past its edge; aiming or reloading lowers it below your head.',
+});
+
 export const SWAP_TIME = 0.4;   // seconds before a newly drawn weapon can fire
 
 /** A weapon state holds the drawn gun plus the stowed one in `other` (slot 0 = primary, 1 = secondary). */
@@ -286,6 +295,8 @@ export function stepWeapon(ws, input, dt) {
     ws.bloom = 0;
     ws.cooldown = SWAP_TIME;
     ws.trigger = true;   // a held trigger doesn't fire a semi-automatic gun the moment it is drawn
+    // A shield and its sidearm are the same pistol: the ammo comes along
+    if (WEAPONS[ws.id].sidearm === stowed.id || WEAPONS[stowed.id].sidearm === ws.id) { ws.ammo = stowed.ammo; ws.reserve = stowed.reserve; }
   }
   const w = WEAPONS[ws.id];
   const keys = input.keys | 0;
@@ -318,6 +329,20 @@ export function stepWeapon(ws, input, dt) {
   if (!fired && ws.cooldown < 0) ws.cooldown = 0;
   ws.trigger = firing;
   return fired;
+}
+
+/**
+ * What a ballistic shield covers right now: 0 nothing, 1 the front up to the top of the head,
+ * 2 the front below the head (aiming or reloading lifts the pistol over it), 3 the back (the
+ * sidearm is drawn and the shield is slung). Sprinting swings it aside; lying down, nothing.
+ */
+export function shieldCover(ws, s) {
+  if (!ws) return 0;
+  if (WEAPONS[ws.id]?.shield) {
+    if ((s.prone || 0) > 0.5 || s.sprinting || s.vaultT > 0) return 0;
+    return (s.ads || 0) > 0.4 || ws.reload > 0 ? 2 : 1;
+  }
+  return ws.other && WEAPONS[ws.other.id]?.shield ? 3 : 0;
 }
 
 /** Walking speed multiplier for the gun that is drawn. */

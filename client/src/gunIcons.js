@@ -8,6 +8,7 @@ const SHAPES = {
   dmr: '<rect x="14" y="20" width="70" height="6" rx="2"/><rect x="2" y="18" width="16" height="10" rx="2"/><rect x="40" y="26" width="6" height="10" rx="1"/><rect x="82" y="21" width="14" height="3" rx="1"/><rect x="32" y="12" width="22" height="6" rx="3"/>',
   pistol: '<rect x="30" y="15" width="40" height="9" rx="2"/><rect x="30" y="24" width="12" height="18" rx="2"/><rect x="64" y="17" width="12" height="4" rx="1"/>',
   revolver: '<rect x="34" y="15" width="22" height="11" rx="3"/><rect x="54" y="17" width="34" height="5" rx="1"/><rect x="30" y="26" width="12" height="17" rx="2" transform="rotate(8 36 34)"/>',
+  shield: '<path d="M30 3 H70 L76 9 V43 C76 46 73 48 70 48 H30 C27 48 24 46 24 43 V9 Z"/><rect x="40" y="10" width="20" height="5" rx="1" fill="#000" fill-opacity="0.45"/>',
   machinePistol: '<rect x="26" y="15" width="40" height="9" rx="2"/><rect x="28" y="24" width="10" height="16" rx="2"/><rect x="46" y="24" width="7" height="20" rx="1"/><rect x="64" y="17" width="16" height="4" rx="1"/>',
 };
 

@@ -6,8 +6,8 @@
 
 import { getMap, findOpening } from '../shared/map.js';
 import { createPlayerState, stepPlayer, weaponInput } from '../shared/movement.js';
-import { createWeaponState, stepWeapon, gunMobility } from '../shared/weapons.js';
-import { UTILITIES } from '../shared/utilities.js';
+import { createWeaponState, stepWeapon, gunMobility, shieldCover } from '../shared/weapons.js';
+import { UTILITIES, ABILITY_STATS } from '../shared/utilities.js';
 import { MIN_ROUNDS_TO_COUNT } from './progression.js';
 import { OPERATORS, defaultOperator, operatorsFor, speedMultiplier, damageMultiplier } from '../shared/operators.js';
 import { World } from '../shared/world.js';
@@ -183,16 +183,21 @@ export class GameState {
             p.state.z + fz * DRONE.spawnOffset + rz * side, p.state.yaw,
           ),
         };
+        if (OPERATORS[p.operator]?.ability?.id === 'shockDrone') drone.zaps = ABILITY_STATS.zap.perDrone;   // Wasp's shock drones
         this.drones.set(drone.id, drone);
         if (p.activeDrone === null) p.activeDrone = drone.id;
       }
+      if (OPERATORS[p.operator]?.ability?.id === 'shockDrone') { p.ability.charges = count * ABILITY_STATS.zap.perDrone; this.sendLoadout(id, p); }
     }
   }
 
   /** Prep is over: drones are recalled. */
   clearDrones() {
     this.drones.clear();
-    for (const p of this.players.values()) p.activeDrone = null;
+    for (const [id, p] of this.players) {
+      p.activeDrone = null;
+      if (OPERATORS[p.operator]?.ability?.id === 'shockDrone' && p.ability?.charges) { p.ability.charges = 0; this.sendLoadout(id, p); }
+    }
   }
 
   activeDroneOf(p) {
@@ -217,6 +222,7 @@ export class GameState {
     drone.alive = false;
     this.drones.delete(droneId);
     const owner = this.players.get(drone.owner);
+    if (owner && drone.zaps > 0 && owner.ability) { owner.ability.charges = Math.max(0, owner.ability.charges - drone.zaps); this.sendLoadout(drone.owner, owner); }
     if (owner && owner.activeDrone === droneId) {
       owner.activeDrone = null;
       this.cycleToFirstDrone(owner);
@@ -485,6 +491,9 @@ export class GameState {
       }
     }
     if (best) {
+      // A ballistic shield turned towards the swing takes it
+      const q = this.players.get(best.id);
+      if (shieldFaces(q, p.state.x, p.state.z)) { this.emitAll('shieldHit', { pos: [round2(q.state.x), round2(q.state.y + 1.1), round2(q.state.z)] }); return; }
       this.applyDamage(best.id, id, MELEE.damage, { weapon: 'melee', from: [p.state.x, p.state.z] });
       return;
     }
@@ -504,6 +513,8 @@ export class GameState {
       const planeT = barricade ? (opening.fixed - origin[opening.axis === 'x' ? 2 : 0]) / aim[opening.axis === 'x' ? 2 : 0] : 0;
       if (barricade && (!wall || wall.box.kind === 'barricade' || wall.t >= planeT - 0.1)) {
         this.gadgets.meleeBarricade(barricade.id, origin.map((v, k) => v + aim[k] * planeT));
+      } else if (wall?.box.kind === 'armor') {
+        this.gadgets.hitArmor(wall.box.armorId, 'melee', id);
       } else if (wall?.box.kind === 'barricade') {
         this.gadgets.meleeBarricade(wall.box.barricadeId, wall.point);
       } else if (wall?.box.kind === 'panel') {
@@ -585,7 +596,7 @@ export class GameState {
       utility: p.utility ? { id: p.utility.id, charges: p.utility.charges } : null,
       ability: cfg ? {
         id: cfg.id, charges: ab.charges, cdLeft: Math.max(0, ab.cdUntil - Date.now()),
-        deployed: !!(ab.shieldId || p.placedHeavy),
+        deployed: !!(ab.shieldId || p.placedHeavy || ab.volley),
       } : null,
     });
   }
@@ -933,6 +944,7 @@ export class GameState {
       cameras: [...this.gadgets.cameras.values()],
       claymores: [...this.gadgets.claymores.values()],
       jammers: [...this.gadgets.jammers.values()],
+      gadgets: this.gadgets.shootable(),
     });
 
     // Total damage per victim across pellets
@@ -962,6 +974,10 @@ export class GameState {
     }
     for (const pellet of shot.pellets) if (pellet.cameraId) this.gadgets.destroyCamera(pellet.cameraId);
     for (const pellet of shot.pellets) if (pellet.claymoreId) this.gadgets.destroyClaymore(pellet.claymoreId);
+    for (const pellet of shot.pellets) if (pellet.gadget) this.gadgets.destroyGadget(pellet.gadget.kind, pellet.gadget.id);
+    // Bullets that hit a ballistic shield spark off it (one spark burst per shot)
+    const blocked = shot.pellets.find((pl) => pl.shield);
+    if (blocked) this.emitAll('shieldHit', { pos: blocked.end.map(round2) });
     // A jammer takes one hit per shot (a shotgun's pellets count once)
     for (const jid of new Set(shot.pellets.map((p) => p.jammerId).filter((j) => j !== null))) this.gadgets.hitJammer(jid);
     // Barricades break like soft walls: defenders may already open them from inside during prep
@@ -1040,6 +1056,8 @@ export class GameState {
         vt: s.vaultT > 0 ? [round2(s.vaultT), round2(s.vax), round2(s.vay), round2(s.vaz), round2(s.vbx), round2(s.vby), round2(s.vbz), round2(s.vtop)] : undefined,
         rk: s.rap || s.rapPrev || s.rapCd > 0 || s.rapFlip > 0 ? [s.rap, round2(s.rapSide), round2(s.rapFlip), s.rapPrev, round2(s.rapCd)] : undefined,
         ad: s.ads > 0 ? Math.round(s.ads * 1000) / 1000 : undefined,   // aiming down sights
+        ds: s.dash > 0 ? [round2(s.dash), round2(s.dashX), round2(s.dashZ)] : undefined,   // Aegis's shield charge
+        sh: shieldCover(w, s) || undefined,   // what a ballistic shield covers (shown even before the operator is known)
         det: p.detected ? 1 : undefined,
       });
     }
@@ -1110,4 +1128,14 @@ function sanitizeInput(raw) {
     wsel,      // 1 = primary, 2 = secondary
     rt: Number.isFinite(rt) ? rt : 0,
   };
+}
+
+/** Is this player's ballistic shield between them and the point (x, z)? A raised one covers 60° either side of where they face, a slung one their back. */
+function shieldFaces(q, x, z) {
+  const cover = shieldCover(q.weapon, q.state);
+  if (!cover) return false;
+  const [fx, fz] = forwardVec(q.state.yaw);
+  const dx = x - q.state.x, dz = z - q.state.z, d = Math.hypot(dx, dz) || 1;
+  const dot = (dx * fx + dz * fz) / d;
+  return cover === 3 ? dot < -0.5 : dot > 0.5;
 }

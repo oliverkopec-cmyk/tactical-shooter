@@ -47,6 +47,15 @@ const SOUNDS = {
   sparkZap: { noise: true, filter: 'highpass', cutoff: 4200, q: 0.7, dur: 0.12, gain: 0.7 },
   sparkBuzz: { wave: 'sawtooth', freq: 1900, freq2: 240, filter: 'lowpass', cutoff: 5000, dur: 0.16, gain: 0.3 },
   wireRustle: { noise: true, filter: 'bandpass', cutoff: 3200, q: 2.2, dur: 0.1, gain: 0.35 },
+  // Stage E operators
+  shieldPing: { wave: 'triangle', freq: 2400, freq2: 1500, filter: 'lowpass', cutoff: 6000, dur: 0.14, gain: 0.45 },
+  shieldDash: { noise: true, filter: 'lowpass', cutoff: 900, q: 0.7, dur: 0.3, gain: 0.8 },
+  pelletThunk: { wave: 'square', freq: 520, freq2: 180, filter: 'lowpass', cutoff: 2200, dur: 0.09, gain: 0.4 },
+  hammerSmash: { noise: true, filter: 'lowpass', cutoff: 1500, q: 0.9, dur: 0.32, gain: 1.0 },
+  armorHit: { wave: 'square', freq: 260, freq2: 120, filter: 'lowpass', cutoff: 1600, dur: 0.12, gain: 0.55 },
+  armorBreak: { noise: true, filter: 'lowpass', cutoff: 1200, q: 0.8, dur: 0.5, gain: 1.0 },
+  stim: { wave: 'sine', freq: 700, freq2: 1400, dur: 0.18, gain: 0.35 },
+  intercept: { wave: 'sawtooth', freq: 1700, freq2: 400, filter: 'lowpass', cutoff: 4000, dur: 0.12, gain: 0.45 },
 };
 
 export class Soundscape {
@@ -183,6 +192,8 @@ export class Soundscape {
     else if (kind === 'camera' || kind === 'claymore') this.at('placeClick', pos, range);
     else if (kind === 'smoke') this.at('whoosh', pos, 26);
     else if (kind === 'barricade') for (let i = 0; i < 3; i++) setTimeout(() => this.at('hammer', pos, 26), i * 150);
+    else if (kind === 'armor') { this.at('armorHit', pos, 30); setTimeout(() => this.at('placeShield', pos, 30), 120); }
+    else if (kind === 'battery') { this.at('placeClick', pos, range); setTimeout(() => this.at('sparkBuzz', pos, range, 0.6), 120); }
     else this.at('placeBeep', pos, range);   // breach charge
   }
 

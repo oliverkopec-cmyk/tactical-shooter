@@ -238,7 +238,7 @@ export class MenuScene {
       attachCharm(gun, charmId);
       this.showcaseGun = gun;
       gun.userData.hold && gun.position.set(0, 0, 0);
-      gun.scale.multiplyScalar(1.45);
+      gun.scale.multiplyScalar(1.45 * gun.userData.display);
       gun.traverse((o) => { if (o.isMesh) o.castShadow = true; });
       holder.add(gun);
       holder.position.set(0.3, 1.2, 0);

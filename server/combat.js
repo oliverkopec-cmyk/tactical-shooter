@@ -7,7 +7,7 @@ import { LAG_COMP_MAX_MS, MAX_SHOT_RANGE } from '../shared/constants.js';
 import { raycastWorld, rayPlayer, rayBox } from '../shared/raycast.js';
 import { DRONE } from '../shared/drone.js';
 import { UTIL_STATS } from '../shared/utilities.js';
-import { WEAPONS, damageAtDistance, shotDirections, currentSpread } from '../shared/weapons.js';
+import { WEAPONS, damageAtDistance, shotDirections, currentSpread, shieldCover } from '../shared/weapons.js';
 import { getEyePosition } from '../shared/movement.js';
 
 const HISTORY_MS = 1000;
@@ -22,7 +22,7 @@ export class PoseHistory {
     for (const [id, p] of players) {
       if (!p.alive || p.spawned === false) continue;
       const s = p.state;
-      poses.set(id, { x: s.x, y: s.y, z: s.z, yaw: s.yaw, crouch: s.crouch, prone: s.prone || 0, lean: s.lean });
+      poses.set(id, { x: s.x, y: s.y, z: s.z, yaw: s.yaw, crouch: s.crouch, prone: s.prone || 0, lean: s.lean, sh: shieldCover(p.weapon, s) });
     }
     this.frames.push({ t, poses });
     while (this.frames.length > 2 && this.frames[0].t < t - HISTORY_MS) this.frames.shift();
@@ -48,6 +48,7 @@ export class PoseHistory {
           crouch: a.crouch + (b.crouch - a.crouch) * k,
           prone: a.prone + (b.prone - a.prone) * k,
           lean: a.lean + (b.lean - a.lean) * k,
+          sh: b.sh,
         };
       }
     }
@@ -61,8 +62,9 @@ export class PoseHistory {
  */
 export const CAMERA_HIT_HALF = 0.22;
 export const JAMMER_HIT_HALF = 0.16;
+export const GADGET_HIT_HALF = 0.14;
 
-export function resolveShot({ shooterId, shooter, input, world, players, history, now, drones = [], cameras = [], claymores = [], jammers = [] }) {
+export function resolveShot({ shooterId, shooter, input, world, players, history, now, drones = [], cameras = [], claymores = [], jammers = [], gadgets = [] }) {
   const w = WEAPONS[shooter.weapon.id];
   const eye = getEyePosition(shooter.state, world);
   const origin = [eye.x, eye.y, eye.z];
@@ -88,6 +90,9 @@ export function resolveShot({ shooterId, shooter, input, world, players, history
       const h = rayPlayer(origin, d, t.pose, maxT);
       if (h) { hit = { id: t.id, ...h }; maxT = h.t; }
     }
+    // A ballistic shield took it: the bullet stops there and does nothing
+    const shield = hit?.shield ? hit : null;
+    if (shield) hit = null;
     // Defenders can shoot enemy drones (nothing else is in their line of fire up to maxT)
     let drone = null;
     if (!hit && shooter.member.team === 'defense') {
@@ -127,20 +132,32 @@ export function resolveShot({ shooterId, shooter, input, world, players, history
         if (h) { jammer = { id: j.id, t: h.t }; maxT = h.t; }
       }
     }
+    // Attackers can shoot Current's batteries and Interceptor's devices (one hit each)
+    let gadget = null;
+    if (!hit && !shield && !drone && !camera && !claymore && !jammer && shooter.member.team === 'attack') {
+      const q = GADGET_HIT_HALF;
+      for (const g of gadgets) {
+        const h = rayBox(origin, d, [g.pos[0] - q, g.pos[1] - q, g.pos[2] - q], [g.pos[0] + q, g.pos[1] + q, g.pos[2] + q], maxT);
+        if (h) { gadget = { kind: g.kind, id: g.id }; maxT = h.t; }
+      }
+    }
     const end = [origin[0] + d[0] * maxT, origin[1] + d[1] * maxT, origin[2] + d[2] * maxT];
+    const other = shield || drone || camera || claymore || jammer || gadget;
     pellets.push({
+      shield: !!shield,
+      gadget,
       claymoreId: claymore ? claymore.id : null,
       jammerId: jammer ? jammer.id : null,
       end,
       hitId: hit ? hit.id : null,
       head: hit ? hit.head : false,
       damage: hit ? damageAtDistance(w, hit.t, hit.head) : 0,
-      wall: !hit && !drone && !camera && !claymore && !jammer && !!wallHit,
+      wall: !hit && !other && !!wallHit,
       cameraId: camera ? camera.id : null,
-      barricade: !hit && !drone && !camera && !claymore && !jammer && wallHit?.box.kind === 'barricade' ? { id: wallHit.box.barricadeId, index: wallHit.box.panelIndex } : null,
+      barricade: !hit && !other && wallHit?.box.kind === 'barricade' ? { id: wallHit.box.barricadeId, index: wallHit.box.panelIndex } : null,
       droneId: drone ? drone.id : null,
       droneDamage: drone ? damageAtDistance(w, drone.t, false) : 0,
-      panelId: !hit && !drone && !camera && !claymore && !jammer && wallHit?.box.kind === 'panel' ? wallHit.box.id : null,
+      panelId: !hit && !other && wallHit?.box.kind === 'panel' ? wallHit.box.id : null,
       panelDamage: w.damage,
     });
   }

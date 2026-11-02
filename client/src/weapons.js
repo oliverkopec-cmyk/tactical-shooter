@@ -4,12 +4,15 @@
 import * as THREE from 'three';
 import { WEAPONS } from '../../shared/weapons.js';
 import { FEEL } from '../../shared/constants.js';
-import { makeGunModel, animateGun } from './gunModels.js';
+import { makeGunModel, animateGun, sidearmOf } from './gunModels.js';
 import { attachCharm } from './charmModels.js';
 
 const REST = new THREE.Vector3(0.2, -0.2, -0.42);
 const ADS_Z = -0.4;     // aiming: the gun comes to the middle with its sights on the line of sight, this far ahead
 const VM_FOV = 62;
+// Aegis's shield in first person, held on the left arm: [x, y, z, yaw] raised, lowered (aiming or
+// reloading: the pistol comes up over it) and swung aside (sprinting)
+const SHIELD_POSE = { up: [-0.5, -0.6, -0.86, 0.42], low: [-0.5, -0.92, -0.7, 0.5], aside: [-0.86, -0.68, -0.6, 1.05] };
 
 export { makeGunModel, animateGun };
 
@@ -52,16 +55,30 @@ export class ViewModel {
     this.visible = true;
   }
 
-  setWeapon(id, skinId = null, charmId = null) {
-    const key = `${id}|${skinId || ''}|${charmId || ''}`;
+  /** sidearmSkin: for a shield, the skin of the pistol fired past it (the shield itself takes skinId and the charm). */
+  setWeapon(id, skinId = null, charmId = null, sidearmSkin = null) {
+    const key = `${id}|${skinId || ''}|${charmId || ''}|${sidearmSkin || ''}`;
     if (key === this.weaponKey) return;
     const previous = this.weaponKey && this.weaponId !== id ? this.weaponId : null;   // only a different gun gets the draw animation
     this.weaponKey = key;
     this.weaponId = id;
     if (this.gun) this.holder.remove(this.gun);
+    if (this.shield) { this.scene.remove(this.shieldHolder); this.shield = null; }
     if (previous) this.raise = 1;   // drawing a gun: lift it into view
-    this.gun = makeGunModel(id, skinId);
-    attachCharm(this.gun, charmId);
+    const sidearm = sidearmOf(id);
+    if (sidearm) {
+      // A shield: it goes on the left arm in its own holder, the pistol in the right hand as usual
+      this.shield = makeGunModel(id, skinId);
+      attachCharm(this.shield, charmId);
+      this.shieldHolder ||= new THREE.Group();
+      this.shieldHolder.clear();
+      this.shieldHolder.add(this.shield);
+      this.shieldHolder.position.set(...SHIELD_POSE.up.slice(0, 3));
+      this.shieldPose = SHIELD_POSE.up.slice();
+      this.scene.add(this.shieldHolder);
+    }
+    this.gun = makeGunModel(sidearm || id, sidearm ? sidearmSkin : skinId);
+    if (!sidearm) attachCharm(this.gun, charmId);
     this.gun.position.set(...this.gun.userData.hold);
     this.holder.add(this.gun);
     this.gun.userData.muzzle.add(this.flash);
@@ -86,7 +103,7 @@ export class ViewModel {
   }
 
   /**
-   * ctx: { speed, sprinting, crouch, reloadFrac (0..1 or -1), lean, ads (0..1), hidden,
+   * ctx: { speed, sprinting, crouch, reloadFrac (0..1 or -1), lean, ads (0..1), hidden, cover (shieldCover() with a shield up),
    *        stepPhase / stepAmp (the camera's footstep bob, so the gun moves in step), turnX / turnY (mouse turn rate, rad/s) }
    */
   update(dt, ctx) {
@@ -139,6 +156,16 @@ export class ViewModel {
     const fov = VM_FOV - 14 * (1 - hip);
     if (Math.abs(this.camera.fov - fov) > 0.01) { this.camera.fov = fov; this.camera.updateProjectionMatrix(); }
 
+    if (this.shield) {
+      // The shield eases between raised, lowered (aiming, reloading) and swung aside (sprinting), and bobs with the steps
+      const want = ctx.cover === 1 ? SHIELD_POSE.up : ctx.cover === 2 ? SHIELD_POSE.low : SHIELD_POSE.aside;
+      const k2 = Math.min(1, dt * 9);
+      for (let i = 0; i < 4; i++) this.shieldPose[i] += (want[i] - this.shieldPose[i]) * k2;
+      const [x, y, z, yaw] = this.shieldPose;
+      this.shieldHolder.position.set(x + bobX * 0.6 + this.sway.x * 0.15, y - bobY * 0.8 - this.raise * 0.4 + this.sway.y * 0.15, z - 0.2 * swing);
+      this.shieldHolder.rotation.set(this.sway.y * 0.5 - swing * 0.15, yaw - this.sway.x * 0.5 + swing * 0.5, 0.04 + ctx.lean * 0.12);
+      this.shield.userData.charm?.update(dt, this.shieldHolder.position);
+    }
     if (this.gun) {
       // Looking through a red dot: the lens clears and the back plate of the housing goes, so you see through it
       const dot = this.gun.userData.parts['lens.dot']?.[0];
