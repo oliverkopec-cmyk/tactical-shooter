@@ -103,12 +103,12 @@ export function rayPlayer(o, d, pose, maxT) {
 export const SHIELD_HEIGHT = 1.18;   // the model in client/src/gunModels.js is this tall
 
 /**
- * The shield's box in the player's own frame (they face -z). Raised, its top is level with the top
- * of the head, so a standing player's shins show below it and a crouching one is covered; lowered,
- * it drops below the head. Slung, it covers the back.
+ * The shield's box in the player's own frame (they face -z). Drawn (1), its top is level with the top
+ * of the head, so a standing player's shins show below it and a crouching one is covered. Held to the
+ * side while the pistol is out (2), it covers the left half of the body from the front.
  */
 export function shieldBox(sh, h) {
-  if (sh === 3) return { min: [-0.33, Math.max(0.3, h - 1.3), 0.21], max: [0.33, h - 0.3, 0.27] };
-  const top = sh === 1 ? h + 0.06 : h - 0.5;
-  return { min: [-0.4, Math.max(0.03, top - SHIELD_HEIGHT), -0.52], max: [0.36, top, -0.44] };
+  const top = h + 0.06, bottom = Math.max(0.03, top - SHIELD_HEIGHT);
+  if (sh === 2) return { min: [-0.62, bottom, -0.5], max: [-0.04, top - 0.1, -0.36] };
+  return { min: [-0.4, bottom, -0.52], max: [0.36, top, -0.44] };
 }

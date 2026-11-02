@@ -10,9 +10,17 @@ import { attachCharm } from './charmModels.js';
 const REST = new THREE.Vector3(0.2, -0.2, -0.42);
 const ADS_Z = -0.4;     // aiming: the gun comes to the middle with its sights on the line of sight, this far ahead
 const VM_FOV = 62;
-// Aegis's shield in first person (nothing else is in your hands): [x, y, z, yaw] raised, lowered
-// and swung aside (sprinting)
-const SHIELD_POSE = { up: [-0.5, -0.6, -0.86, 0.42], low: [-0.5, -0.92, -0.7, 0.5], aside: [-0.86, -0.68, -0.6, 1.05] };
+// Aegis's shield in first person, as [x, y, z, yaw]: drawn, it fills most of the view with its viewport
+// (SHIELD_PORT_Y up the shield) right on the line of sight; with the pistol out it is held to the left
+// (further out while aiming); sprinting swings it aside
+const SHIELD_PORT_Y = 0.37;
+const SHIELD_POSE = {
+  front: [0, -SHIELD_PORT_Y, -0.5, 0],
+  side: [-0.44, -0.5, -0.7, 0.45],
+  sideAim: [-0.64, -0.64, -0.66, 0.62],
+  aside: [-0.86, -0.68, -0.6, 1.05],
+};
+const SIDEARM_IN = 0.12;   // with the shield at its side, the pistol is held this much closer to it
 
 export { makeGunModel, animateGun };
 
@@ -64,26 +72,34 @@ export class ViewModel {
     this.visible = true;
   }
 
-  setWeapon(id, skinId = null, charmId = null) {
-    const key = `${id}|${skinId || ''}|${charmId || ''}`;
+  /**
+   * sideShield: { id, skin, charm } when the other weapon is a ballistic shield (Aegis with the pistol
+   * out): it stays in view, held to the side. A drawn shield is all there is in the hands.
+   */
+  setWeapon(id, skinId = null, charmId = null, sideShield = null) {
+    const shield = !!WEAPONS[id]?.shield;
+    const sh = shield ? { id, skin: skinId, charm: charmId } : sideShield;
+    const shieldKey = sh ? `${sh.id}|${sh.skin || ''}|${sh.charm || ''}` : '';
+    const key = `${id}|${skinId || ''}|${charmId || ''}|${shieldKey}`;
     if (key === this.weaponKey) return;
     const previous = this.weaponKey && this.weaponId !== id ? this.weaponId : null;   // only a different gun gets the draw animation
     this.weaponKey = key;
     this.weaponId = id;
     if (this.gun) this.holder.remove(this.gun);
-    if (this.shield) { this.scene.remove(this.shieldHolder); this.shield = null; }
     if (previous) this.raise = 1;   // drawing a gun: lift it into view
-    const shield = !!WEAPONS[id]?.shield;
-    if (shield) {
-      // A shield: it gets its own holder, and the hands hold nothing else (an empty stand-in keeps the gun code happy)
-      this.shield = makeGunModel(id, skinId);
-      attachCharm(this.shield, charmId);
-      this.shieldHolder ||= new THREE.Group();
-      this.shieldHolder.clear();
-      this.shieldHolder.add(this.shield);
-      this.shieldHolder.position.set(...SHIELD_POSE.up.slice(0, 3));
-      this.shieldPose = SHIELD_POSE.up.slice();
-      this.scene.add(this.shieldHolder);
+    // The shield keeps its own holder (and where it is) when you switch between it and the pistol
+    if (shieldKey !== this.shieldKey) {
+      if (this.shield) { this.scene.remove(this.shieldHolder); this.shield = null; }
+      this.shieldKey = shieldKey;
+      if (sh) {
+        this.shield = makeGunModel(sh.id, sh.skin);
+        attachCharm(this.shield, sh.charm);
+        this.shieldHolder ||= new THREE.Group();
+        this.shieldHolder.clear();
+        this.shieldHolder.add(this.shield);
+        this.shieldPose = (shield ? SHIELD_POSE.front : SHIELD_POSE.side).slice();
+        this.scene.add(this.shieldHolder);
+      }
     }
     this.gun = shield ? emptyHands() : makeGunModel(id, skinId);
     if (!shield) attachCharm(this.gun, charmId);
@@ -144,8 +160,9 @@ export class ViewModel {
     const sprint = ctx.sprinting ? 1 : 0;
 
     const aimY = -((this.gun?.userData.sightY ?? 0.04) + (this.gun?.userData.hold[1] ?? 0));
+    const sideIn = this.shield && !WEAPONS[this.weaponId]?.shield ? SIDEARM_IN : 0;
     this.holder.position.set(
-      REST.x * hip + bobX - sprint * 0.06 + this.sway.x * 0.25,
+      (REST.x - sideIn) * hip + bobX - sprint * 0.06 + this.sway.x * 0.25,
       REST.y * hip + aimY * (1 - hip) - bobY - dip - sprint * 0.04 + this.sway.y * 0.25,
       REST.z * hip + ADS_Z * (1 - hip) + this.kick * (0.03 + 0.03 * hip),
     );
@@ -165,13 +182,16 @@ export class ViewModel {
     if (Math.abs(this.camera.fov - fov) > 0.01) { this.camera.fov = fov; this.camera.updateProjectionMatrix(); }
 
     if (this.shield) {
-      // The shield eases between raised, lowered (aiming, reloading) and swung aside (sprinting), and bobs with the steps
-      const want = ctx.cover === 1 ? SHIELD_POSE.up : ctx.cover === 2 ? SHIELD_POSE.low : SHIELD_POSE.aside;
+      // The shield eases between in front (drawn), at the side (pistol out, further while aiming) and
+      // swung aside (sprinting), and moves with the steps; in front it moves less, so the viewport stays steady
+      const drawn = !!WEAPONS[this.weaponId]?.shield;
+      const want = !ctx.cover ? SHIELD_POSE.aside : drawn ? SHIELD_POSE.front : ads > 0.5 ? SHIELD_POSE.sideAim : SHIELD_POSE.side;
       const k2 = Math.min(1, dt * 9);
       for (let i = 0; i < 4; i++) this.shieldPose[i] += (want[i] - this.shieldPose[i]) * k2;
       const [x, y, z, yaw] = this.shieldPose;
-      this.shieldHolder.position.set(x + bobX * 0.6 + this.sway.x * 0.15, y - bobY * 0.8 - this.raise * 0.4 + this.sway.y * 0.15, z - 0.2 * swing);
-      this.shieldHolder.rotation.set(this.sway.y * 0.5 - swing * 0.15, yaw - this.sway.x * 0.5 + swing * 0.5, 0.04 + ctx.lean * 0.12);
+      const m = drawn ? 0.3 : 0.6;
+      this.shieldHolder.position.set(x + bobX * m + this.sway.x * 0.15 * m, y - bobY * m - this.raise * 0.4 + this.sway.y * 0.15 * m, z - 0.2 * swing);
+      this.shieldHolder.rotation.set(this.sway.y * 0.5 * m - swing * 0.15, yaw - this.sway.x * 0.5 * m + swing * 0.3, (drawn ? 0 : 0.04) + ctx.lean * 0.12);
       this.shield.userData.charm?.update(dt, this.shieldHolder.position);
     }
     if (this.gun) {

@@ -176,7 +176,7 @@ export class RemotePlayer {
     this.shieldMount = new THREE.Group();
     this.shieldMount.visible = false;
     this.lean.add(this.shieldMount);
-    this.cover = 0;              // shieldCover(): 0 none or swung aside, 1 raised, 2 lowered, 3 slung
+    this.cover = 0;              // shieldCover(): 0 none or swung aside, 1 drawn in front, 2 held to the side
     this.weaponId = null;
     this.flash = new THREE.Mesh(
       new THREE.SphereGeometry(0.07, 8, 6),
@@ -371,17 +371,19 @@ export class RemotePlayer {
     this.carryMark.position.y = top + 0.75 + Math.sin(this.markerPhase) * 0.05;
   }
 
-  /** Put the shield where shieldCover() says it is (eased): raised or lowered in front, aside, or on the back. Matches shieldBox() in shared/raycast.js. */
+  /** Put the shield where shieldCover() says it is (eased): in front, held to the side, or swung aside. Matches shieldBox() in shared/raycast.js. */
   poseShield(dt, h, strike, prone) {
     const c = this.cover, half = SHIELD_HEIGHT / 2;
-    const carried = c > 0 || WEAPONS[this.weaponId]?.shield;
+    // Carried: shown now, drawn, their operator has one, or seen in the last 2 s (sprinting hides the cover state)
+    const now = performance.now();
+    if (c > 0) this.coverSeen = now;
+    const carried = c > 0 || WEAPONS[this.weaponId]?.shield || WEAPONS[OPERATORS[this.operatorId]?.weapons.primary]?.shield || now - (this.coverSeen || -1e9) < 2000;
     this.shieldMount.visible = carried && prone < 0.5;
     if (!this.shieldMount.visible) return;
     // [x, y (centre), z, yaw]
     const want = c === 1 ? [-0.02, h + 0.06 - half, -0.48 - strike * 0.25, 0]
-      : c === 2 ? [-0.06, h - 0.5 - half, -0.46, 0.12]
-        : c === 3 ? [0, h - 0.3 - half + 0.1, 0.27, Math.PI]
-          : [-0.42, h * 0.5, -0.12, 1.2];   // sprinting: swung aside
+      : c === 2 ? [-0.34, h - 0.04 - half, -0.44, 0.4]   // pistol out: held to the left
+        : [-0.42, h * 0.5, -0.12, 1.2];                  // sprinting: swung aside
     if (!this.shieldPose || Math.abs(this.shieldPose[3] - want[3]) > 2) this.shieldPose = want.slice();
     const k = Math.min(1, dt * 10);
     for (let i = 0; i < 4; i++) this.shieldPose[i] += (want[i] - this.shieldPose[i]) * k;

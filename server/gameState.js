@@ -1130,12 +1130,12 @@ function sanitizeInput(raw) {
   };
 }
 
-/** Is this player's ballistic shield between them and the point (x, z)? A raised one covers 60° either side of where they face, a slung one their back. */
+/** Is this player's ballistic shield between them and the point (x, z)? A drawn one covers 60° either side of where they face, one held to the side only the left of that. */
 function shieldFaces(q, x, z) {
   const cover = shieldCover(q.weapon, q.state);
   if (!cover) return false;
-  const [fx, fz] = forwardVec(q.state.yaw);
+  const [fx, fz] = forwardVec(q.state.yaw), [rx, rz] = rightVec(q.state.yaw);
   const dx = x - q.state.x, dz = z - q.state.z, d = Math.hypot(dx, dz) || 1;
-  const dot = (dx * fx + dz * fz) / d;
-  return cover === 3 ? dot < -0.5 : dot > 0.5;
+  const ahead = (dx * fx + dz * fz) / d > 0.5;
+  return cover === 1 ? ahead : ahead && dx * rx + dz * rz < 0;
 }

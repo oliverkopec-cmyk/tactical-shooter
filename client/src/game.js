@@ -1339,7 +1339,8 @@ export class Game {
     local.adsZoom = sight.zoom;
     this.setZoom(1 + (sight.zoom - 1) * ads * ads * (3 - 2 * ads));
     this.ui.setSights(ads, sight.kind);
-    if (!replaying) this.viewModel.setWeapon(local.weapon.id, this.mySkins[local.weapon.id], this.myCharms?.[local.weapon.id]);
+    const otherId = local.weapon.other?.id, sideShield = WEAPONS[otherId]?.shield ? { id: otherId, skin: this.mySkins[otherId], charm: this.myCharms?.[otherId] } : null;
+    if (!replaying) this.viewModel.setWeapon(local.weapon.id, this.mySkins[local.weapon.id], this.myCharms?.[local.weapon.id], sideShield);
     if (!replaying) this.viewModel.update(dt, {
       speed: Math.hypot(s.vx, s.vz),
       sprinting: local.sprinting,

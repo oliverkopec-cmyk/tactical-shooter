@@ -261,7 +261,7 @@ export const WEAPONS = {
 WEAPONS.breakwater = gun({
   id: 'breakwater', name: 'Breakwater shield', kind: 'Ballistic shield', model: 'shield', shield: true,
   color: 0x3a434d, accent: 0x2fd6b0, damage: 0, rpm: 60, magSize: 0, reserve: 0, reloadTime: 1, falloffStart: 1, falloffEnd: 2, mobility: 0.9,
-  desc: 'A full-height ballistic shield that stops every bullet and melee hit from the front. It can\'t shoot: switch to your pistol to fire, and the shield goes on your back.',
+  desc: 'A full-height ballistic shield that stops every bullet and melee hit from the front; you look out through its viewport. It can\'t shoot: switch to your pistol to fire, and the shield moves to your side.',
 });
 
 export const SWAP_TIME = 0.4;   // seconds before a newly drawn weapon can fire
@@ -330,14 +330,17 @@ export function stepWeapon(ws, input, dt) {
 }
 
 /**
- * What a ballistic shield covers right now: 0 nothing, 1 the front up to the top of the head, 3 the
- * back (the pistol is drawn and the shield is slung). Sprinting swings it aside; lying down, nothing.
- * (2, the front below the head, is a lowered shield: shieldBox() and the models still know it.)
+ * What a ballistic shield covers right now: 0 nothing (sprinting swings it out of the way; lying
+ * down or vaulting, it isn't held up), 1 the whole front up to the top of the head (the shield is
+ * drawn), 2 the left half of the front (the pistol is drawn and the shield is held to the side).
+ * shieldBox() in shared/raycast.js gives the boxes.
  */
 export function shieldCover(ws, s) {
   if (!ws) return 0;
-  if (WEAPONS[ws.id]?.shield) return (s.prone || 0) > 0.5 || s.sprinting || s.vaultT > 0 ? 0 : 1;
-  return ws.other && WEAPONS[ws.other.id]?.shield ? 3 : 0;
+  const drawn = WEAPONS[ws.id]?.shield, side = !drawn && ws.other && WEAPONS[ws.other.id]?.shield;
+  if (!drawn && !side) return 0;
+  if ((s.prone || 0) > 0.5 || s.sprinting || s.vaultT > 0) return 0;
+  return drawn ? 1 : 2;
 }
 
 /** Walking speed multiplier for the gun that is drawn. */
