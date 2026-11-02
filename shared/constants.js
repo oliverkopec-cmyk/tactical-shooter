@@ -25,18 +25,11 @@ export const PRONE_EYE = 0.34;
 export const PRONE_EYE_FORWARD = 0.3;     // prone eyes sit this far ahead of centre (inside the collision box)
 export const STEP_HEIGHT = 0.42;          // max ledge the player walks up automatically
 
-// Movement (m/s)
-export const WALK_SPEED = 4.0;
-export const SPRINT_SPEED = 6.4;
-export const CROUCH_SPEED = 2.0;
-export const PRONE_SPEED = 1.0;
-export const ACCEL_GROUND = 60;
-export const GRAVITY = 22;
-export const CROUCH_TRANSITION = 7;       // crouch amount change per second (0..1)
-export const PRONE_TRANSITION = 2.4;      // prone amount change per second (0..1)
-export const LEAN_SPEED = 6;              // lean amount change per second (-1..1)
-export const LEAN_OFFSET = 0.45;          // sideways eye offset at full lean (m)
-export const LEAN_ROLL = 0.22;            // camera roll at full lean (rad)
+// Movement: speeds, acceleration, stances, lean and aiming are tuned in shared/movementConfig.js
+export {
+  WALK_SPEED, SPRINT_SPEED, CROUCH_SPEED, PRONE_SPEED, MOVE, CROUCH_TRANSITION, PRONE_TRANSITION,
+  LEAN_SPEED, LEAN_OFFSET, LEAN_ROLL, ADS, SPEED_RATING, FEEL,
+} from './movementConfig.js';
 
 // Input bit flags
 export const KEY = {
@@ -59,8 +52,6 @@ export const KEY = {
 };
 export const KEY_MASK = 65535;
 
-// Aiming down sights: time to raise the sights (s), spread and walking speed while fully aimed
-export const ADS = { time: 0.2, spreadMul: 0.4, moveMul: 0.62 };
 
 // Vaulting: Space at a low obstacle (a crate, a sill) hops over it
 export const VAULT = { maxRise: 1.3, time: 0.55, clear: 1.12, maxDepth: 2.1, cooldown: 0.4 };

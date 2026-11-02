@@ -3,7 +3,7 @@
 
 import {
   PLAYER_RADIUS, STAND_HEIGHT, CROUCH_HEIGHT, PRONE_HEIGHT, STAND_EYE, CROUCH_EYE, PRONE_EYE, PRONE_EYE_FORWARD,
-  VAULT, RAPPEL, STEP_HEIGHT, WALK_SPEED, SPRINT_SPEED, CROUCH_SPEED, PRONE_SPEED, ACCEL_GROUND, GRAVITY,
+  VAULT, RAPPEL, STEP_HEIGHT, WALK_SPEED, SPRINT_SPEED, CROUCH_SPEED, PRONE_SPEED, MOVE,
   CROUCH_TRANSITION, PRONE_TRANSITION, LEAN_SPEED, LEAN_OFFSET, KEY, SPRINT_FIRE_DELAY, ADS,
 } from './constants.js';
 
@@ -39,8 +39,9 @@ export function copyPlayerState(s) {
 }
 
 const lerp = (a, b, k) => a + (b - a) * k;
+const ease = (t) => t * t * (3 - 2 * t);   // eases in and out, so stance changes never snap
 export const bodyHeight = (crouch, prone = 0) => lerp(lerp(STAND_HEIGHT, CROUCH_HEIGHT, crouch), PRONE_HEIGHT, prone);
-export const eyeHeight = (crouch, prone = 0) => lerp(lerp(STAND_EYE, CROUCH_EYE, crouch), PRONE_EYE, prone);
+export const eyeHeight = (crouch, prone = 0) => lerp(lerp(STAND_EYE, CROUCH_EYE, ease(crouch)), PRONE_EYE, ease(prone));
 
 // yaw 0 looks down -z (Three.js camera convention)
 export const forwardVec = (yaw) => [-Math.sin(yaw), -Math.cos(yaw)];
@@ -198,8 +199,11 @@ export function stepPlayer(s, input, dt, world) {
   s.sprinting = sprinting;
   s.ads = Math.max(0, Math.min(1, (s.ads || 0) + (aiming && !sprinting ? dt : -dt) / ADS.time));
   const baseSpeed = sprinting ? SPRINT_SPEED : WALK_SPEED;
+  // Strafing and walking backwards are slower than forwards
+  let dirMul = 1;
+  if (len > 0) { const f = fwd / len; dirMul = f >= 0 ? lerp(MOVE.strafeMul, 1, f * f) : lerp(MOVE.strafeMul, MOVE.backMul, f * f); }
   const speed = lerp(lerp(baseSpeed, CROUCH_SPEED, s.crouch), PRONE_SPEED, s.prone) * lerp(1, ADS.moveMul, s.ads)
-    * (s.speedMul ?? 1) * (s.gunMul ?? 1) * (s.slow ?? 1);
+    * dirMul * (s.speedMul ?? 1) * (s.gunMul ?? 1) * (s.slow ?? 1);
 
   // Lean (not while sprinting or lying down)
   let leanTarget = 0;
@@ -208,11 +212,24 @@ export function stepPlayer(s, input, dt, world) {
   const maxDl = LEAN_SPEED * dt;
   s.lean += Math.max(-maxDl, Math.min(maxDl, dl));
 
-  // Accelerate toward the wished velocity (reduced control in the air)
-  const accel = (s.onGround ? ACCEL_GROUND : ACCEL_GROUND * 0.15) * dt;
-  const tvx = wx * speed - s.vx, tvz = wz * speed - s.vz;
-  const tlen = Math.hypot(tvx, tvz);
-  if (tlen <= accel) { s.vx += tvx; s.vz += tvz; } else { s.vx += tvx / tlen * accel; s.vz += tvz / tlen * accel; }
+  // Momentum: speed up to the top speed over MOVE.accelTime, slow down over MOVE.decelTime, and lose
+  // sideways speed a little more slowly, so a quick change of direction carries you on for a moment
+  const control = s.onGround ? 1 : MOVE.airControl;
+  const up = speed / MOVE.accelTime * control * dt;
+  const down = WALK_SPEED / MOVE.decelTime * control * dt;
+  if (len > 0) {
+    let along = s.vx * wx + s.vz * wz;
+    let px = s.vx - wx * along, pz = s.vz - wz * along;
+    along = along > speed ? Math.max(speed, along - down) : Math.min(speed, along + (along < 0 ? down : up));
+    const side = Math.hypot(px, pz);
+    const keep = side > 0 ? Math.max(0, side - down * MOVE.turnGrip) / side : 0;
+    px *= keep; pz *= keep;
+    s.vx = wx * along + px; s.vz = wz * along + pz;
+  } else {
+    const v = Math.hypot(s.vx, s.vz);
+    const keep = v > 0 ? Math.max(0, v - down) / v : 0;
+    s.vx *= keep; s.vz *= keep;
+  }
 
   moveHorizontal(s, s.vx * dt, s.vz * dt, h, world);
 
@@ -222,7 +239,7 @@ export function stepPlayer(s, input, dt, world) {
 
   // Gravity, ceilings, landing, and sticking to stairs when walking down them
   const wasOnGround = s.onGround;
-  s.vy -= GRAVITY * dt;
+  s.vy -= MOVE.gravity * dt;
   const dy = s.vy * dt;
   if (dy > 0) {
     const uy = sweepUp(world, s.x, s.y, s.z, h, dy);

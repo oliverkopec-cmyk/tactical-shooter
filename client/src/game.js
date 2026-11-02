@@ -476,6 +476,16 @@ export class Game {
     else if (action === 'toggleHint') this.ui.toggleHint();
   }
 
+  /** How fast the mouse is turning the view (rad/s, right and up), for the gun's sway. */
+  turnRate(local, dt) {
+    const last = this.lastLook || { yaw: local.yaw, pitch: local.pitch };
+    let dy = local.yaw - last.yaw;
+    dy = Math.atan2(Math.sin(dy), Math.cos(dy));   // across the wrap at 2π
+    this.lastLook = { yaw: local.yaw, pitch: local.pitch };
+    if (dt <= 0 || local.droneState) return { turnX: 0, turnY: 0 };
+    return { turnX: -dy / dt, turnY: (local.pitch - last.pitch) / dt };
+  }
+
   /** Sight kind and zoom of a gun, worked out once per gun. */
   sightFor(id) {
     if (!sightCache.has(id)) sightCache.set(id, sightOf(id));
@@ -1280,6 +1290,7 @@ export class Game {
       lean: s.lean,
       reloadFrac: local.weapon.reload > 0 ? 1 - local.weapon.reload / w.reloadTime : -1,
       ads, hidden: scoped,
+      stepPhase: local.feel.phase, stepAmp: local.feel.amp || 0, ...this.turnRate(local, dt),
     });
     this.sound.update(dt);
 
