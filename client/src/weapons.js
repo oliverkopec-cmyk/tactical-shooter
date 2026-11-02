@@ -7,6 +7,8 @@ import { makeGunModel, animateGun } from './gunModels.js';
 import { attachCharm } from './charmModels.js';
 
 const REST = new THREE.Vector3(0.2, -0.2, -0.42);
+const ADS_Z = -0.4;     // aiming: the gun comes to the middle with its sights on the line of sight, this far ahead
+const VM_FOV = 62;
 
 export { makeGunModel, animateGun };
 
@@ -24,7 +26,7 @@ function makeFlash() {
 export class ViewModel {
   constructor() {
     this.scene = new THREE.Scene();
-    this.camera = new THREE.PerspectiveCamera(62, 1, 0.01, 10);
+    this.camera = new THREE.PerspectiveCamera(VM_FOV, 1, 0.01, 10);
     this.scene.add(new THREE.HemisphereLight(0xffffff, 0x445566, 1.6));
     const key = new THREE.DirectionalLight(0xffffff, 1.6);
     key.position.set(1, 2, 1);
@@ -81,15 +83,17 @@ export class ViewModel {
     this.swingT = 0.0001;
   }
 
-  /** ctx: { speed, sprinting, crouch, reloadFrac (0..1 or -1), lean } */
+  /** ctx: { speed, sprinting, crouch, reloadFrac (0..1 or -1), lean, ads (0..1), hidden } */
   update(dt, ctx) {
+    const ads = ctx.ads || 0, hip = 1 - ads * ads * (3 - 2 * ads);   // eased: 1 at the hip, 0 fully aimed
+    this.hidden = !!ctx.hidden;                                       // looking through a scope: no gun in view
     this.kick = Math.max(0, this.kick - dt * 9);
     this.raise = Math.max(0, this.raise - dt * 4.5);
     this.flashTime -= dt;
     this.flash.visible = this.flashTime > 0;
     this.flashLight.intensity = this.flashTime > 0 ? 3 : 0;
 
-    const speed = Math.min(1.6, ctx.speed / 4);
+    const speed = Math.min(1.6, ctx.speed / 4) * (0.25 + 0.75 * hip);   // the sights bob much less
     this.bobPhase += dt * (6 + speed * 6) * (speed > 0.05 ? 1 : 0.3);
     const bobX = Math.sin(this.bobPhase) * 0.012 * speed;
     const bobY = Math.abs(Math.cos(this.bobPhase)) * 0.014 * speed;
@@ -101,10 +105,11 @@ export class ViewModel {
     }
     const sprint = ctx.sprinting ? 1 : 0;
 
+    const aimY = -((this.gun?.userData.sightY ?? 0.04) + (this.gun?.userData.hold[1] ?? 0));
     this.holder.position.set(
-      REST.x + bobX - sprint * 0.06,
-      REST.y - bobY - dip - sprint * 0.04,
-      REST.z + this.kick * 0.06,
+      REST.x * hip + bobX - sprint * 0.06,
+      REST.y * hip + aimY * (1 - hip) - bobY - dip - sprint * 0.04,
+      REST.z * hip + ADS_Z * (1 - hip) + this.kick * (0.03 + 0.03 * hip),
     );
     let swing = 0;
     if (this.swingT > 0) {
@@ -113,9 +118,19 @@ export class ViewModel {
     }
     this.holder.position.z -= 0.28 * swing;
     this.holder.position.x -= 0.18 * swing;
-    this.holder.rotation.set(this.kick * 0.09 - tilt * 0.3 - swing * 0.25, sprint * 0.6 + swing * 0.7, tilt + ctx.lean * 0.2 + sprint * 0.25 + swing * 0.5);
+    this.holder.rotation.set(this.kick * (0.04 + 0.05 * hip) - tilt * 0.3 - swing * 0.25, sprint * 0.6 + swing * 0.7, tilt + ctx.lean * 0.2 * hip + sprint * 0.25 + swing * 0.5);
+    const fov = VM_FOV - 14 * (1 - hip);
+    if (Math.abs(this.camera.fov - fov) > 0.01) { this.camera.fov = fov; this.camera.updateProjectionMatrix(); }
 
     if (this.gun) {
+      // Looking through a red dot: the lens clears and the back plate of the housing goes, so you see through it
+      const dot = this.gun.userData.parts['lens.dot']?.[0];
+      if (dot) {
+        const through = ads > 0.5;
+        dot.material.opacity = through ? 0.05 : 0.75;
+        const plate = this.gun.userData.parts['optic.hood']?.[0];
+        if (plate) plate.visible = !through;
+      }
       animateGun(this.gun, { kick: this.kick, reloadFrac: ctx.reloadFrac });
       this.gun.userData.charm?.update(dt, this.holder.position);
       this.gun.userData.muzzle.getWorldPosition(this.flashLight.position);
@@ -123,7 +138,7 @@ export class ViewModel {
   }
 
   render(renderer) {
-    if (!this.visible || !this.gun) return;
+    if (!this.visible || !this.gun || this.hidden) return;
     renderer.autoClear = false;
     renderer.clearDepth();
     renderer.render(this.scene, this.camera);

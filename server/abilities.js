@@ -6,7 +6,7 @@
 // the Gadgets class below and are synced with `gadgetAdd` / `gadgetRemove` events.
 
 import {
-  PHASE, SHIELD, WIRE, JAMMER_RANGE, CAMERA_REACH, STUN, GADGET_REACH, HAWK_MISS_COOLDOWN_MS, BARRICADE,
+  PHASE, SHIELD, WIRE, JAMMER_RANGE, JAMMER_HITS, CAMERA_REACH, STUN, GADGET_REACH, HAWK_MISS_COOLDOWN_MS, BARRICADE,
 } from '../shared/constants.js';
 import { findOpening } from '../shared/map.js';
 import { OPERATORS } from '../shared/operators.js';
@@ -110,6 +110,7 @@ export class Gadgets {
       if (p.shockUntil > now) slow = Math.min(slow, ABILITY_STATS.shock.slow);
       if (p.alive) {
         for (const w of this.wires.values()) {
+          if (w.team === p.member.team) continue;   // teammates walk through their own wire at normal speed (it still rustles)
           if (Math.abs(p.state.x - w.x) < w.half && Math.abs(p.state.z - w.z) < w.half && Math.abs(p.state.y - w.y) < 0.6) {
             slow = Math.min(slow, WIRE.slow);
           }
@@ -595,6 +596,19 @@ export class Gadgets {
     this.game.io.to(id).emit('camView', { index: -1, cam: null, count: this.cameras.size });
   }
 
+  /** An attacker's bullet hit a jammer: sparks, and the second hit destroys it. */
+  hitJammer(id) {
+    const j = this.jammers.get(id);
+    if (!j) return;
+    j.hits = (j.hits || 0) + 1;
+    const destroyed = j.hits >= JAMMER_HITS;
+    if (destroyed) {
+      this.jammers.delete(id);
+      this.broadcast('gadgetRemove', 'jammer', { id });
+    }
+    this.game.emitAll('jammerHit', { id, pos: j.pos, destroyed });
+  }
+
   /** One shot from an attacker destroys a camera; anyone watching it is thrown back to their body. */
   destroyCamera(id) {
     const cam = this.cameras.get(id);
@@ -691,7 +705,7 @@ const ABILITIES = {
     const aim = g.aimedSurface(p, WIRE.reach);
     if (!aim || aim.hit.normal[1] < 0.7) return g.error(id, 'Aim at the floor within 3.5 m.');
     const [x, y, z] = aim.hit.point;
-    const rec = { id: g.nextId++, owner: id, x, y, z, half: WIRE.size / 2 };
+    const rec = { id: g.nextId++, owner: id, team: p.member.team, x, y, z, half: WIRE.size / 2 };
     g.wires.set(rec.id, rec);
     g.broadcast('gadgetAdd', 'wire', rec);
     p.ability.charges--;

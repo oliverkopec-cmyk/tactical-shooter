@@ -154,7 +154,8 @@ export class Destruction {
   startReinforce(id, p, personal = false) {
     if (!p.alive) return;
     if (p.member.team !== 'defense') return this.error(id, 'Only defenders can reinforce walls.');
-    if (this.game.rounds.phase !== PHASE.PREP) return this.error(id, 'Walls can only be reinforced during the prep phase.');
+    const phase = this.game.rounds.phase;
+    if (phase !== PHASE.PREP && phase !== PHASE.ACTION) return this.error(id, 'Walls can only be reinforced once the round is under way.');
     if (this.reinforcing.has(id)) return;
     if (personal ? p.ability?.charges <= 0 : this.reinforcementsLeft <= 0) {
       return this.error(id, personal ? 'You have no extra reinforcements left.' : 'Your team has no reinforcements left.');

@@ -267,6 +267,15 @@ export class GadgetView {
     return centers;
   }
 
+  /** Is this spot inside a patch of barbed wire (anyone's)? */
+  inWire(x, y, z) {
+    for (const it of this.items.values()) {
+      const w = it.rec;
+      if (it.kind === 'wire' && Math.abs(x - w.x) < w.half && Math.abs(z - w.z) < w.half && Math.abs(y - w.y) < 0.6) return true;
+    }
+    return false;
+  }
+
   hasBarricade(openingId) {
     for (const it of this.items.values()) if (it.kind === 'barricade' && it.rec.openingId === openingId) return true;
     return false;

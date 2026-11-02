@@ -447,8 +447,8 @@ export class GameState {
   }
 
   /**
-   * Who may damage soft walls (bullets, melee, grenades): everyone in the action
-   * phase, and defenders in prep so they can open sight lines before the round.
+   * Who may damage soft walls and barricades (bullets, melee, grenades): everyone in the
+   * action phase, and defenders in prep so they can open sight lines before the round.
    */
   canBreakWalls(p) {
     const phase = this.rounds.phase;
@@ -503,9 +503,9 @@ export class GameState {
       const barricade = opening && this.gadgets.barricadeAt(opening.id);
       const planeT = barricade ? (opening.fixed - origin[opening.axis === 'x' ? 2 : 0]) / aim[opening.axis === 'x' ? 2 : 0] : 0;
       if (barricade && (!wall || wall.box.kind === 'barricade' || wall.t >= planeT - 0.1)) {
-        if (phase === PHASE.ACTION) this.gadgets.meleeBarricade(barricade.id, origin.map((v, k) => v + aim[k] * planeT));
+        this.gadgets.meleeBarricade(barricade.id, origin.map((v, k) => v + aim[k] * planeT));
       } else if (wall?.box.kind === 'barricade') {
-        if (phase === PHASE.ACTION) this.gadgets.meleeBarricade(wall.box.barricadeId, wall.point);
+        this.gadgets.meleeBarricade(wall.box.barricadeId, wall.point);
       } else if (wall?.box.kind === 'panel') {
         // Each melee hit knocks out one wall panel. Reinforced walls shrug it off.
         if (this.world.isReinforcedPanel(wall.box.id)) this.io.to(id).emit('actionError', { msg: 'Reinforced walls can\'t be broken by melee.' });
@@ -932,6 +932,7 @@ export class GameState {
       drones: [...this.drones.values()],      // arrays, not iterators: every pellet checks them
       cameras: [...this.gadgets.cameras.values()],
       claymores: [...this.gadgets.claymores.values()],
+      jammers: [...this.gadgets.jammers.values()],
     });
 
     // Total damage per victim across pellets
@@ -961,7 +962,10 @@ export class GameState {
     }
     for (const pellet of shot.pellets) if (pellet.cameraId) this.gadgets.destroyCamera(pellet.cameraId);
     for (const pellet of shot.pellets) if (pellet.claymoreId) this.gadgets.destroyClaymore(pellet.claymoreId);
-    if (this.rounds.phase === PHASE.ACTION) {
+    // A jammer takes one hit per shot (a shotgun's pellets count once)
+    for (const jid of new Set(shot.pellets.map((p) => p.jammerId).filter((j) => j !== null))) this.gadgets.hitJammer(jid);
+    // Barricades break like soft walls: defenders may already open them from inside during prep
+    if (breaksWalls) {
       for (const pellet of shot.pellets) {
         if (pellet.barricade) this.gadgets.damageBarricadePanel(pellet.barricade.id, pellet.barricade.index, pellet.panelDamage);
       }
@@ -1035,6 +1039,7 @@ export class GameState {
         // vaulting and rappelling: sent only while they matter (the client needs them to predict and to animate)
         vt: s.vaultT > 0 ? [round2(s.vaultT), round2(s.vax), round2(s.vay), round2(s.vaz), round2(s.vbx), round2(s.vby), round2(s.vbz), round2(s.vtop)] : undefined,
         rk: s.rap || s.rapPrev || s.rapCd > 0 || s.rapFlip > 0 ? [s.rap, round2(s.rapSide), round2(s.rapFlip), s.rapPrev, round2(s.rapCd)] : undefined,
+        ad: s.ads > 0 ? Math.round(s.ads * 1000) / 1000 : undefined,   // aiming down sights
         det: p.detected ? 1 : undefined,
       });
     }

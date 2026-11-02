@@ -73,7 +73,7 @@ export const OPERATORS = {
   mason: {
     name: 'Mason', team: 'defense', color: 0x8d99a6, weapons: { primary: 'keystone', secondary: 'trowel' }, utilities: ['claymore', 'impact'], speed: 1, armor: 3,
     ability: { id: 'masonReinforce', name: 'Extra reinforcements', charges: 2,
-      desc: 'Reinforce 2 more walls during prep (on top of the team\'s 10).' },
+      desc: 'Reinforce 2 more walls (on top of the team\'s 10).' },
   },
   volt: {
     name: 'Volt', team: 'defense', color: 0x39f0ff, weapons: { primary: 'livewire', secondary: 'static' }, utilities: ['claymore', 'smoke'], speed: 2, armor: 2, price: 2500,

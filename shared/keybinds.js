@@ -9,15 +9,16 @@ export const BIND_ACTIONS = [
   { id: 'left', label: 'Move left', group: 'Movement', key: 'KeyA' },
   { id: 'right', label: 'Move right', group: 'Movement', key: 'KeyD' },
   { id: 'sprint', label: 'Sprint', group: 'Movement', key: 'ShiftLeft' },
-  { id: 'jump', label: 'Jump', group: 'Movement', key: 'Space' },
+  { id: 'jump', label: 'Vault / swing in from a rope', group: 'Movement', key: 'Space' },
   { id: 'crouch', label: 'Crouch (hold)', group: 'Movement', key: 'KeyC' },
   { id: 'prone', label: 'Prone (toggle)', group: 'Movement', key: 'KeyZ' },
-  { id: 'leanLeft', label: 'Lean left', group: 'Movement', key: 'KeyQ' },
-  { id: 'leanRight', label: 'Lean right', group: 'Movement', key: 'KeyE' },
+  { id: 'leanLeft', label: 'Lean left (toggle or hold: see above)', group: 'Movement', key: 'KeyQ' },
+  { id: 'leanRight', label: 'Lean right (toggle or hold: see above)', group: 'Movement', key: 'KeyE' },
   { id: 'rappel', label: 'Rappel: attach / let go', group: 'Movement', key: 'KeyN' },
   { id: 'flip', label: 'Flip upside down (hold, rappelling)', group: 'Movement', key: 'KeyM' },
   { id: 'fire', label: 'Fire / drone ping', group: 'Combat', key: 'Mouse0' },
-  { id: 'melee', label: 'Melee', group: 'Combat', key: 'Mouse2' },
+  { id: 'aim', label: 'Aim down sights (toggle or hold: see above)', group: 'Combat', key: 'Mouse2' },
+  { id: 'melee', label: 'Melee', group: 'Combat', key: 'Digit3' },
   { id: 'reload', label: 'Reload', group: 'Combat', key: 'KeyR' },
   { id: 'primary', label: 'Primary weapon', group: 'Combat', key: 'Digit1' },
   { id: 'secondary', label: 'Secondary weapon', group: 'Combat', key: 'Digit2' },
@@ -49,21 +50,31 @@ export function isBindableCode(code) {
 }
 
 /**
- * Known actions only; anything missing or invalid gets its default. A code may
- * only be used once: later duplicates become unbound ('').
+ * Known actions only; anything invalid gets its default. A code may only be used
+ * once: later duplicates become unbound (''). An action missing from the saved
+ * binds (one added since they were saved) gets its default key only if that key
+ * is still free, so it never steals a key the player chose.
  */
 export function sanitizeKeybinds(raw) {
-  const src = raw && typeof raw === 'object' ? raw : {};
+  const src = raw && typeof raw === 'object' ? { ...raw } : {};
+  // Saved before aiming existed: melee was on right click, which aiming now has by default
+  if (!('aim' in src) && src.melee === 'Mouse2') delete src.melee;
   const out = {};
   const used = new Set();
   for (const { id, key } of BIND_ACTIONS) {
-    let code = id in src ? src[id] : key;
+    if (!(id in src)) continue;
+    let code = src[id];
     if (code !== '' && !isBindableCode(code)) code = key;
     if (code && used.has(code)) code = '';
     if (code) used.add(code);
     out[id] = code;
   }
-  return out;
+  for (const { id, key } of BIND_ACTIONS) {
+    if (id in out) continue;
+    out[id] = used.has(key) ? '' : key;
+    if (out[id]) used.add(key);
+  }
+  return Object.fromEntries(BIND_ACTIONS.map(({ id }) => [id, out[id]]));
 }
 
 const NAMED = {

@@ -32,7 +32,7 @@ export class UI {
   // ---------------------------------------------------------------- settings
 
   bindSettings() {
-    const fmt = { sensitivity: (v) => `${Number(v).toFixed(2)}×`, volume: (v) => `${Math.round(v * 100)}%`, fov: (v) => `${Math.round(v)}°`, voice: (v) => (Number(v) <= 0 ? 'off' : `${Math.round(v * 100)}%`) };
+    const fmt = { sensitivity: (v) => `${Number(v).toFixed(2)}×`, aimSensitivity: (v) => `${Number(v).toFixed(2)}×`, volume: (v) => `${Math.round(v * 100)}%`, fov: (v) => `${Math.round(v)}°`, voice: (v) => (Number(v) <= 0 ? 'off' : `${Math.round(v * 100)}%`) };
     for (const name of Object.keys(fmt)) {
       const input = $(`set-${name}`);
       input.value = settings[name];
@@ -42,9 +42,16 @@ export class UI {
         $(`val-${name}`).textContent = fmt[name](settings[name]);
       });
     }
+    const choices = ['leanMode', 'aimMode'];
+    for (const name of choices) {
+      const select = $(`set-${name}`);
+      select.value = settings[name];
+      select.addEventListener('change', () => setSetting(name, select.value));
+    }
     // Settings can also change from outside (loaded from the account after login).
     onSettingsChange((name, value) => {
       if (name === 'keybinds') return this.renderKeybinds();
+      if (choices.includes(name)) { $(`set-${name}`).value = value; return; }
       if (!fmt[name]) return;
       $(`set-${name}`).value = value;
       $(`val-${name}`).textContent = fmt[name](value);
@@ -539,6 +546,13 @@ export class UI {
     }
     for (const id of ['crosshair', 'health-box', 'ammo-box']) $(id).classList.toggle('hidden', !alive);
     this.hud.classList.toggle('dead', !alive);
+  }
+
+  /** Aiming down sights (ads 0..1) through a sight of this kind: the crosshair goes, a red dot or a scope view comes. */
+  setSights(ads, kind) {
+    this.hud.classList.toggle('aiming', ads > 0.5);
+    $('red-dot').classList.toggle('hidden', !(kind === 'dot' && ads > 0.7));
+    $('scope').classList.toggle('hidden', !(kind === 'scope' && ads > 0.85));
   }
 
   setCrosshairGap(px) {
