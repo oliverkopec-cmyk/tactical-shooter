@@ -1,3 +1,7 @@
+import { WEAPONS } from '../../shared/weapons.js';
+import { gunTuning } from '../../shared/gunConfig.js';
+import { RELOAD_STEPS } from './gunSounds.js';
+
 // Everything you hear besides gunshots and explosions: footsteps, landing,
 // reloading, drone motors, gadgets being placed, wood and plaster breaking.
 // Other players' sounds are derived from what the snapshots already tell us
@@ -79,6 +83,29 @@ export class Soundscape {
     this.audio.play({ ...SOUNDS[name], gain: SOUNDS[name].gain * gain });
   }
 
+  /** Schedule a reload's sounds over the gun's reload time (at your own ears, or at pos for someone else). Returns the timers. */
+  reloadSequence(weaponId, pos) {
+    const w = WEAPONS[weaponId];
+    if (!w || w.shield) return [];
+    const steps = RELOAD_STEPS[gunTuning(weaponId).sound.reload] || RELOAD_STEPS.mag;
+    return steps.map(([f, name]) => setTimeout(() => this.foley(name, pos, 16), f * w.reloadTime * 1000));
+  }
+
+  /** A gun sound from gunSounds.js (clicks, clacks, impacts): at your ears, or positional. */
+  foley(name, pos, range = 16, gain = 1) {
+    const g = this.game;
+    if (pos) g.audio.guns.play(name, pos, g.listener(), range, g.soundClear(pos), gain);
+    else g.audio.guns.play(name, null, null, range, true, gain * 0.8);
+  }
+
+  /** A bullet hit something at pos: a short sound for what it is made of (not every one: they come fast). */
+  impact(surface, pos) {
+    const now = performance.now();
+    if (now - (this.lastImpact || 0) < 60) return;
+    this.lastImpact = now;
+    this.foley({ wood: 'hitWood', metal: 'hitMetal', glass: 'hitGlass' }[surface] || 'hitConcrete', pos, 18);
+  }
+
   // ---------------------------------------------------------------- footsteps
 
   stepClass(speed, crouch, sprinting) {
@@ -128,8 +155,8 @@ export class Soundscape {
     o.vy = s.vy;
 
     const reloading = l.weapon.reload > 0;
-    if (reloading && !o.wasReloading) this.self('reloadOut');
-    if (!reloading && o.wasReloading && l.weapon.ammo > o.ammo) { this.self('reloadIn'); setTimeout(() => this.self('reloadClack'), 90); }
+    if (reloading && !o.wasReloading) o.timers = this.reloadSequence(l.weapon.id, null);
+    if (!reloading && o.wasReloading && l.weapon.ammo <= o.ammo) o.timers?.forEach(clearTimeout);   // stopped before it finished (switched guns)
     o.wasReloading = reloading;
     o.ammo = l.weapon.ammo;
   }
@@ -153,8 +180,9 @@ export class Soundscape {
       }
       st.wasGround = r.onGround;
       st.vy = r.vy;
-      if (r.reloading && !st.wasReloading) this.at('reloadOut', [p.x, p.y + 1.1, p.z], 16);
-      if (!r.reloading && st.wasReloading) { this.at('reloadIn', [p.x, p.y + 1.1, p.z], 16); }
+      if (r.reloading && !st.wasReloading) st.timers = this.reloadSequence(r.weaponId, [p.x, p.y + 1.1, p.z]);
+      if (!r.reloading && st.wasReloading && st.reloadId !== r.weaponId) st.timers?.forEach(clearTimeout);
+      st.reloadId = r.weaponId;
       st.wasReloading = r.reloading;
       // Someone starts placing something: a short rustle and click nearby (Stage 27)
       if (r.placing && !st.wasPlacing) this.at('placeStart', [p.x, p.y + 0.8, p.z], 18);

@@ -1,47 +1,29 @@
 // Synthesised sound effects (no audio files). Gunshots are filtered noise bursts,
 // panned and attenuated by distance from the listener.
 
-const SHOT_TONE = {
-  rifle: { freq: 1400, decay: 0.16, gain: 0.5 },
-  smg: { freq: 2000, decay: 0.11, gain: 0.4 },
-  shotgun: { freq: 700, decay: 0.3, gain: 0.7 },
-  ember: { freq: 1100, decay: 0.19, gain: 0.55 },
-  gale: { freq: 1700, decay: 0.13, gain: 0.45 },
-  bastion: { freq: 900, decay: 0.2, gain: 0.6 },
-  pulse: { freq: 2300, decay: 0.09, gain: 0.35 },
-  longview: { freq: 800, decay: 0.34, gain: 0.7 },
-  keystone: { freq: 1000, decay: 0.24, gain: 0.6 },
-  garrison: { freq: 1300, decay: 0.16, gain: 0.5 },
-  // secondaries: lighter and snappier
-  sidekick: { freq: 2200, decay: 0.09, gain: 0.3 },
-  needle: { freq: 2600, decay: 0.07, gain: 0.26 },
-  holdout: { freq: 2100, decay: 0.09, gain: 0.3 },
-  zap: { freq: 2800, decay: 0.07, gain: 0.28 },
-  peep: { freq: 2400, decay: 0.08, gain: 0.28 },
-  anvil: { freq: 1300, decay: 0.15, gain: 0.45 },
-  sting: { freq: 2500, decay: 0.07, gain: 0.3 },
-  sidewinder: { freq: 900, decay: 0.24, gain: 0.6 },
-  trowel: { freq: 950, decay: 0.22, gain: 0.55 },
-  gavel: { freq: 700, decay: 0.3, gain: 0.72 },
-  rift: { freq: 1200, decay: 0.17, gain: 0.52 },
-  tick: { freq: 2500, decay: 0.07, gain: 0.3 },
-  kiln: { freq: 750, decay: 0.26, gain: 0.66 },
-  pyre: { freq: 900, decay: 0.24, gain: 0.58 },
-  arc: { freq: 2100, decay: 0.1, gain: 0.38 },
-  jolt: { freq: 2400, decay: 0.08, gain: 0.28 },
-  livewire: { freq: 1700, decay: 0.13, gain: 0.45 },
-  static: { freq: 2200, decay: 0.09, gain: 0.3 },
-  syringe: { freq: 2200, decay: 0.09, gain: 0.34 },
-  dose: { freq: 2300, decay: 0.08, gain: 0.28 },
-  watchman: { freq: 1000, decay: 0.22, gain: 0.6 },
-  chirp: { freq: 2300, decay: 0.08, gain: 0.28 },
-};
+import { GunSounds } from './gunSounds.js';
+
+/** A made-up room: decaying noise, stereo, getting duller as it fades (`dark` 0..1: how fast the highs die). */
+function makeImpulse(ctx, seconds, decay, dark) {
+  const len = Math.floor(ctx.sampleRate * seconds), buf = ctx.createBuffer(2, len, ctx.sampleRate);
+  for (let c = 0; c < 2; c++) {
+    const d = buf.getChannelData(c);
+    let lp = 0;
+    for (let i = 0; i < len; i++) {
+      const k = i / len, a = 1 - Math.min(0.97, dark * (0.3 + k * 1.2));
+      lp += (Math.random() * 2 - 1 - lp) * a;
+      d[i] = lp * Math.pow(1 - k, decay) * (i < 90 ? i / 90 : 1);
+    }
+  }
+  return buf;
+}
 
 export class Audio {
   constructor(volume = 0.5) {
     this.volume = volume;
     this.ctx = null;
     this.noise = null;
+    this.guns = new GunSounds(this);
     const unlock = () => this.ensure();
     window.addEventListener('pointerdown', unlock);
     window.addEventListener('keydown', unlock);
@@ -64,41 +46,30 @@ export class Audio {
       this.noise = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
       const data = this.noise.getChannelData(0);
       for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+      // Two rooms for gunshots to echo in: a short boomy one indoors, a long thin one outdoors
+      this.sends = {};
+      for (const [name, secs, decay, dark, wet] of [['indoor', 0.7, 3.2, 0.5, 1.0], ['outdoor', 2.2, 2.6, 0.75, 0.6]]) {
+        const conv = this.ctx.createConvolver();
+        conv.buffer = makeImpulse(this.ctx, secs, decay, dark);
+        const out = this.ctx.createGain();
+        out.gain.value = wet;
+        const send = this.ctx.createGain();
+        send.connect(conv).connect(out).connect(this.master);
+        this.sends[name] = send;
+      }
     }
     if (this.ctx.state === 'suspended') this.ctx.resume();
     return this.ctx;
   }
 
-  /** listener: { x, z, yaw } ; pos: [x, y, z] or null for "at the listener" */
-  shot(weaponId, pos, listener) {
-    const ctx = this.ctx;
-    if (!ctx || ctx.state !== 'running') return;
-    const tone = SHOT_TONE[weaponId] || SHOT_TONE.rifle;
-    let gain = tone.gain, pan = 0, muffle = 1;
-    if (pos && listener) {
-      const dx = pos[0] - listener.x, dz = pos[2] - listener.z;
-      const dist = Math.hypot(dx, dz);
-      gain *= 1 / (1 + dist * 0.08);
-      muffle = 1 / (1 + dist * 0.03);
-      // Right vector of the listener: (cos yaw, -sin yaw)
-      pan = dist > 0.1 ? Math.max(-1, Math.min(1, (dx * Math.cos(listener.yaw) - dz * Math.sin(listener.yaw)) / dist)) : 0;
-    }
-    const t = ctx.currentTime;
-    const src = ctx.createBufferSource();
-    src.buffer = this.noise;
-    const filter = ctx.createBiquadFilter();
-    filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(tone.freq * 3 * muffle, t);
-    filter.frequency.exponentialRampToValueAtTime(Math.max(80, tone.freq * 0.3 * muffle), t + tone.decay);
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(gain, t);
-    g.gain.exponentialRampToValueAtTime(0.001, t + tone.decay);
-    const panner = ctx.createStereoPanner();
-    panner.pan.value = pan;
-    src.connect(filter).connect(g).connect(panner).connect(this.master);
-    src.start(t);
-    src.stop(t + tone.decay + 0.05);
-  }
+  /** A gunshot (see GunSounds in gunSounds.js). pos null = your own gun. env: { lisIn, srcIn, clear }. */
+  shot(weaponId, pos, listener, env = {}) { this.guns.shot(weaponId, pos, listener, env); }
+
+  /** Pulling the trigger on an empty gun. */
+  dry() { this.guns.dry(); }
+
+  /** After a shot: bolt, pump or hammer (if the gun has one). */
+  mech(weaponId, pos = null, listener = null, clear = true) { this.guns.after(weaponId, pos, listener, clear); }
 
   beep(freq, duration, volume = 0.2, type = 'square') {
     const ctx = this.ctx;

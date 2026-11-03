@@ -4,7 +4,8 @@ import * as THREE from 'three';
 import {
   MAX_HEALTH, MAX_SHOT_RANGE, BARRICADE, CHARGE_REACH, REINFORCE_REACH, TEAM_REINFORCEMENTS, PHASE, ROUNDS_TO_WIN, REPICK_CUTOFF_MS, KEY,
 } from '../../shared/constants.js';
-import { maskKeys } from '../../shared/rules.js';
+import { maskKeys, inBuilding } from '../../shared/rules.js';
+import { surfaceOf, gunTuning } from '../../shared/gunConfig.js';
 import { getMap, DEFAULT_MAP_ID } from '../../shared/map.js';
 import { getEyePosition, findVault, findRope } from '../../shared/movement.js';
 import { RopeView } from './ropes.js';
@@ -62,6 +63,10 @@ export class Game {
     this.sun = setupLighting(this.scene);
 
     this.viewModel = new ViewModel();
+    // Your own muzzle flash lights up the room for a moment (always in the scene, so it never changes the shaders)
+    this.muzzleLight = new THREE.PointLight(0xffb060, 0, 9, 2);
+    this.muzzleLight.position.copy(TRACER_OFFSET);
+    this.camera.add(this.muzzleLight);
     this.effects = new Effects(this.scene);
     this.audio = new Audio(settings.volume);
     this.sound = new Soundscape(this);
@@ -400,6 +405,7 @@ export class Game {
       id: myId, team: me.team, state: me.state, weapon: me.weapon, world: this.world,
       network: this.network, camera: this.camera, canvas: this.canvas,
       onShot: (shot) => this.onLocalShot(shot),
+      onDry: (id) => this.audio.dry(id),
       renderTime: () => this.network.renderTime(),
       canFireUnlocked: () => this.lockFailed,
       mask: (keys) => (this.preRound.open ? 0 : maskKeys(keys, this.myTeam, this.round.phase, !!this.local?.viewLocked) & (this.placing ? ~KEY.FIRE : ~0)),   // no input while a pre-round screen is open; no shooting while placing
@@ -810,10 +816,30 @@ export class Game {
       this.effects.tracer([muzzle.x, muzzle.y, muzzle.z], end);
       if (hitShield) this.effects.sparks(end, 6);
       else if (hitPlayer) this.effects.blood(end);
-      else if (wall) this.effects.bulletHole(wall.point, wall.normal, wall.box.kind === 'panel' ? wall.box.id : null);
+      else if (wall) this.impact(wall);
     }
     this.viewModel.fire(weaponId);
-    this.audio.shot(weaponId, null, null);
+    const rc = gunTuning(weaponId).recoil;
+    this.muzzleLight.color.setHex(rc.flashColor);
+    this.muzzleLight.intensity = 9 * rc.flash;
+    this.effects.muzzleSmoke([muzzle.x, muzzle.y, muzzle.z], rc.smoke);
+    this.audio.shot(weaponId, null, null, this.soundEnv(null));
+    this.audio.mech(weaponId);
+  }
+
+  /** A bullet hit a wall: the hole and what flies off for what it is made of, and a short sound. */
+  impact(wall) {
+    const surface = surfaceOf(wall.box.kind);
+    this.effects.bulletHole(wall.point, wall.normal, wall.box.kind === 'panel' ? wall.box.id : null, surface);
+    this.sound.impact(surface, wall.point);
+  }
+
+  /** Where a gunshot is heard from: are you and the gun indoors, and is a wall in the way (muffles it)? */
+  soundEnv(pos) {
+    const c = this.camera.position, lisIn = inBuilding(this.world.map, c.x, c.z);
+    if (!pos) return { lisIn, srcIn: lisIn, clear: true };
+    const near = Math.hypot(pos[0] - c.x, pos[2] - c.z) < 70;
+    return { lisIn, srcIn: inBuilding(this.world.map, pos[0], pos[2]), clear: near ? this.soundClear(pos) : false };
   }
 
   onRemoteShot({ id, w, ends }) {
@@ -828,9 +854,16 @@ export class Game {
       if (len < 0.01) continue;
       const dir = [d[0] / len, d[1] / len, d[2] / len];
       const wall = raycastWorld(this.world, from, dir, len + 0.1);
-      if (wall && wall.t > len - 0.2) this.effects.bulletHole(wall.point, wall.normal, wall.box.kind === 'panel' ? wall.box.id : null);
+      if (wall && wall.t > len - 0.2) this.impact(wall);
     }
-    this.audio.shot(w, from, this.listener());
+    const env = this.soundEnv(from);
+    this.audio.shot(w, from, this.listener(), env);
+    this.audio.mech(w, from, this.listener(), env.clear);
+    const yaw = r.pose.yaw, rc = WEAPONS[w] && gunTuning(w).recoil;
+    if (rc && Math.hypot(from[0] - this.camera.position.x, from[2] - this.camera.position.z) < 25) {
+      this.effects.casing(from, [Math.cos(yaw), 0, -Math.sin(yaw)], rc.casing);
+      this.effects.muzzleSmoke(from, rc.smoke * 0.7);
+    }
   }
 
   onHitConfirm({ head, killed }) {
@@ -1455,6 +1488,13 @@ export class Game {
     this.ui.setSights(ads, sight.kind);
     const otherId = local.weapon.other?.id, sideShield = WEAPONS[otherId]?.shield ? { id: otherId, skin: this.mySkins[otherId], charm: this.myCharms?.[otherId] } : null;
     if (!replaying) this.viewModel.setWeapon(local.weapon.id, this.mySkins[local.weapon.id], this.myCharms?.[local.weapon.id], sideShield);
+    this.muzzleLight.intensity *= Math.exp(-dt * 45);
+    if (!replaying && local.weapon.id !== this.warmGun && this.audio.ctx) {
+      // Render the sounds of the guns you carry now, so the first shot doesn't wait for them
+      this.warmGun = local.weapon.id;
+      this.audio.guns.prewarm(local.weapon.id);
+      this.audio.guns.prewarm(local.weapon.other?.id);
+    }
     if (!replaying) this.viewModel.update(dt, {
       speed: Math.hypot(s.vx, s.vz),
       sprinting: local.sprinting,

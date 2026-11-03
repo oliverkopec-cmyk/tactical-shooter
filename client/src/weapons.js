@@ -6,6 +6,9 @@ import { WEAPONS } from '../../shared/weapons.js';
 import { FEEL } from '../../shared/constants.js';
 import { makeGunModel, animateGun } from './gunModels.js';
 import { attachCharm } from './charmModels.js';
+import { gunTuning } from '../../shared/gunConfig.js';
+
+const DEG = Math.PI / 180;
 
 const REST = new THREE.Vector3(0.2, -0.2, -0.42);
 const ADS_Z = -0.4;     // aiming: the gun comes to the middle with its sights on the line of sight, this far ahead
@@ -24,15 +27,76 @@ const SIDEARM_IN = 0.12;   // with the shield at its side, the pistol is held th
 
 export { makeGunModel, animateGun };
 
+// ---- muzzle flash and casings (Stage 2G), drawn in code
+
+/** A soft star burst for the front of the flash, and a flame streak for its sides (white, tinted per gun). */
+function flashTexture(kind) {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d');
+  g.translate(64, 64);
+  g.globalCompositeOperation = 'lighter';
+  if (kind === 'star') {
+    for (let i = 0; i < 9; i++) {
+      g.save();
+      g.rotate((i / 9) * Math.PI * 2 + (i % 2) * 0.2);
+      const len = i % 2 ? 40 : 62, grad = g.createLinearGradient(0, 0, len, 0);
+      grad.addColorStop(0, 'rgba(255,255,255,0.95)'); grad.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = grad;
+      g.beginPath(); g.moveTo(0, -7); g.lineTo(len, 0); g.lineTo(0, 7); g.fill();
+      g.restore();
+    }
+    const core = g.createRadialGradient(0, 0, 0, 0, 0, 30);
+    core.addColorStop(0, 'rgba(255,255,255,1)'); core.addColorStop(0.4, 'rgba(255,255,255,0.7)'); core.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = core; g.fillRect(-64, -64, 128, 128);
+  } else {
+    for (let k = 0; k < 3; k++) {
+      const grad = g.createLinearGradient(0, 60, 0, -64);
+      grad.addColorStop(0, 'rgba(255,255,255,0.9)'); grad.addColorStop(0.5, 'rgba(255,255,255,0.45)'); grad.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = grad;
+      const w = 22 - k * 6;
+      g.beginPath(); g.moveTo(-w, 60); g.quadraticCurveTo(-w * 0.4, -10, (k - 1) * 6, -64); g.quadraticCurveTo(w * 0.4, -10, w, 60); g.fill();
+    }
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
 function makeFlash() {
-  const mat = new THREE.MeshBasicMaterial({ color: 0xffd27a, transparent: true, opacity: 0.95, depthWrite: false });
+  const mat = (map) => new THREE.MeshBasicMaterial({ map, color: 0xffc46b, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
+  const starMat = mat(flashTexture('star')), sideMat = mat(flashTexture('streak'));
   const flash = new THREE.Group();
-  const a = new THREE.Mesh(new THREE.PlaneGeometry(0.16, 0.16), mat);
-  const b = a.clone(); b.rotation.y = Math.PI / 2;
-  const c = new THREE.Mesh(new THREE.PlaneGeometry(0.12, 0.12), mat); c.rotation.x = Math.PI / 2;
-  flash.add(a, b, c);
+  // Faces you, down the barrel, a little in front of the muzzle; drawn over the gun so the glow isn't hidden behind it
+  starMat.depthTest = false;
+  const front = new THREE.Mesh(new THREE.PlaneGeometry(0.28, 0.28), starMat);
+  front.position.z = -0.05;
+  front.renderOrder = 10;
+  const sideGeo = new THREE.PlaneGeometry(0.13, 0.34).rotateX(-Math.PI / 2).translate(0, 0, -0.16);
+  const s1 = new THREE.Mesh(sideGeo, sideMat), s2 = new THREE.Mesh(sideGeo, sideMat);
+  s2.rotation.z = Math.PI / 2;
+  flash.add(front, s1, s2);
+  flash.userData.mats = [starMat, sideMat];
   flash.visible = false;
   return flash;
+}
+
+const casingGeo = new THREE.CylinderGeometry(1, 1, 1, 10).rotateX(Math.PI / 2);
+const brass = new THREE.MeshStandardMaterial({ color: 0xd9a441, roughness: 0.3, metalness: 0.85 });
+const shellRed = new THREE.MeshStandardMaterial({ color: 0xa8241c, roughness: 0.5, metalness: 0.1 });
+
+function makeCasing(kind) {
+  const g = new THREE.Group();
+  if (kind === 'shell') {
+    const hull = new THREE.Mesh(casingGeo, shellRed); hull.scale.set(0.0095, 0.0095, 0.05);
+    const head = new THREE.Mesh(casingGeo, brass); head.scale.set(0.0102, 0.0102, 0.012); head.position.z = 0.022;
+    g.add(hull, head);
+  } else {
+    const rifle = kind === 'rifle';
+    const body = new THREE.Mesh(casingGeo, brass); body.scale.set(rifle ? 0.0055 : 0.005, rifle ? 0.0055 : 0.005, rifle ? 0.036 : 0.02);
+    g.add(body);
+  }
+  return g;
 }
 
 /** Nothing in the hands (a shield is drawn): a group with what the code expects of a gun model. */
@@ -87,7 +151,11 @@ export class ViewModel {
     this.weaponId = null;
     this.weaponKey = null;
     this.gun = null;
-    this.kick = 0;
+    this.kick = 0;                        // 0..1: drives the bolt / slide / pump moving on a shot
+    // The gun's recoil spring: back (m), up, side and roll (rad), each with a velocity. Settings per gun in shared/gunConfig.js
+    this.spring = { back: 0, up: 0, side: 0, roll: 0, vBack: 0, vUp: 0, vSide: 0, vRoll: 0, k: 160, c: 15 };
+    this.casings = [];                    // shell casings flying out of the gun
+    this.ads = 0;
     this.raise = 0;
     this.swingT = 0;
     this.flashTime = 0;
@@ -137,12 +205,44 @@ export class ViewModel {
     this.camera.updateProjectionMatrix();
   }
 
+  /**
+   * A shot: the gun is thrown back and tipped up by its own kick and springs back (stiffness and damping per gun,
+   * so a pistol snaps up and back while a shotgun shoves hard and settles), the flash bursts and a casing flies out.
+   */
   fire(weaponId) {
-    const recoil = WEAPONS[weaponId]?.recoilPitch ?? 0.012;
-    this.kick = Math.min(1.5, this.kick + Math.max(0.35, recoil * 40));
-    this.flashTime = 0.045;
-    this.flash.rotation.z = Math.random() * Math.PI;
-    this.gun?.userData.charm?.push((Math.random() - 0.5) * 0.8, 2.2);   // recoil flicks the charm
+    const rc = gunTuning(weaponId).recoil, sp = this.spring;
+    const aimed = 1 - this.ads * 0.55, w = Math.sqrt(rc.gunSpring) * 1.5, rnd = () => Math.random() * 2 - 1;
+    sp.k = rc.gunSpring; sp.c = rc.gunDamping;
+    sp.vBack += rc.gunBack * w * aimed;
+    sp.vUp += rc.gunUp * DEG * w * aimed * (0.85 + Math.random() * 0.3);
+    sp.vSide += rc.gunSide * DEG * w * rnd() * aimed;
+    sp.vRoll += rc.gunRoll * DEG * w * rnd();
+    this.kick = 1;
+    this.flashTime = 0.04 + Math.random() * 0.015;
+    this.flash.rotation.z = Math.random() * Math.PI * 2;
+    this.flash.scale.set(rc.flash * (0.8 + Math.random() * 0.4), rc.flash * (0.8 + Math.random() * 0.4), rc.flash * (0.7 + Math.random() * 0.6));
+    for (const m of this.flash.userData.mats) m.color.setHex(rc.flashColor);
+    this.flashLight.color.setHex(rc.flashColor);
+    this.gun?.userData.charm?.push(rnd() * 0.8, 1.5 + rc.gunBack * 30);   // recoil flicks the charm
+    this.eject(rc.casing);
+  }
+
+  /** Throw a casing out of the right side of the gun; it flies up and right, tumbling, and drops out of view. */
+  eject(kind) {
+    if (!this.gun || kind === 'none' || this.casings.length > 16) return;
+    const m = this.gun.userData.muzzle.position;
+    const at = new THREE.Vector3(0.02, (this.gun.userData.sightY || 0.04) * 0.35, Math.min(-0.04, m.z * 0.3));
+    this.gun.localToWorld(at);                      // view model scene space (it doesn't move when you turn)
+    const mesh = makeCasing(kind);
+    mesh.position.copy(at);
+    mesh.rotation.set(Math.random(), Math.random() * 3, 0);
+    this.scene.add(mesh);
+    const shell = kind === 'shell';
+    this.casings.push({
+      mesh, life: 0.75,
+      vel: new THREE.Vector3(0.7 + Math.random() * 0.5, 0.7 + Math.random() * 0.45, 0.15 + Math.random() * 0.3).multiplyScalar(shell ? 0.8 : 1),
+      spin: new THREE.Vector3(8 + Math.random() * 14, Math.random() * 10, 6 + Math.random() * 10),
+    });
   }
 
   /** Melee strike: the gun is thrust forward and across. */
@@ -157,11 +257,28 @@ export class ViewModel {
   update(dt, ctx) {
     const ads = ctx.ads || 0, hip = 1 - ads * ads * (3 - 2 * ads);   // eased: 1 at the hip, 0 fully aimed
     this.hidden = !!ctx.hidden;                                       // looking through a scope: no gun in view
-    this.kick = Math.max(0, this.kick - dt * 9);
+    this.ads = ctx.ads || 0;
+    this.kick = Math.max(0, this.kick - dt * 14);
+    // The recoil spring (a few small steps so stiff guns stay stable)
+    const sp = this.spring;
+    for (let n = 0, h = Math.min(dt, 0.05) / 4; n < 4; n++) {
+      sp.vBack += (-sp.k * sp.back - sp.c * sp.vBack) * h; sp.back += sp.vBack * h;
+      sp.vUp += (-sp.k * sp.up - sp.c * sp.vUp) * h; sp.up += sp.vUp * h;
+      sp.vSide += (-sp.k * sp.side - sp.c * sp.vSide) * h; sp.side += sp.vSide * h;
+      sp.vRoll += (-sp.k * sp.roll - sp.c * sp.vRoll) * h; sp.roll += sp.vRoll * h;
+    }
+    for (let i = this.casings.length - 1; i >= 0; i--) {
+      const c = this.casings[i];
+      c.life -= dt;
+      c.vel.y -= 5 * dt;
+      c.mesh.position.addScaledVector(c.vel, dt);
+      c.mesh.rotation.x += c.spin.x * dt; c.mesh.rotation.y += c.spin.y * dt; c.mesh.rotation.z += c.spin.z * dt;
+      if (c.life <= 0) { this.scene.remove(c.mesh); this.casings.splice(i, 1); }
+    }
     this.raise = Math.max(0, this.raise - dt * 4.5);
     this.flashTime -= dt;
     this.flash.visible = this.flashTime > 0;
-    this.flashLight.intensity = this.flashTime > 0 ? 3 : 0;
+    this.flashLight.intensity = this.flashTime > 0 ? 6 : 0;
 
     // Footsteps: the gun moves in step with the camera bob (and breathes gently when standing still)
     const still = 0.25 + 0.75 * hip;                                     // the sights move much less
@@ -200,8 +317,9 @@ export class ViewModel {
     this.holder.position.set(
       (REST.x - sideIn) * hip + bobX - sprint * 0.06 + this.sway.x * 0.25,
       REST.y * hip + aimY * (1 - hip) - bobY - dip - sprint * 0.04 + this.sway.y * 0.25,
-      REST.z * hip + ADS_Z * (1 - hip) + this.kick * (0.03 + 0.03 * hip),
+      REST.z * hip + ADS_Z * (1 - hip) + sp.back,
     );
+    this.holder.position.y += sp.up * 0.06;          // the muzzle rises: the whole gun lifts a little as it tips
     let swing = 0;
     if (this.swingT > 0) {
       this.swingT += dt / 0.3;
@@ -210,9 +328,9 @@ export class ViewModel {
     this.holder.position.z -= 0.28 * swing;
     this.holder.position.x -= 0.18 * swing;
     this.holder.rotation.set(
-      this.kick * (0.04 + 0.05 * hip) - tilt * 0.3 - swing * 0.25 + this.sway.y,
-      sprint * 0.6 + swing * 0.7 - this.sway.x,
-      tilt + ctx.lean * 0.2 * hip + sprint * 0.25 + swing * 0.5 + this.sway.x * 0.6,
+      sp.up - tilt * 0.3 - swing * 0.25 + this.sway.y,
+      sprint * 0.6 + swing * 0.7 - this.sway.x + sp.side,
+      tilt + ctx.lean * 0.2 * hip + sprint * 0.25 + swing * 0.5 + this.sway.x * 0.6 + sp.roll,
     );
     const fov = VM_FOV - 14 * (1 - hip);
     if (Math.abs(this.camera.fov - fov) > 0.01) { this.camera.fov = fov; this.camera.updateProjectionMatrix(); }
