@@ -85,7 +85,13 @@ export const TEAM_COLORS = {
 
 // Rounds
 export const PHASE = { INTRO: 'intro', PREP: 'prep', ACTION: 'action', ROUND_END: 'roundEnd' };
-export const INTRO_MS = 20000;            // operator select
+// Before each round (the intro phase) come two steps: location (attackers pick a spawn point,
+// defenders vote for a site) and loadout (operator, utility, skins)
+export const INTRO_STEP = { LOCATION: 'location', LOADOUT: 'loadout' };
+export const LOCATION_MS = 10000;
+export const LOADOUT_MS = 15000;
+export const LOADOUT_EARLY_MS = 1500;    // once everyone has locked in, the loadout ends this soon after
+export const REPICK_CUTOFF_MS = 2000;    // attackers can repick in prep until this long before the action phase
 export const PREP_MS = 30000;
 export const ACTION_MS = 180000;
 export const ROUND_END_MS = 6000;

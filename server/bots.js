@@ -13,7 +13,7 @@
 // Movement uses the shared walking grid in server/nav.js. Difficulty sets reaction time, aim settling,
 // head aim, turn speed and hearing; Normal and Hard share the same movement and tactics.
 
-import { PHASE, KEY, MAX_INPUT_DT } from '../shared/constants.js';
+import { PHASE, KEY, MAX_INPUT_DT, INTRO_STEP } from '../shared/constants.js';
 import { ABILITY_STATS } from '../shared/utilities.js';
 import { OPERATORS, operatorsFor } from '../shared/operators.js';
 import { WEAPONS, aimDirection, shieldCover } from '../shared/weapons.js';
@@ -179,6 +179,12 @@ export class BotBrains {
 
   intro(b, id, p, now) {
     const g = this.game;
+    // Location step: attackers pick where to appear, defenders vote for a site (below); operators come in the loadout step
+    if (g.rounds.step === INTRO_STEP.LOCATION) {
+      if (p.member.team === 'attack' && !b.spawnPicked) { b.spawnPicked = true; g.setSpawnChoice(id, 1 + Math.floor(Math.random() * g.map.spawns.attack.length)); }
+      if (p.member.team === 'defense' && !b.voted) { b.voted = true; g.voteSite(id, Math.floor(Math.random() * g.map.sites.length)); }
+      return;
+    }
     if (!p.opConfirmed && now >= (b.nextPick || 0)) {
       b.nextPick = now + 600;
       const taken = new Set(Object.entries(g.picksFor(p.member.team)).filter(([pid, x]) => pid !== id && x.confirmed).map(([, x]) => x.op));
@@ -193,7 +199,6 @@ export class BotBrains {
       const best = order.find((u) => own.includes(u));
       if (best) g.pickUtility(id, best);
     }
-    if (p.member.team === 'defense' && !b.voted) { b.voted = true; g.voteSite(id, Math.floor(Math.random() * g.map.sites.length)); }
   }
 
   // ---------------------------------------------------------------- thinking (10 times a second)

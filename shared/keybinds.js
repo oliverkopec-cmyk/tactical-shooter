@@ -33,6 +33,7 @@ export const BIND_ACTIONS = [
   { id: 'ping', label: 'Ping (tap) / ping wheel (hold)', group: 'Interface', key: 'Mouse1' },
   { id: 'scoreboard', label: 'Scoreboard (hold)', group: 'Interface', key: 'Tab' },
   { id: 'toggleHint', label: 'Show / hide key hints', group: 'Interface', key: 'KeyH' },
+  { id: 'loadout', label: 'Loadout in prep: operator, utility, spawn (attack)', group: 'Interface', key: 'Digit6' },
 ];
 
 export const DEFAULT_KEYBINDS = Object.fromEntries(BIND_ACTIONS.map((a) => [a.id, a.key]));

@@ -2,6 +2,7 @@
 // from the match the server itself watched: the client never reports a result
 // and has no way to ask for money, XP or rank points.
 
+import { OPERATORS } from '../shared/operators.js';
 import { QUESTS, QUEST_COUNT, QUEST_LIFETIME_MS, levelFromXp } from '../shared/progression.js';
 import { profileOf } from './profile.js';
 
@@ -39,6 +40,13 @@ export const MIN_ROUNDS_TO_COUNT = 2;
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
 // ---------------------------------------------------------------- pure rules
+
+/** Matches played with each operator ({ opId: count }), plus one for each operator played in this match. */
+export function countOperators(before, played = []) {
+  const out = { ...(before && typeof before === 'object' ? before : {}) };
+  for (const id of new Set(played)) if (OPERATORS[id]) out[id] = (out[id] || 0) + 1;
+  return out;
+}
 
 /** stats: { kills, deaths, headshots, plants, objSecs, roundsWon, rounds } -> { lines: [{ label, amount }], total } */
 /** Money from a match that had bots in it, compared with the same match against people. */
@@ -133,6 +141,7 @@ export class Progression {
 
   /** Tell the account's open tab (if any) about its new numbers. */
   pushProfile(row) {
+    this.accounts.refreshSocketLoadout?.(row);   // the next match sees the new operator match counts
     this.accounts.online.get(row.id)?.emit('profile', profileOf(row));
   }
 
@@ -179,6 +188,7 @@ export class Progression {
         kills: (lifetime.kills || 0) + match.kills,
         deaths: (lifetime.deaths || 0) + match.deaths,
         daily: { day: utcDay(), earned: before + paid },
+        opMatches: countOperators(lifetime.opMatches, match.operators),
       };
       const { rows } = await this.db.query(
         `UPDATE accounts SET money = money + $2, xp = $3, level = $4, rank_points = $5, quests = $6, stats = $7 WHERE id = $1 RETURNING *`,

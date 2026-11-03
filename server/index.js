@@ -168,6 +168,9 @@ io.on('connection', (socket) => {
 
   socket.on('spawnChoice', (n) => socket.data.room?.game?.setSpawnChoice(socket.id, n));
 
+  // Skins or charms changed on the loadout screen mid-match: everyone sees the new look
+  socket.on('refreshLook', () => socket.data.room?.refreshLook(socket));
+
   socket.on('netPing', (ack) => reply(ack));
   socket.on('leaveRoom', () => { socket.data.room?.remove(socket); socket.data.spectating?.removeSpectator(socket); });
   socket.on('disconnect', () => { socket.data.room?.remove(socket); socket.data.spectating?.removeSpectator(socket); });

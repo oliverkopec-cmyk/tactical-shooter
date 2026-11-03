@@ -1,11 +1,11 @@
 // Round and match flow for one room:
-//   intro -> prep -> action -> round end -> (next round | match end)
+//   intro (location, then loadout) -> prep -> action -> round end -> (next round | match end)
 // Scores are kept per squad (A starts attacking, B starts defending) so they
 // follow the players when sides swap at halftime.
 
 import { inObjectiveZone } from '../shared/rules.js';
 import {
-  PHASE, INTRO_MS, PREP_MS, ACTION_MS, ROUND_END_MS, MATCH_END_MS, ROUNDS_TO_WIN,
+  PHASE, INTRO_STEP, LOCATION_MS, LOADOUT_MS, LOADOUT_EARLY_MS, REPICK_CUTOFF_MS, PREP_MS, ACTION_MS, ROUND_END_MS, MATCH_END_MS, ROUNDS_TO_WIN,
   HALFTIME_AFTER_ROUND, CAPTURE_TIME,
 } from '../shared/constants.js';
 
@@ -17,6 +17,7 @@ export class RoundManager {
   constructor(game) {
     this.game = game;
     this.phase = PHASE.INTRO;
+    this.step = INTRO_STEP.LOCATION;      // which part of the intro: location, then loadout
     this.endsAt = 0;
     this.round = 0;
     this.swapped = false;                 // squad A defends once true
@@ -46,7 +47,7 @@ export class RoundManager {
 
   info() {
     return {
-      phase: this.phase, endsAt: this.endsAt, round: this.round,
+      phase: this.phase, step: this.phase === PHASE.INTRO ? this.step : undefined, endsAt: this.endsAt, round: this.round,
       scores: this.scoresBySide(), matchOver: this.matchOver,
     };
   }
@@ -68,13 +69,19 @@ export class RoundManager {
     this.lastResult = null;
     this.game.resetRound();
     this.phase = PHASE.INTRO;
-    this.endsAt = now + ms(INTRO_MS);
+    this.step = INTRO_STEP.LOCATION;
+    this.endsAt = now + ms(LOCATION_MS);
     this.shortened = false;
     for (const id of this.game.players.keys()) {
       const team = this.game.players.get(id).member.team;
       this.game.io.to(id).emit('roundStart', { ...this.game.startPayload(team), round: this.info() });
     }
     if (this.game.room.spectators.size) this.game.io.to(this.game.room.spectatorChannel).emit('roundStart', { ...this.game.startPayload('spectator'), round: this.info() });
+  }
+
+  /** Attackers may still change operator, utility and spawn point in prep, until shortly before the action. */
+  canRepick(now = Date.now()) {
+    return this.phase === PHASE.PREP && now < this.endsAt - ms(REPICK_CUTOFF_MS);
   }
 
   setPhase(phase, duration, now) {
@@ -88,15 +95,23 @@ export class RoundManager {
   update(now, dt) {
     switch (this.phase) {
       case PHASE.INTRO:
-        // Operator select ends when time is up, or shortly after everyone has chosen
+        if (this.step === INTRO_STEP.LOCATION) {
+          // Location: the defenders' vote decides the site, then on to the loadout
+          if (now < this.endsAt) break;
+          this.game.finalizeSite();
+          this.step = INTRO_STEP.LOADOUT;
+          this.endsAt = now + ms(LOADOUT_MS);
+          this.game.emitAll('phase', this.info());
+          break;
+        }
+        // Loadout ends when time is up, or shortly after everyone has locked in
         if (!this.shortened && this.game.allPicked()) {
           this.shortened = true;
-          this.endsAt = Math.min(this.endsAt, now + ms(2500));
+          this.endsAt = Math.min(this.endsAt, now + ms(LOADOUT_EARLY_MS));
           this.game.emitAll('phase', this.info());
         }
         if (now >= this.endsAt) {
           this.game.finalizeOperators();
-          this.game.finalizeSite();
           this.setPhase(PHASE.PREP, PREP_MS, now);
         }
         break;
