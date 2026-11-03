@@ -11,7 +11,7 @@ import {
   WEAPONS, createWeaponState, copyWeaponState, stepWeapon, currentSpread, shotDirections, gunMobility,
 } from '../../shared/weapons.js';
 
-import { gunTuning } from '../../shared/gunConfig.js';
+import { Recoil } from './recoil.js';
 import { settings, onSettingsChange } from './settings.js';
 import { actionFor, mouseCode } from './controls.js';
 
@@ -63,10 +63,7 @@ export class LocalPlayer {
     this.alive = true;
     this.yaw = this.state.yaw;
     this.pitch = this.state.pitch;
-    this.recoil = { pitch: 0, yaw: 0 };
-    this.recoilPending = { pitch: 0, yaw: 0 };   // kick still being applied (a shot's climb takes a few frames, not one)
-    this.shotIdx = 0; this.lastShotT = 0; this.recoilGun = null;
-    this.shakeAmt = 0;                          // camera shake (visual only)
+    this.recoil = new Recoil();   // recoil.pitch / yaw move the aim (and the bullets); recoil.view() is camera-only
     this.wasFire = false;
     this.keys = 0;
     this.tapped = 0;     // keys pressed since the last frame, so quick taps aren't lost
@@ -244,15 +241,7 @@ export class LocalPlayer {
     }
 
     // Recoil settles back toward the point of aim, slower while still firing.
-    // Each gun has its own recovery speed (shared/gunConfig.js); a shot's kick is applied over a few frames
-    const rc = gunTuning(this.weapon.id).recoil;
-    const settle = Math.min(1, frameDt * (firingHeld ? rc.recoverFiring : rc.recover));
-    this.recoil.pitch -= this.recoil.pitch * settle;
-    this.recoil.yaw -= this.recoil.yaw * settle;
-    const drain = 1 - Math.exp(-frameDt * 45), rp = this.recoilPending;
-    this.recoil.pitch += rp.pitch * drain; this.recoil.yaw += rp.yaw * drain;
-    rp.pitch -= rp.pitch * drain; rp.yaw -= rp.yaw * drain;
-    this.shakeAmt = Math.max(0, this.shakeAmt - this.shakeAmt * Math.min(1, frameDt * 9) - frameDt * 0.05);
+    this.recoil.update(frameDt, this.weapon.id, firingHeld);
 
     // Decay the visual correction offset
     const k = Math.exp(-12 * frameDt);
@@ -334,32 +323,10 @@ export class LocalPlayer {
     const dirs = shotDirections(w, input.yaw, input.pitch, spread, input.seq);
     this.onShot?.({ origin: [eye.x, eye.y, eye.z], dirs, weaponId: w.id });
 
-    this.kickView(w);
+    this.recoil.fire(w.id, { ads: s.ads || 0, crouch: Math.max(s.crouch || 0, s.prone || 0) });
   }
 
-  /**
-   * The view kick of one shot, from the gun's recoil pattern: a climb that builds up over the first shots, a
-   * sideways drift you can learn plus some randomness, smaller aiming or crouched. The pattern starts again
-   * after a pause. Pull the mouse down to cancel it.
-   */
-  kickView(w) {
-    const rc = gunTuning(w.id).recoil, now = performance.now() / 1000;
-    if (this.recoilGun !== w.id || now - this.lastShotT > rc.resetS) this.shotIdx = 0;
-    this.recoilGun = w.id;
-    this.lastShotT = now;
-    const i = this.shotIdx++, s = this.state, rnd = () => Math.random() * 2 - 1;
-    const stance = (1 - (1 - rc.ads) * (s.ads || 0)) * (1 - (1 - rc.crouch) * Math.max(s.crouch || 0, s.prone || 0));
-    const ramp = 1 + rc.ramp * Math.min(1, i / Math.max(1, rc.rampShots));
-    this.recoilPending.pitch += rc.vertical * ramp * stance * (1 + rnd() * rc.random * 0.5);
-    this.recoilPending.yaw += rc.horizontal * stance * (Math.sin(i * Math.PI * 2 / Math.max(1, rc.swayPeriod)) * rc.sway + rnd() * rc.random);
-    this.shakeAmt = Math.min(1.6, this.shakeAmt + rc.shake * 0.25);
-  }
-
-  resetRecoil() {
-    this.recoil = { pitch: 0, yaw: 0 };
-    this.recoilPending = { pitch: 0, yaw: 0 };
-    this.shotIdx = 0; this.shakeAmt = 0;
-  }
+  resetRecoil() { this.recoil.reset(); }
 
   /** Server state for this player arrived: rewind to it and replay unacknowledged inputs. */
   /** Start, switch or stop piloting. `entry` is the server's drone record or null. */
@@ -496,12 +463,8 @@ export class LocalPlayer {
     // Kneeling to put something on the floor lowers the view (Stage 27; the body's height doesn't change)
     this.camera.position.set(eye.x + this.smoothing.x + rx * side, eye.y + this.smoothing.y + bobY - (this.kneel || 0), eye.z + this.smoothing.z + rz * side);
     const roll = Math.sin(f.phase) * FEEL.bobRoll * (amp / FEEL.bobWalk);
-    // Camera shake from firing: small and quick, visual only (the bullets follow aimPitch / aimYaw)
-    let shP = 0, shY = 0, shR = 0;
-    if (this.shakeAmt > 0.001) {
-      const tt = performance.now() / 1000, a = this.shakeAmt * 0.0035;
-      shP = Math.sin(tt * 61) * a; shY = Math.sin(tt * 47 + 1.3) * a; shR = Math.sin(tt * 53 + 0.4) * a * 1.6;
-    }
-    this.camera.rotation.set(this.aimPitch + shP, this.aimYaw + shY, -eye.lean * LEAN_ROLL + roll + shR + (this.state.rapFlip || 0) * Math.PI, 'YXZ');   // upside down on a rope
+    // Recoil's camera snap and shake: visual only (the bullets follow aimPitch / aimYaw)
+    const kick = this.recoil.view();
+    this.camera.rotation.set(this.aimPitch + kick.pitch, this.aimYaw + kick.yaw, -eye.lean * LEAN_ROLL + roll + kick.roll + (this.state.rapFlip || 0) * Math.PI, 'YXZ');   // upside down on a rope
   }
 }

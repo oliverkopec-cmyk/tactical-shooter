@@ -63,6 +63,10 @@ export class Game {
     this.sun = setupLighting(this.scene);
 
     this.viewModel = new ViewModel();
+    // Your own muzzle flash lights up the room for a moment (always in the scene, so it never changes the shaders)
+    this.muzzleLight = new THREE.PointLight(0xffb060, 0, 9, 2);
+    this.muzzleLight.position.copy(TRACER_OFFSET);
+    this.camera.add(this.muzzleLight);
     this.effects = new Effects(this.scene);
     this.audio = new Audio(settings.volume);
     this.sound = new Soundscape(this);
@@ -815,6 +819,10 @@ export class Game {
       else if (wall) this.impact(wall);
     }
     this.viewModel.fire(weaponId);
+    const rc = gunTuning(weaponId).recoil;
+    this.muzzleLight.color.setHex(rc.flashColor);
+    this.muzzleLight.intensity = 9 * rc.flash;
+    this.effects.muzzleSmoke([muzzle.x, muzzle.y, muzzle.z], rc.smoke);
     this.audio.shot(weaponId, null, null, this.soundEnv(null));
     this.audio.mech(weaponId);
   }
@@ -851,8 +859,11 @@ export class Game {
     const env = this.soundEnv(from);
     this.audio.shot(w, from, this.listener(), env);
     this.audio.mech(w, from, this.listener(), env.clear);
-    const yaw = r.pose.yaw, wk = WEAPONS[w] && gunTuning(w).recoil.casing;
-    if (wk && Math.hypot(from[0] - this.camera.position.x, from[2] - this.camera.position.z) < 25) this.effects.casing(from, [Math.cos(yaw), 0, -Math.sin(yaw)], wk);
+    const yaw = r.pose.yaw, rc = WEAPONS[w] && gunTuning(w).recoil;
+    if (rc && Math.hypot(from[0] - this.camera.position.x, from[2] - this.camera.position.z) < 25) {
+      this.effects.casing(from, [Math.cos(yaw), 0, -Math.sin(yaw)], rc.casing);
+      this.effects.muzzleSmoke(from, rc.smoke * 0.7);
+    }
   }
 
   onHitConfirm({ head, killed }) {
@@ -1477,6 +1488,13 @@ export class Game {
     this.ui.setSights(ads, sight.kind);
     const otherId = local.weapon.other?.id, sideShield = WEAPONS[otherId]?.shield ? { id: otherId, skin: this.mySkins[otherId], charm: this.myCharms?.[otherId] } : null;
     if (!replaying) this.viewModel.setWeapon(local.weapon.id, this.mySkins[local.weapon.id], this.myCharms?.[local.weapon.id], sideShield);
+    this.muzzleLight.intensity *= Math.exp(-dt * 45);
+    if (!replaying && local.weapon.id !== this.warmGun && this.audio.ctx) {
+      // Render the sounds of the guns you carry now, so the first shot doesn't wait for them
+      this.warmGun = local.weapon.id;
+      this.audio.guns.prewarm(local.weapon.id);
+      this.audio.guns.prewarm(local.weapon.other?.id);
+    }
     if (!replaying) this.viewModel.update(dt, {
       speed: Math.hypot(s.vx, s.vz),
       sprinting: local.sprinting,

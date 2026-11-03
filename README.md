@@ -4,12 +4,23 @@ A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite o
 
 ## Status: Stage 2G (gun feel, recoil and sound)
 
-All the tuning lives in one file, **`shared/gunConfig.js`**: every gun has an entry with its `type` (rifle, smg, machinePistol, lmg, shotgun, dmr, pistol, revolver, which supplies the defaults from `GUN_TYPES`) and optional `recoil` / `sound` overrides. The comments at the top of the file explain every number. `recoilPitch` / `recoilYaw` are gone from `shared/weapons.js`.
+**Tune it all in `shared/gunConfig.js`.** Every gun has an entry with its `type` (rifle, smg, machinePistol, lmg, shotgun, dmr, pistol, revolver), which brings in that type's defaults from `GUN_TYPES`, plus optional `recoil` and `sound` overrides for that one gun. Recoil angles are in degrees, and the comment at the top of the file explains every number. Change a number, save and reload the page. (`recoilPitch` / `recoilYaw` are gone from `shared/weapons.js`.)
 
-- **Recoil patterns** (`kickView` in `client/src/player.js`): each shot adds a climb that builds up over the first shots (`ramp`), a sideways drift you can learn (`sway`) plus randomness, smaller while aiming or crouched, and the pattern restarts after a pause (`resetS`). Rifles climb steadily, SMGs and machine pistols jitter fast, the LMG climbs and keeps climbing, the shotgun and revolver have one big kick, pistols snap up and reset quickly. Overall about 3-4x stronger than before because the view now recovers much more slowly while the trigger is held (`recoverFiring`). The bullets follow the view, so pulling the mouse down cancels it. A shot's kick is applied over a few frames, not in one jump, and recovers smoothly.
-- **Gun and camera:** the gun model is thrown back, twists a little and returns at its own speed; a small camera shake per shot (visual only); a bigger muzzle flash with a white core and spike (size per gun); shell casings fly out of the gun in first person (and out of other players' guns near you): brass for rifles and pistols, red for shotgun shells, none for revolvers.
-- **Impacts** (`surfaceOf` in `shared/gunConfig.js`): wood and plaster walls splinter with tan dust, metal (cars, barrels, rails, armour) sparks and gets a dark scuff, concrete throws grey dust and chips, glass leaves a pale crack and shards. Each also makes a short sound.
-- **Sounds** (`client/src/audio.js`, all synthesised): a shot is a sharp crack + the body of the bang + a low thump, with its own character per gun type. Up close the crack dominates; further away it fades, the echo takes over and the sound arrives a little late (distance / speed of sound). Two made-up rooms give the echo: short and boomy indoors, long and thin outdoors. Indoors (checked with the map's building boundary) everything is duller, and more so when a wall is between you and the shooter. Also: dry click on an empty gun, bolt (DMR), pump (shotguns) and hammer (revolvers) sounds after a shot, and reload sequences per type (magazine, SMG, shell by shell, LMG belt box, revolver).
+- **Recoil** (`client/src/recoil.js`) has three parts:
+  - **Aim:** each shot climbs the view, and the climb grows over a burst. It is pushed sideways along the gun's own pattern, which is the same every time so it can be learned. While the trigger is held the view barely settles, so the climb builds up: a full Vanguard spray climbs about 13° (it was about 3° before Stage 2G) and the Bastion about 19° over its belt. Past `maxClimb` the gun stops climbing and wanders sideways. The bullets go where the view points, so pulling the mouse down really cancels it. Let go and it settles back in about 0.3 s. Aiming and crouching reduce it.
+  - **Punch:** an extra camera snap per shot that springs straight back (visual only).
+  - **Shake:** a short camera buzz (visual only).
+  - **By type:** rifles climb and drift, SMGs and machine pistols jitter fast, the LMG climbs and keeps climbing, shotguns, the DMR and revolvers have one big kick, and pistols snap up and reset.
+- **The gun in your hands** (`client/src/weapons.js`): a spring per gun throws it back, tips it up and twists it, then it bounces back. A pistol snaps up about 16° (a revolver more) and returns fast; a shotgun shoves hard and settles slower.
+- **Muzzle flash:** a star burst and flame streaks drawn in code, coloured and sized per gun, plus a light from your muzzle that lights up the room for a moment.
+- **Casings:** brass for rifles and pistols, red shells for shotguns, none for revolvers. They fly out of your gun tumbling, and out of other players' guns near you.
+- **Smoke:** a little smoke drifts from the muzzle after shooting (`smoke` per gun).
+- **Bullet holes** (`client/src/effects.js`, textures drawn in code): wood tears and splinters, metal (cars, barrels, rails, armour) gets a bright dent and sparks, concrete a dusty crater with chips, glass a cracked star with shards. Each also makes a short impact sound.
+- **Gunshot sounds** (`client/src/gunSounds.js`):
+  - **How they're made:** each gun's shot is rendered once, sample by sample, when the gun is first heard, from its recipe in the config: a primer click, the sharp supersonic crack, the noisy blast with its tone sweeping down, a low pitch-dropping boom and the gun's own metal action clacking, mixed and lightly overdriven. There are three slightly different takes per gun so it doesn't sound robotic. The guns you carry are rendered when you spawn.
+  - **Distance:** up close you hear the sharp version. With distance it fades and a separate far version takes over (a dull thump and rumble with slapback echoes), and the sound arrives late at the speed of sound.
+  - **Indoors and walls:** indoors it is duller with a short, boomy room echo; outdoors it is crisp with a long thin echo (`inBuilding` with the map's building boundary). Through a wall, or between inside and outside, it is much more muffled.
+- **Mechanical sounds** (`FOLEY` in `client/src/gunSounds.js`): a dry click on an empty gun, a bolt (DMR), pump (shotguns) or hammer (revolvers) after each shot, and reload sequences timed to the reload: magazine, SMG, shell by shell then a pump, LMG belt box, revolver (open, spin, load, close). Other players' reloads play where they are.
 
 ### Earlier: Stage 2F (bug fixes and quick changes)
 
@@ -414,6 +425,7 @@ shared/            Code used by BOTH client and server
   movementConfig.js  MOVEMENT TUNING: speeds, acceleration, strafing, stances, aiming, head bob, weapon sway
   map.js           map geometry (axis-aligned boxes), spawns, objective
   movement.js      deterministic movement + collision (prediction and authority)
+  gunConfig.js     per-gun recoil, effects and sound settings (the file to tune gun feel)
   weapons.js       the 20 guns + deterministic ammo/fire-rate/reload/spread/swap, stat rows for menus
   utilities.js     claymore, flash, impact, smoke and frag grenade definitions
   raycast.js       ray tests against the map and player hitboxes
@@ -469,9 +481,11 @@ client/
   src/placeGhost.js the see-through preview of what you're placing
   src/player.js    local player: input, prediction, reconciliation, camera
   src/avatars.js   other players: bodies, guns, name tags, interpolation
-  src/weapons.js   first-person gun models, recoil/reload animation
-  src/effects.js   tracers, bullet holes, impact puffs
-  src/audio.js     synthesised sound effects, positional playback (range, direction, muffling)
+  src/weapons.js   first-person gun: kick spring, muzzle flash, casings, reload animation
+  src/recoil.js    your recoil: aim climb and pattern, camera punch and shake
+  src/effects.js   tracers, bullet holes per surface, impact particles, casings, muzzle smoke
+  src/audio.js     synthesised sound effects, positional playback (range, direction, muffling), echo rooms
+  src/gunSounds.js gunshots rendered per gun (close and far), clicks, reloads, impacts
   src/soundscape.js  footsteps, landing, reloads, drones, gadgets: what you hear and from where
   src/gadgets.js   visuals for operator gadgets and grenades
   src/exclusiveSkins.js  the animated shader effects and particles of Exclusive skins

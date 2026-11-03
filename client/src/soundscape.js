@@ -1,5 +1,6 @@
 import { WEAPONS } from '../../shared/weapons.js';
 import { gunTuning } from '../../shared/gunConfig.js';
+import { RELOAD_STEPS } from './gunSounds.js';
 
 // Everything you hear besides gunshots and explosions: footsteps, landing,
 // reloading, drone motors, gadgets being placed, wood and plaster breaking.
@@ -25,24 +26,6 @@ const SOUNDS = {
   reloadOut: { wave: 'square', freq: 900, freq2: 420, filter: 'lowpass', cutoff: 2600, dur: 0.06, gain: 0.16 },
   reloadIn: { noise: true, filter: 'bandpass', cutoff: 1700, q: 1.6, dur: 0.07, gain: 0.5 },
   reloadClack: { wave: 'square', freq: 320, freq2: 180, filter: 'lowpass', cutoff: 1800, dur: 0.08, gain: 0.2 },
-  // reloading, by gun type (Stage 2G): see RELOAD below for the order
-  magRelease: { noise: true, filter: 'bandpass', cutoff: 2400, q: 2.4, dur: 0.035, gain: 0.5 },
-  magOut: { wave: 'square', freq: 700, freq2: 300, filter: 'lowpass', cutoff: 2200, dur: 0.07, gain: 0.2 },
-  magIn: { noise: true, filter: 'bandpass', cutoff: 1500, q: 1.8, dur: 0.08, gain: 0.6 },
-  slideClack: { noise: true, filter: 'bandpass', cutoff: 2000, q: 2.2, dur: 0.06, gain: 0.65 },
-  shellIn: { wave: 'triangle', freq: 1500, freq2: 900, filter: 'lowpass', cutoff: 3500, dur: 0.05, gain: 0.3 },
-  pumpRack: { noise: true, filter: 'bandpass', cutoff: 1000, q: 1.6, dur: 0.09, gain: 0.75 },
-  beltOpen: { noise: true, filter: 'bandpass', cutoff: 700, q: 1.1, dur: 0.14, gain: 0.8 },
-  beltIn: { noise: true, filter: 'lowpass', cutoff: 1200, q: 1, dur: 0.16, gain: 0.8 },
-  beltClose: { wave: 'square', freq: 260, freq2: 120, filter: 'lowpass', cutoff: 1500, dur: 0.1, gain: 0.35 },
-  revOpen: { noise: true, filter: 'bandpass', cutoff: 1800, q: 2, dur: 0.06, gain: 0.55 },
-  revRatchet: { noise: true, filter: 'highpass', cutoff: 3000, q: 1, dur: 0.05, gain: 0.35 },
-  revClose: { noise: true, filter: 'bandpass', cutoff: 1300, q: 1.6, dur: 0.07, gain: 0.7 },
-  // bullets hitting things (the sound of an impact near you)
-  hitWood: { noise: true, filter: 'bandpass', cutoff: 900, q: 1.2, dur: 0.06, gain: 0.5 },
-  hitMetal: { wave: 'triangle', freq: 2600, freq2: 1500, filter: 'lowpass', cutoff: 6000, dur: 0.1, gain: 0.3 },
-  hitConcrete: { noise: true, filter: 'lowpass', cutoff: 1500, q: 0.8, dur: 0.05, gain: 0.5 },
-  hitGlass: { noise: true, filter: 'highpass', cutoff: 4200, q: 1, dur: 0.18, gain: 0.5 },
   woodBreak: { noise: true, filter: 'lowpass', cutoff: 2400, q: 0.9, dur: 0.28, gain: 0.9 },
   woodThud: { wave: 'sine', freq: 170, freq2: 60, dur: 0.2, gain: 0.7 },
   crack: { noise: true, filter: 'lowpass', cutoff: 1700, q: 0.8, dur: 0.3, gain: 0.8 },
@@ -80,15 +63,6 @@ const SOUNDS = {
   intercept: { wave: 'sawtooth', freq: 1700, freq2: 400, filter: 'lowpass', cutoff: 4000, dur: 0.12, gain: 0.45 },
 };
 
-// Reloading: [fraction of the reload time, sound] in order, by the gun's `reload` setting (shared/gunConfig.js)
-const RELOAD = {
-  mag: [[0.02, 'magRelease'], [0.3, 'magOut'], [0.65, 'magIn'], [0.88, 'slideClack']],
-  pdw: [[0.02, 'magRelease'], [0.4, 'magIn'], [0.85, 'slideClack']],
-  shell: [[0.12, 'shellIn'], [0.28, 'shellIn'], [0.44, 'shellIn'], [0.6, 'shellIn'], [0.76, 'shellIn'], [0.92, 'pumpRack']],
-  belt: [[0.02, 'beltOpen'], [0.35, 'magOut'], [0.7, 'beltIn'], [0.92, 'beltClose']],
-  revolver: [[0.02, 'revOpen'], [0.3, 'revRatchet'], [0.5, 'revRatchet'], [0.72, 'shellIn'], [0.93, 'revClose']],
-};
-
 export class Soundscape {
   constructor(game) {
     this.game = game;
@@ -113,16 +87,23 @@ export class Soundscape {
   reloadSequence(weaponId, pos) {
     const w = WEAPONS[weaponId];
     if (!w || w.shield) return [];
-    const steps = RELOAD[gunTuning(weaponId).sound.reload] || RELOAD.mag;
-    return steps.map(([f, name]) => setTimeout(() => (pos ? this.at(name, pos, 16) : this.self(name, 0.8)), f * w.reloadTime * 1000));
+    const steps = RELOAD_STEPS[gunTuning(weaponId).sound.reload] || RELOAD_STEPS.mag;
+    return steps.map(([f, name]) => setTimeout(() => this.foley(name, pos, 16), f * w.reloadTime * 1000));
   }
 
-  /** A bullet hit something at pos: a short sound by what it was made of (not every one: they come fast). */
+  /** A gun sound from gunSounds.js (clicks, clacks, impacts): at your ears, or positional. */
+  foley(name, pos, range = 16, gain = 1) {
+    const g = this.game;
+    if (pos) g.audio.guns.play(name, pos, g.listener(), range, g.soundClear(pos), gain);
+    else g.audio.guns.play(name, null, null, range, true, gain * 0.8);
+  }
+
+  /** A bullet hit something at pos: a short sound for what it is made of (not every one: they come fast). */
   impact(surface, pos) {
     const now = performance.now();
-    if (now - (this.lastImpact || 0) < 70) return;
+    if (now - (this.lastImpact || 0) < 60) return;
     this.lastImpact = now;
-    this.at({ wood: 'hitWood', metal: 'hitMetal', glass: 'hitGlass' }[surface] || 'hitConcrete', pos, 14);
+    this.foley({ wood: 'hitWood', metal: 'hitMetal', glass: 'hitGlass' }[surface] || 'hitConcrete', pos, 18);
   }
 
   // ---------------------------------------------------------------- footsteps
