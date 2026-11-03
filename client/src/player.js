@@ -141,6 +141,7 @@ export class LocalPlayer {
   /** A bound key or mouse button went down or up. */
   applyAction(action, down, repeat) {
     if (action === 'ping') { if (!repeat) this.onPing?.(down); return; }
+    if (action === 'loadout') { if (down && !repeat) this.onLoadoutKey?.(); return; }
     if (action === 'fire' && this.droneState) {
       // Piloting a drone: fire pings the enemy under the crosshair instead.
       if (down && !repeat) this.sendAction('ping');

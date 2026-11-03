@@ -2,7 +2,7 @@
 
 import * as THREE from 'three';
 import {
-  MAX_HEALTH, MAX_SHOT_RANGE, BARRICADE, CHARGE_REACH, REINFORCE_REACH, TEAM_REINFORCEMENTS, PHASE, ROUNDS_TO_WIN,
+  MAX_HEALTH, MAX_SHOT_RANGE, BARRICADE, CHARGE_REACH, REINFORCE_REACH, TEAM_REINFORCEMENTS, PHASE, ROUNDS_TO_WIN, REPICK_CUTOFF_MS,
 } from '../../shared/constants.js';
 import { maskKeys } from '../../shared/rules.js';
 import { getMap, DEFAULT_MAP_ID } from '../../shared/map.js';
@@ -23,6 +23,7 @@ import { buildMap, setupLighting } from './map.js';
 import { LocalPlayer } from './player.js';
 import { RemotePlayer } from './avatars.js';
 import { ViewModel } from './weapons.js';
+import { PreRound } from './preRound.js';
 import { sightOf } from './gunModels.js';
 import { Effects } from './effects.js';
 import { Audio } from './audio.js';
@@ -94,6 +95,21 @@ export class Game {
     this.round = { phase: PHASE.INTRO, endsAt: 0, round: 1, scores: { attack: 0, defense: 0 } };
     this.capture = { p: 0, c: false };
     this.spawnChoice = 1;
+    this.spawnPicks = {};      // attackers: every teammate's spawn point { id: 1-based }
+    this.prepLoadout = false;  // an attacker opened the loadout again in prep (6)
+    // Location and loadout screens before each round (Stage F); main.js sets getAccount / setAccount
+    this.preRound = new PreRound({
+      pickOperator: (id) => this.network.pickOperator(id),
+      pickUtility: (id) => this.network.pickUtility(id),
+      pickSpawn: (n) => { this.spawnChoice = n; this.network.sendSpawnChoice(n); },
+      voteSite: (i) => { this.siteVotes = { ...this.siteVotes, mine: i }; this.network.voteSite(i); },
+      refreshLook: () => this.network.refreshLook(),
+      backToDrone: () => this.closePrepLoadout(),
+      getAccount: () => this.getAccount?.() || null,
+      setAccount: (profile) => this.setAccount?.(profile),
+      onSkinsChanged: (skins, charms) => { this.mySkins = skins; this.myCharms = charms; },
+      toast: (msg) => this.ui.toast(msg),
+    });
     this.lastFrame = performance.now();
 
     this.resize();
@@ -146,6 +162,8 @@ export class Game {
     network.on('kill', (msg) => this.onKill(msg));
     network.on('roundStart', (payload) => this.newRound(payload));
     network.on('spawnChoice', ({ choice }) => { this.spawnChoice = choice; });
+    network.on('spawnPicks', (picks) => { this.spawnPicks = picks; });
+    network.on('memberLook', ({ id, skins, charms }) => this.onMemberLook(id, skins, charms));
     network.on('attackerSpawn', ({ state }) => { if (this.running) this.local?.teleport(state); });
     network.on('defenderSpawn', ({ state }) => { if (this.running) this.local?.teleport(state); });
     network.on('pingResult', ({ hit }) => this.audio.beep(hit ? 1500 : 300, hit ? 0.09 : 0.06, 0.15, 'triangle'));
@@ -367,6 +385,7 @@ export class Game {
     this.mySkins = me.skins || {};   // my equipped gun skins, drawn on my own gun
     this.myCharms = me.charms || {};   // and my gun charms
     this.myOwned = me.owned || [];   // operators I own (the select screen locks the others)
+    this.myOpMatches = me.opMatches || {};   // matches played with each operator (the badges on the select screen)
     this.members.clear();
     for (const p of payload.players) this.members.set(p.id, { name: p.name, team: p.team, owner: !!p.owner });
 
@@ -376,12 +395,13 @@ export class Game {
       onShot: (shot) => this.onLocalShot(shot),
       renderTime: () => this.network.renderTime(),
       canFireUnlocked: () => this.lockFailed,
-      mask: (keys) => maskKeys(keys, this.myTeam, this.round.phase, !!this.local?.viewLocked),
+      mask: (keys) => (this.preRound.open ? 0 : maskKeys(keys, this.myTeam, this.round.phase, !!this.local?.viewLocked)),   // no input while a pre-round screen is open
       collisionWorld: () => (this.myTeam === 'defense' && this.round.phase === PHASE.PREP ? this.world.barrierView : this.world),
       onDigit: (n) => this.pickSpawn(n),
       onAction: (type) => { if (type === 'melee') { this.viewModel.melee(); this.audio.beep(260, 0.08, 0.12, 'sawtooth'); } },
     });
     this.local.onPing = (down) => this.onPingKey(down);
+    this.local.onLoadoutKey = () => (this.prepLoadout ? this.closePrepLoadout() : this.openPrepLoadout());
     this.local.onWheelMove = (dx, dy) => this.onWheelMove(dx, dy);
     this.loadRound(payload, me);
 
@@ -407,7 +427,9 @@ export class Game {
     this.picks = payload.picks || {};
     if (payload.roster) { this.roster = payload.roster; this.renderRoster(); }
     this.siteIndex = payload.site ?? null;
-    this.siteVotes = payload.siteVotes || { counts: [0, 0, 0], mine: null };
+    this.siteVotes = payload.siteVotes || { counts: [0, 0, 0], mine: null, votes: {} };
+    this.spawnPicks = payload.spawnPicks || {};
+    this.prepLoadout = false;
     this.barricadesLeft = payload.barricadesLeft ?? BARRICADE.pool;
     if (payload.stats) this.stats = payload.stats;
     this.stunUntil = 0;
@@ -458,6 +480,61 @@ export class Game {
     this.loadRound(payload, me);
     this.ui.hideRoundEnd();
     this.audio.beep(660, 0.12, 0.15, 'triangle');
+  }
+
+  // ---------------------------------------------------------------- pre-round screens (Stage F)
+
+  /** Which screen shows now: 'location' and 'loadout' before the round, 'prep' for an attacker's repick, or null. */
+  preRoundView(local) {
+    if (!local.alive || this.spec) return null;
+    if (this.round.phase === PHASE.INTRO) return this.round.step === 'location' ? 'location' : 'loadout';
+    if (this.round.phase === PHASE.PREP && this.prepLoadout) {
+      if (this.canRepick()) return 'prep';
+      this.prepLoadout = false;   // too late: the screen closes by itself
+    }
+    return null;
+  }
+
+  /** Attackers may repick in prep until shortly before the action (the server has the final say). */
+  canRepick() {
+    return this.myTeam === 'attack' && this.round.phase === PHASE.PREP && this.serverNow() < this.round.endsAt - REPICK_CUTOFF_MS;
+  }
+
+  serverNow() { return Date.now() + (this.network.serverOffset ?? 0); }
+
+  openPrepLoadout() {
+    if (!this.canRepick()) {
+      if (this.myTeam === 'attack' && this.round.phase === PHASE.PREP) this.ui.toast('Too late to change your loadout now.');
+      return;
+    }
+    this.prepLoadout = true;
+  }
+
+  closePrepLoadout() { this.prepLoadout = false; }
+
+  preRoundState() {
+    const names = {};
+    for (const [id, m] of this.members) names[id] = m.name;
+    const myId = this.network.id;
+    return {
+      team: this.myTeam, myId, names, picks: this.picks, round: this.round.round,
+      myOp: this.loadout.op, myConfirmed: !!this.picks[myId]?.confirmed, myUtility: this.loadout.utility?.id,
+      owned: this.myOwned, opMatches: this.myOpMatches, skins: this.mySkins, charms: this.myCharms,
+      map: this.mapDef, spawnChoice: this.spawnChoice, spawnPicks: this.spawnPicks, siteVotes: this.siteVotes,
+      secondsLeft: Math.max(0, Math.ceil((this.round.endsAt - this.serverNow()) / 1000)),
+    };
+  }
+
+  /** A player changed skins or charms on the loadout screen: draw their guns with the new look. */
+  onMemberLook(id, skins, charms) {
+    if (id === this.network.id) { this.mySkins = skins; this.myCharms = charms; return; }
+    const r = this.remotes.get(id);
+    if (!r) return;
+    r.skins = skins || {}; r.charms = charms || {};
+    const weaponId = r.weaponId;
+    r.weaponId = null;
+    if (r.shield) { r.shieldMount.clear(); r.shield = null; }
+    if (weaponId) r.setWeapon(weaponId);
   }
 
   /** Keys 1-3 while attacking in prep choose the entry point; otherwise they pick a test weapon. */
@@ -513,14 +590,14 @@ export class Game {
   /** Short, context-sensitive reminder of what the keys do right now. */
   hintText(watching, inDrone) {
     const phase = this.round.phase, attack = this.myTeam === 'attack';
-    if (phase === PHASE.INTRO) return 'Choose your operator. Anyone who hasn\'t picked is assigned one.';
+    if (phase === PHASE.INTRO) return this.round.step === 'location' ? (this.myTeam === 'attack' ? 'Choose where you appear' : 'Vote for the site to defend') : 'Pick your operator and lock in. Anyone who hasn\'t gets their equipped operator.';
     const k = keyFor;
     const move = `${k('forward')}${k('left')}${k('back')}${k('right')}`;
     const tail = `${k('scoreboard')} scoreboard · ${k('toggleHint')} hide`;
     if (!this.local.alive) return `Click to switch teammate · ${tail}`;
     if (watching) return `${k('camView')} next camera · mouse pans the feed · you can't move while watching`;
     const zap = OPERATORS[this.loadout.op]?.ability?.id === 'shockDrone' ? ` · ${k('ability')} taser` : '';   // Wasp
-    if (inDrone) return `Drone: ${move} drive · ${k('sprint')} fast · ${k('jump')} hop · ${k('fire')} ping enemy${zap} · ${k('droneNext')} switch · 1/2/3 spawn point · ${k('scoreboard')} scoreboard`;
+    if (inDrone) return `Drone: ${move} drive · ${k('sprint')} fast · ${k('jump')} hop · ${k('fire')} ping enemy${zap} · ${k('droneNext')} switch · 1/2/3 spawn point · ${k('loadout')} loadout · ${k('scoreboard')} scoreboard`;
     const base = `${move} move · ${k('sprint')} sprint · ${k('jump')} vault · ${k('crouch')} crouch · ${k('prone')} prone · ${k('leanLeft')}/${k('leanRight')} lean · ${k('aim')} aim · ${k('reload')} reload · ${k('primary')}/${k('secondary')} guns · ${k('utility')} utility · ${k('melee')} melee · ${k('rappel')} rappel`;
     const f = OPERATORS[this.loadout.op]?.ability ? ` · ${k('ability')} ability` : '';
     if (attack) return phase === PHASE.PREP ? 'Fly your drone to find the objective · 1/2/3 choose where you appear' : `${base}${f} · ${k('breach')} breach charge · ${tail}`;
@@ -546,7 +623,7 @@ export class Game {
   onPhase(info) {
     this.round = info;
     if (info.phase === PHASE.PREP) {
-      this.ui.banner('Prep phase', this.myTeam === 'attack' ? 'Find the objective with your drones, and choose where you appear (1/2/3)' : 'Reinforce, barricade and set up your gadgets');
+      this.ui.banner('Prep phase', this.myTeam === 'attack' ? `Find the objective with your drones · ${keyFor('loadout')} changes operator, utility or spawn point` : 'Reinforce, barricade and set up your gadgets');
     } else if (info.phase === PHASE.ACTION) {
       const defuser = this.mode === 'defuser';
       this.ui.banner('Action!', this.myTeam === 'attack'
@@ -587,7 +664,8 @@ export class Game {
     this.voice.stop();
     this.drones.clear();
     this.gadgets.clear();
-    this.ui.showOperatorSelect(false);
+    this.prepLoadout = false;
+    this.preRound.update(null, null);   // close the location / loadout screen
     this.ui.setDroneHud(false, '');
     this.ui.hideRoundEnd();
     this.ui.hideDeath();
@@ -1298,21 +1376,12 @@ export class Game {
     this.gadgets.watchCamera(watching ? this.camView.rec.id : null);
     if (watching) this.applyCamView();
 
-    // Operator select: free the mouse so the cards can be clicked
-    const selecting = this.round.phase === PHASE.INTRO;
-    if (selecting && !this.wasSelecting && document.pointerLockElement) document.exitPointerLock();
-    this.wasSelecting = selecting;
-    const names = {};
-    for (const [id, m] of this.members) names[id] = m.name;
-    const left = Math.max(0, Math.ceil((this.round.endsAt - (Date.now() + (this.network.serverOffset ?? 0))) / 1000));
-    this.ui.renderSiteVote(selecting && local.alive, {
-      sites: this.mapDef.sites, team: this.myTeam, counts: this.siteVotes.counts, mine: this.siteVotes.mine, onVote: (i) => { this.siteVotes = { ...this.siteVotes, mine: i }; this.network.voteSite(i); },
-    });
-    this.ui.showOperatorSelect(selecting && local.alive, {
-      team: this.myTeam, picks: this.picks, names, myId: this.network.id, myOp: this.loadout.op,
-      myUtility: this.loadout.utility?.id, owned: this.myOwned,
-      timeText: `${left}s`, onPick: (opId) => this.network.pickOperator(opId), onUtility: (id) => this.network.pickUtility(id),
-    });
+    // Location and loadout screens (and the attackers' loadout in prep): free the mouse while one is open
+    const view = this.preRoundView(local);
+    if (view && !this.preRound.open && document.pointerLockElement) document.exitPointerLock();
+    const wasOpen = this.preRound.open;
+    this.preRound.update(view, view ? this.preRoundState() : null);
+    if (wasOpen && !view && this.round.phase === PHASE.PREP) this.lockPointer();
     this.ui.updateSpawnPicker(noBody && local.alive, this.spawnChoice, this.mapDef.spawns.attack);
     this.defuserView.update(dt);
     this.pings.update();

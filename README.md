@@ -2,7 +2,17 @@
 
 A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite on the client, Node.js + Socket.IO on an authoritative server. One Node process serves both the game client and the realtime server, so the whole thing deploys as a single Render web service.
 
-## Status: Stage E (9 new operators)
+## Status: Stage F (round flow and operator selection)
+
+Every round now runs **location (10 s) → loadout (15 s) → prep (30 s) → action**, with the step's name and timer at the top of each screen (`client/src/preRound.js`; the server's `RoundManager` keeps both steps inside the intro phase as `step`).
+
+- **Location** (`client/src/topMap.js`): a top-down plan of the map, drawn from its boxes: floors, outside and inside walls, doors (orange), windows (blue), stairs and furniture, with a floor switcher (Ground, 1st floor, ... Roof; a dot marks floors with a site). Attackers click a spawn point (pins on the edge of the plan point the way to them), defenders vote for a site; your teammates' names appear under what they picked, live, on the map and in the list beside it. The vote is decided when the step ends.
+- **Loadout**: on the left a grid of your side's operators, 7 a row, which scrolls when there are more than fit: each is its icon on its coloured square; hovering enlarges it with a glow and its name in a coloured label; the one you're looking at stays enlarged with a white outline; a teammate's locked pick is dimmed with their name, operators you don't own are greyed with a lock, and a corner badge counts the matches you've played with each. On the right: the operator turning slowly in 3D holding their primary with your skin and charm (`client/src/opPreview.js`, its own small renderer only while the screen is open), name, side, speed and armour bars, the ability with its icon, both guns (stats on hover) with **Skin** and **Charm** buttons that change them right there (everyone in the match sees the new look), the two utilities, and LOCK IN. Along the bottom: your team's names and operator icons (or "?"), live. The step ends 1.5 s after everyone has locked in; anyone who hasn't gets their equipped operator (or a free one if it's taken).
+- **Prep**: attackers press **6** (rebindable: "Loadout in prep") to open the loadout again, with an Operator tab and a Spawn point tab (the map), and go back with 6 or "Back to drone". The drone stays where it is and can still be shot; no input reaches it while the screen is open. Changing operator in prep retunes your drones (Hawk's extras roll out next to the one you're driving, Wasp's become shock drones, used taser shots stay used). Repicking stops 2 s before the action phase, and an open screen closes by itself. Defenders can't change operator after the loadout.
+- Matches played per operator are counted on the account when a match is settled (the operator each player took into each round's action).
+- Short fade and slide transitions between steps, a soft tick on hover, a click on select and a chord on lock in. Sized for laptops down to about 1024 × 640 (and narrower: the grid drops to 5 a row, the map stacks).
+
+### Earlier: Stage E (9 new operators)
 
 Nine operators to buy with Money, each built around how a real Rainbow Six Siege operator's gadget works (named in brackets) with original names, models and icons. Each has its own icon, two guns (shared with at most one other operator) and two utilities, and bots play them all.
 
@@ -402,6 +412,9 @@ client/
   src/graphics.js  the graphics setting (auto / high / low)
   src/network.js   Socket.IO wrapper, server clock estimate
   src/game.js      Three.js scene and frame loop
+  src/preRound.js  the location and loadout screens before each round (and the attackers' prep loadout)
+  src/topMap.js    the top-down map plan on the location screen
+  src/opPreview.js the turning 3D operator on the loadout screen
   src/player.js    local player: input, prediction, reconciliation, camera
   src/avatars.js   other players: bodies, guns, name tags, interpolation
   src/weapons.js   first-person gun models, recoil/reload animation

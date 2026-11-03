@@ -69,6 +69,11 @@ export class Network {
     this.socket.emit('pickUtility', id);
   }
 
+  /** Skins or charms were changed mid-match: the server re-reads them and tells everyone. */
+  refreshLook() {
+    this.socket.emit('refreshLook');
+  }
+
   pickOperator(opId) {
     this.socket.emit('pickOperator', opId);
   }

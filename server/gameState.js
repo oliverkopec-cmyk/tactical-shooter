@@ -20,7 +20,7 @@ import { aimDirection } from '../shared/weapons.js';
 import { raycastWorld } from '../shared/raycast.js';
 import {
   SNAPSHOT_RATE, MAX_INPUT_DT, MAX_TIME_BUDGET, KEY_MASK, MAX_HEALTH, BASIC_CHARGES, PHASE, CAPTURE_TIME,
-  SPOT_DURATION_MS, PING_COOLDOWN_MS, MELEE, BARRICADE, RUNOUT, KEY,
+  SPOT_DURATION_MS, PING_COOLDOWN_MS, MELEE, BARRICADE, RUNOUT, KEY, INTRO_STEP,
 } from '../shared/constants.js';
 import { PoseHistory, resolveShot } from './combat.js';
 import { Destruction } from './destruction.js';
@@ -384,17 +384,29 @@ export class GameState {
   /** The select screen: choose which of the operator's two utilities to bring this round. */
   pickUtility(id, utilityId) {
     const p = this.players.get(id);
-    if (!p || this.rounds.phase !== PHASE.INTRO) return;
+    if (!p || !this.canPick(p)) return;
     if (!OPERATORS[p.operator].utilities.includes(utilityId)) return;
     p.utilityChoice = utilityId;
     p.utility = { id: utilityId, charges: UTILITIES[utilityId].charges };
     this.sendLoadout(id, p);
   }
 
+  /**
+   * Picking an operator or utility: in the loadout step for everyone, and for attackers again in
+   * prep until shortly before the action (Stage F).
+   */
+  canPick(p) {
+    const r = this.rounds;
+    if (r.phase === PHASE.INTRO) return r.step === INTRO_STEP.LOADOUT;
+    return p.member.team === 'attack' && r.canRepick();
+  }
+
   pickOperator(id, opId) {
     const p = this.players.get(id);
     const op = OPERATORS[opId];
-    if (!p || !op || this.rounds.phase !== PHASE.INTRO) return;
+    if (!p || !op) return;
+    if (!this.canPick(p)) return this.gadgets.error(id, this.rounds.phase === PHASE.PREP ? 'Too late to change operator now.' : 'Operators are picked in the loadout step.');
+    const repick = this.rounds.phase === PHASE.PREP;
     if (op.team !== p.member.team) return this.gadgets.error(id, 'That operator is on the other team.');
     if (!this.owns(p.member, opId)) return this.gadgets.error(id, `You don't own ${op.name} yet. Buy them in the Operators tab.`);
     if (op.unique) {
@@ -408,10 +420,37 @@ export class GameState {
         }
       }
     }
+    if (repick && p.operator === opId) return;
     p.operator = opId;
     p.opConfirmed = true;
     this.applyOperator(p);
+    if (repick) this.retuneDrones(id, p);
     this.sendPicks();
+  }
+
+  /** An attacker changed operator in prep: their drones become the new operator's (count, shock tasers); the ones out stay where they are. */
+  retuneDrones(id, p) {
+    const op = OPERATORS[p.operator], shock = op.ability?.id === 'shockDrone';
+    const mine = [...this.drones.values()].filter((d) => d.owner === id && d.alive);
+    const want = 1 + (op.extraDrones || 0);
+    // Too many (from Hawk): the extra ones are recalled, never the one being driven
+    const spare = mine.filter((d) => d.id !== p.activeDrone);
+    while (mine.length > want && spare.length) { const d = spare.pop(); this.drones.delete(d.id); mine.splice(mine.indexOf(d), 1); }
+    // Too few: new ones roll out next to the one being driven
+    const at = this.activeDroneOf(p) || mine[0];
+    for (let i = mine.length; i < want && at; i++) {
+      const s = at.state;
+      const drone = { id: this.nextDroneId++, owner: id, hp: DRONE.hp, alive: true, state: createDroneState(s.x + 0.4 * i, s.y, s.z + 0.4, s.yaw) };
+      this.drones.set(drone.id, drone);
+      mine.push(drone);
+    }
+    for (const d of mine) {
+      if (shock) d.zaps ??= ABILITY_STATS.zap.perDrone;   // taser shots already used stay used
+      else delete d.zaps;
+    }
+    if (shock) p.ability.charges = mine.reduce((n, d) => n + d.zaps, 0);
+    if (p.activeDrone === null || !this.drones.has(p.activeDrone)) this.cycleToFirstDrone(p);
+    this.sendLoadout(id, p);
   }
 
   allPicked() {
@@ -681,6 +720,8 @@ export class GameState {
 
   /** Action: drones are recalled and attackers appear where they chose. */
   beginAction() {
+    // The operator each player takes into the action counts as played this match (the badges on the select screen)
+    for (const p of this.players.values()) if (p.alive) (p.opsPlayed ||= new Set()).add(p.operator);
     if (this.mode === 'defuser') this.defuser.beginAction();
     this.clearDrones();
     this.placeAttackers();
@@ -695,10 +736,23 @@ export class GameState {
   setSpawnChoice(id, choice) {
     const p = this.players.get(id);
     const n = Number(choice) | 0;
-    if (!p || p.member.team !== 'attack' || this.rounds.phase !== PHASE.PREP) return;
+    if (!p || p.member.team !== 'attack' || (this.rounds.phase !== PHASE.PREP && this.rounds.phase !== PHASE.INTRO)) return;
     if (n < 1 || n > this.map.spawns.attack.length) return;
     p.spawnChoice = n;
     this.io.to(id).emit('spawnChoice', { choice: n });
+    this.sendSpawnPicks();
+  }
+
+  /** Every attacker's spawn point, for their teammates' maps: { playerId: 1-based choice }. */
+  spawnPicks() {
+    const out = {};
+    for (const [id, p] of this.players) if (p.member.team === 'attack') out[id] = p.spawnChoice;
+    return out;
+  }
+
+  sendSpawnPicks() {
+    const picks = this.spawnPicks();
+    for (const [id, p] of this.players) if (p.member.team === 'attack') this.io.to(id).emit('spawnPicks', picks);
   }
 
   // ---------------------------------------------------------------- objective sites
@@ -711,7 +765,7 @@ export class GameState {
   voteSite(id, index) {
     const p = this.players.get(id);
     const i = Number(index) | 0;
-    if (!p || p.member.team !== 'defense' || this.rounds.phase !== PHASE.INTRO || i < 0 || i >= this.map.sites.length) return;
+    if (!p || p.member.team !== 'defense' || this.rounds.phase !== PHASE.INTRO || this.rounds.step !== INTRO_STEP.LOCATION || i < 0 || i >= this.map.sites.length) return;
     this.siteVotes.set(id, i);
     this.sendSiteVotes();
   }
@@ -722,11 +776,11 @@ export class GameState {
     return counts;
   }
 
-  /** Only defenders see the vote. */
+  /** Only defenders see the vote: the counts, their own vote, and who voted for what (votes: { playerId: site }). */
   sendSiteVotes() {
-    const counts = this.siteCounts();
+    const counts = this.siteCounts(), votes = Object.fromEntries(this.siteVotes);
     for (const [id, p] of this.players) {
-      if (p.member.team === 'defense') this.io.to(id).emit('siteVotes', { counts, mine: this.siteVotes.get(id) ?? null });
+      if (p.member.team === 'defense') this.io.to(id).emit('siteVotes', { counts, mine: this.siteVotes.get(id) ?? null, votes });
     }
   }
 
@@ -818,6 +872,7 @@ export class GameState {
         kills: p.kills, deaths: p.deaths, headshots: p.stats.headshots, plants: p.stats.plants, reinforced: p.stats.reinforced,
         barricades: p.stats.barricades, utilities: p.stats.utilities, objSecs: p.stats.objSecs,
         score: { yours: scores[squad], theirs: scores[other] },
+        operators: [...(p.opsPlayed || [])],
         withBots: this.room.hasBots,          // bots in the match: half Money, no rank points
       };
       progression.settle(accountId, match)
@@ -1090,7 +1145,8 @@ export class GameState {
       stats: this.statsPayload(),
       // Defenders always know the site; attackers only once it has been found
       site: this.site !== null && (team === 'defense' || team === 'spectator' || this.siteFound) ? this.site : null,
-      siteVotes: team === 'defense' && this.rounds.phase === PHASE.INTRO ? { counts: this.siteCounts(), mine: null } : null,
+      siteVotes: team === 'defense' && this.rounds.phase === PHASE.INTRO ? { counts: this.siteCounts(), mine: null, votes: Object.fromEntries(this.siteVotes) } : null,
+      spawnPicks: team === 'attack' ? this.spawnPicks() : null,
       barricadesLeft: this.gadgets.barricadesLeft,
       gadgets: this.gadgets.list(team),
       picks: this.picksFor(team),
@@ -1098,7 +1154,7 @@ export class GameState {
       mode: this.mode,
       defuser: this.mode === 'defuser' ? this.defuser.view(team) : null,
       players: [...this.players.entries()].map(([id, p]) => ({
-        id, name: p.member.name, owner: !!p.member.owner, team: p.member.team, skins: p.member.skins || {}, charms: p.member.charms || {}, owned: p.member.owned || [], state: p.state,
+        id, name: p.member.name, owner: !!p.member.owner, team: p.member.team, skins: p.member.skins || {}, charms: p.member.charms || {}, owned: p.member.owned || [], opMatches: p.member.opMatches || {}, state: p.state,
         weapon: this.canSee(team, p) ? p.weapon : null, health: p.health, alive: p.alive,
         charges: p.charges, placed: !!p.placedCharge, spawnChoice: p.spawnChoice, operator: this.canSee(team, p) ? p.operator : null,
       })),

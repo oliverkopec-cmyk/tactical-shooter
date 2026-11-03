@@ -17,6 +17,9 @@ import { usernameError, passwordError } from '../../shared/account.js';
 const network = new Network();
 const ui = new UI();
 const game = new Game(document.getElementById('game'), network, ui);
+// The loadout screen changes skins and charms through the account
+game.getAccount = () => account;
+game.setAccount = (profile) => setAccount(profile);
 
 let room = null;
 let account = null;   // profile from the server, null when logged out

@@ -3,9 +3,8 @@
 import { MAX_PER_TEAM, MAX_HEALTH } from '../../shared/constants.js';
 import { WEAPONS, weaponStats } from '../../shared/weapons.js';
 import { UTILITIES } from '../../shared/utilities.js';
-import { operatorsFor, OPERATORS } from '../../shared/operators.js';
+import { OPERATORS } from '../../shared/operators.js';
 import { settings, setSetting, setKeybinds, onSettingsChange } from './settings.js';
-import { fillKeys, keyFor } from './controls.js';
 import { rankIcon } from './rankIcon.js';
 import { operatorIcon } from './operatorIcons.js';
 import { mapChoices } from '../../shared/map.js';
@@ -645,29 +644,6 @@ export class UI {
     }
   }
 
-  /** Defenders vote on the objective site during operator select; attackers just wait. */
-  renderSiteVote(on, { team, counts, mine, onVote, sites }) {
-    const el = $('site-vote');
-    el.classList.toggle('hidden', !on);
-    if (!on) { this.lastSiteVote = null; return; }
-    const sig = JSON.stringify([team, counts, mine]);
-    if (sig === this.lastSiteVote) return;
-    this.lastSiteVote = sig;
-    if (team !== 'defense') {
-      el.innerHTML = '<div class="site-note">The defenders are choosing where the objective is. Find it with your drones during prep.</div>';
-      return;
-    }
-    el.innerHTML = '<div class="site-title">Vote for the objective site</div><div class="site-options"></div>';
-    const row = el.querySelector('.site-options');
-    sites.forEach((site, i) => {
-      const b = document.createElement('button');
-      b.className = `site-option${mine === i ? ' selected' : ''}`;
-      b.innerHTML = `<b>${site.name}</b><span>${site.where}</span><span class="votes">${counts[i]} vote${counts[i] === 1 ? '' : 's'}</span>`;
-      b.addEventListener('click', () => onVote(i));
-      row.appendChild(b);
-    });
-  }
-
   setSiteChip(text) {
     if (text === this.lastSiteChip) return;
     this.lastSiteChip = text;
@@ -688,55 +664,6 @@ export class UI {
     if (v === this.lastStun) return;
     this.lastStun = v;
     $('stun-overlay').style.opacity = String(v);
-  }
-
-  // ---------------------------------------------------------------- operator select
-
-  showOperatorSelect(on, { team, picks, names, myId, myOp, myUtility, owned = [], timeText, onPick, onUtility } = {}) {
-    const el = $('op-select');
-    el.classList.toggle('hidden', !on);
-    this.hud.classList.toggle('selecting', on);
-    if (!on) { this.lastSelect = null; return; }
-    $('op-timer').textContent = timeText;
-    const sig = JSON.stringify([team, picks, myOp, myUtility, owned]);
-    if (sig === this.lastSelect) return;
-    this.lastSelect = sig;
-    const cards = $('op-cards');
-    cards.innerHTML = '';
-    this.hideGunTip();   // the card under the pointer is about to be replaced
-    const pips = (n) => '●'.repeat(n) + '○'.repeat(3 - n);
-    const gunRow = (id, slot) => {
-      const g = WEAPONS[id];
-      return `<div class="op-gun" data-gun="${id}"><span class="slot">${slot}</span><b>${escapeHtml(g.name)}</b><i>${escapeHtml(g.kind)}</i></div>`;
-    };
-    for (const op of operatorsFor(team)) {
-      const holderId = Object.keys(picks || {}).find((id) => picks[id].op === op.id && picks[id].confirmed && id !== myId);
-      const taken = op.unique && !!holderId;
-      const locked = !!op.price && !owned.includes(op.id);
-      const mine = op.id === myOp;
-      const card = document.createElement('div');
-      card.className = `op-card${mine ? ' selected' : ''}${taken || locked ? ' taken' : ''}`;
-      const utilities = op.utilities.map((id) => {
-        const u = UTILITIES[id];
-        const chosen = mine && id === myUtility;
-        return `<button type="button" class="op-util${chosen ? ' chosen' : ''}" data-util="${id}" title="${escapeHtml(u.desc)}"${mine ? '' : ' tabindex="-1"'}>${escapeHtml(u.name)}<span>×${u.charges}</span></button>`;
-      }).join('');
-      card.innerHTML = `
-        <div class="op-color" style="background:#${op.color.toString(16).padStart(6, '0')}"></div>
-        <div class="op-name"><span class="op-ico">${operatorIcon(op.id, 40)}</span>${op.name}</div>
-        <div class="op-guns">${gunRow(op.weapons.primary, 1)}${gunRow(op.weapons.secondary, 2)}</div>
-        <div class="op-stats"><span>SPEED ${pips(op.speed)}</span><span>ARMOR ${pips(op.armor)}</span></div>
-        <div class="op-ab">${op.ability ? `<b>${op.ability.name}</b><br>${fillKeys(op.ability.desc)}` : '<i>No special ability</i>'}</div>
-        <div class="op-utils-label">Utility${mine ? ' (pick one)' : ''}</div>
-        <div class="op-utils${mine ? '' : ' inactive'}">${utilities}</div>
-        <div class="op-who">${locked ? `Locked: buy in the Operators tab (${op.price.toLocaleString()})` : taken ? `Taken by ${names[holderId] || 'a teammate'}` : (mine ? 'Your pick' : (op.unique ? '' : 'Unlimited'))}</div>`;
-      card.addEventListener('click', (e) => {
-        const util = e.target.closest('[data-util]');
-        if (util && mine) { onUtility?.(util.dataset.util); return; }
-        if (!taken && !locked && !mine) onPick(op.id);
-      });
-      cards.appendChild(card);
-    }
   }
 
   // ---------------------------------------------------------------- gun hover cards

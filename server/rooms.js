@@ -48,7 +48,7 @@ export class RoomManager {
 /** The skins and preferred operators the player's account has equipped right now. */
 function loadoutFrom(socket) {
   const a = socket?.data?.account;
-  return { skins: a?.skins || {}, charms: a?.charms || {}, preferred: a?.operators || {}, owned: a?.owned || [] };
+  return { skins: a?.skins || {}, charms: a?.charms || {}, preferred: a?.operators || {}, owned: a?.owned || [], opMatches: a?.opMatches || {} };
 }
 
 export function cleanName(name) {
@@ -250,6 +250,15 @@ class Room {
 
   handleInputs(socketId, batch) {
     if (this.game) this.game.queueInputs(socketId, batch);
+  }
+
+  /** A player changed skins or charms during a match (the loadout screen): copy them in and tell everyone. */
+  refreshLook(socket) {
+    const m = this.members.get(socket.id);
+    if (!m || m.bot || !this.game) return;
+    const { skins, charms } = loadoutFrom(socket);
+    m.skins = skins; m.charms = charms;
+    this.game.emitAll('memberLook', { id: m.id, skins, charms });
   }
 
   handleAction(socketId, type) {

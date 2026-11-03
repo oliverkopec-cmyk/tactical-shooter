@@ -45,6 +45,11 @@ function noise(dur, { gain = 0.2, freq = 800, at = 0 } = {}) {
 }
 
 export const menuAudio = {
+  // The pre-round screens (Stage F): a soft tick on hover, a click on select, a firm chord on lock in, a whoosh between steps
+  tick() { tone(1800, 0.035, { type: 'sine', gain: 0.025 }); },
+  select() { tone(700, 0.08, { type: 'triangle', gain: 0.07, slideTo: 980 }); },
+  lockIn() { tone(392, 0.35, { type: 'triangle', gain: 0.09 }); tone(587, 0.4, { type: 'triangle', gain: 0.08, at: 0.06 }); tone(784, 0.5, { type: 'sine', gain: 0.07, at: 0.12 }); noise(0.12, { gain: 0.08, freq: 3000 }); },
+  whoosh() { noise(0.3, { gain: 0.06, freq: 900 }); },
   /** The crate lands. */
   thud() { tone(90, 0.35, { slideTo: 40, gain: 0.5 }); noise(0.25, { gain: 0.25, freq: 500 }); },
   /** A glow pulse; `step` 0..3 is how far up the rarity ladder it is. */

@@ -37,7 +37,7 @@ function readCookie(header, name) {
 }
 
 /** What a match needs to know about a player's equipped skins and operators. */
-const loadoutOf = (row) => ({ skins: equippedSkinsOf(row), charms: equippedCharmsOf(row), operators: equippedOperatorsOf(row), owned: ownedOperatorIds(row.owned_operators) });
+const loadoutOf = (row) => ({ skins: equippedSkinsOf(row), charms: equippedCharmsOf(row), operators: equippedOperatorsOf(row), owned: ownedOperatorIds(row.owned_operators), opMatches: row.stats?.opMatches || {} });
 
 export class Accounts {
   constructor(db) {
