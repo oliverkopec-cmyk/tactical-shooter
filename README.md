@@ -2,7 +2,21 @@
 
 A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite on the client, Node.js + Socket.IO on an authoritative server. One Node process serves both the game client and the realtime server, so the whole thing deploys as a single Render web service.
 
-## Status: Stage 2G (gun feel, recoil and sound)
+## Status: Stage 2H (first-person hands)
+
+You now see your own arms and gloved hands holding the gun (`client/src/hands.js`, built from boxes in code, no external assets).
+
+- **The hands:** a glove with a palm, a knuckle pad, four fingers of three joints and a two-joint thumb, and a cuff, on a sleeve. Sleeves are in your team's colour; gloves are dark with a tint of your operator's colour, and the cuffs are the operator's colour. The arms are two-bone IK from your shoulders to your wrists.
+- **How a gun is held:** the grips come from the gun model's own parts, so every gun gets hands that fit it. The right hand wraps the grip, with the index finger by the trigger (it squeezes when you fire). The left hand wraps the foregrip (SMGs, the LMG), cups the pump (shotguns) or the handguard from below (rifles, DMR). **Pistols, revolvers and machine pistols are held with both hands**, the left wrapped over the right.
+- **Animations:**
+  - **Reloading:** the left hand goes to the magazine, pulls it out, a fresh one comes in and it pushes it home (a new magazine appears in the hand). Shotguns: the hand feeds shells in, over and over, then racks the pump. Revolvers: it works the cylinder.
+  - **Drawing a gun:** the hands come up with it.
+  - **Throwing a utility (frag, impact, flash, smoke):** the gun drops to the left hand, the right takes a grenade (coloured by type), holds it, winds back and throws, then returns to the gun.
+  - **Placing a gadget:** both hands hold the item between them.
+  - **Melee:** the support hand lets go and comes back while the gun is thrust out.
+- **View model:** the gun sits a little higher and further away than before, with a narrower field of view (`REST` and `VIEW` in `client/src/weapons.js`), so the hands are on screen. Reloading dips the gun less so the hands stay visible. With the Aegis shield drawn no hands are shown (you hold it from behind).
+
+### Earlier: Stage 2G (gun feel, recoil and sound)
 
 **Tune it all in `shared/gunConfig.js`.** Every gun has an entry with its `type` (rifle, smg, machinePistol, lmg, shotgun, dmr, pistol, revolver), which brings in that type's defaults from `GUN_TYPES`, plus optional `recoil` and `sound` overrides for that one gun. Recoil angles are in degrees, and the comment at the top of the file explains every number. Change a number, save and reload the page. (`recoilPitch` / `recoilYaw` are gone from `shared/weapons.js`.)
 
@@ -362,12 +376,6 @@ Six new operators, bought with Money in the Operators tab (the original eight an
 
 Written down so they aren't forgotten (see Status for what is built). They are built one at a time, one PR each, and the next one starts once the previous is confirmed. Server memory must stay low enough for Render's 512 MB plan.
 
-### Stage 2H - First-person hands
-- The player's arms and gloved hands holding the gun in first person: one hand on the grip with a finger by the trigger, the other on the front of the gun. Pistols are held with both hands.
-- Hands use the operator's outfit colours (sleeves and gloves).
-- Hands animate: reloading (magazine out and in), switching weapons, throwing utilities, placing gadgets, melee, and holding a grenade before the throw.
-- Built in code, original design, no external assets.
-
 ### Stage 2I - Tester role, chat, reports and admin inbox
 - Tester role set by the `TESTER_USERNAMES` environment variable on Render (comma-separated; the account "max" is a tester). Testers get a black and white "TESTER" badge wherever names show, like OWNER.
 - Testers can open the admin tab but STRICTLY only: see everyone online, see all active matches and join or spectate them, and send announcements. Reports, chat logs, gifts, Money, warn/suspend/ban are hidden and refused by the server for testers.
@@ -482,6 +490,7 @@ client/
   src/player.js    local player: input, prediction, reconciliation, camera
   src/avatars.js   other players: bodies, guns, name tags, interpolation
   src/weapons.js   first-person gun: kick spring, muzzle flash, casings, reload animation
+  src/hands.js     first-person arms and gloved hands: grips per gun, reload/throw/place poses
   src/recoil.js    your recoil: aim climb and pattern, camera punch and shake
   src/effects.js   tracers, bullet holes per surface, impact particles, casings, muzzle smoke
   src/audio.js     synthesised sound effects, positional playback (range, direction, muffling), echo rooms

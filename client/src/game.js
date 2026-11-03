@@ -36,6 +36,7 @@ import { GadgetView } from './gadgets.js';
 import { Soundscape } from './soundscape.js';
 import { findOpening } from '../../shared/map.js';
 import { OPERATORS } from '../../shared/operators.js';
+import { TEAM_COLORS } from '../../shared/constants.js';
 import { UTILITIES } from '../../shared/utilities.js';
 import { settings, onSettingsChange } from './settings.js';
 import { lowGraphics } from './graphics.js';
@@ -411,7 +412,12 @@ export class Game {
       mask: (keys) => (this.preRound.open ? 0 : maskKeys(keys, this.myTeam, this.round.phase, !!this.local?.viewLocked) & (this.placing ? ~KEY.FIRE : ~0)),   // no input while a pre-round screen is open; no shooting while placing
       collisionWorld: () => (this.myTeam === 'defense' && this.round.phase === PHASE.PREP ? this.world.barrierView : this.world),
       onDigit: (n) => this.pickSpawn(n),
-      onAction: (type) => { if (type === 'melee') { this.viewModel.melee(); this.audio.beep(260, 0.08, 0.12, 'sawtooth'); } },
+      onAction: (type) => {
+        if (type === 'melee') { this.viewModel.melee(); this.audio.beep(260, 0.08, 0.12, 'sawtooth'); }
+        // Throwing a grenade: the hands take it, wind up and throw (the throw itself is instant on the server)
+        const util = this.loadout.utility;
+        if (type === 'utility' && util?.charges > 0 && ['frag', 'impact', 'flash', 'smoke'].includes(util.id)) this.viewModel.throwUtility(util.id);
+      },
     });
     this.local.onPing = (down) => this.onPingKey(down);
     this.local.onLoadoutKey = () => (this.prepLoadout ? this.closePrepLoadout() : this.openPrepLoadout());
@@ -1487,6 +1493,7 @@ export class Game {
     this.setZoom(1 + (sight.zoom - 1) * ads * ads * (3 - 2 * ads));
     this.ui.setSights(ads, sight.kind);
     const otherId = local.weapon.other?.id, sideShield = WEAPONS[otherId]?.shield ? { id: otherId, skin: this.mySkins[otherId], charm: this.myCharms?.[otherId] } : null;
+    if (!replaying) this.viewModel.setOutfit(TEAM_COLORS[this.myTeam] ?? 0x888888, OPERATORS[this.loadout.op]?.color ?? 0xffffff);
     if (!replaying) this.viewModel.setWeapon(local.weapon.id, this.mySkins[local.weapon.id], this.myCharms?.[local.weapon.id], sideShield);
     this.muzzleLight.intensity *= Math.exp(-dt * 45);
     if (!replaying && local.weapon.id !== this.warmGun && this.audio.ctx) {

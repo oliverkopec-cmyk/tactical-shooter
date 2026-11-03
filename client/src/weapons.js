@@ -6,13 +6,15 @@ import { WEAPONS } from '../../shared/weapons.js';
 import { FEEL } from '../../shared/constants.js';
 import { makeGunModel, animateGun } from './gunModels.js';
 import { attachCharm } from './charmModels.js';
+import { Hands } from './hands.js';
 import { gunTuning } from '../../shared/gunConfig.js';
 
 const DEG = Math.PI / 180;
+const seg01 = (x) => { const t = Math.max(0, Math.min(1, x)); return t * t * (3 - 2 * t); };
 
-const REST = new THREE.Vector3(0.2, -0.2, -0.42);
+export const REST = new THREE.Vector3(0.15, -0.09, -0.5);   // raised and a little further away than before so the hands show (Stage 2H)
 const ADS_Z = -0.4;     // aiming: the gun comes to the middle with its sights on the line of sight, this far ahead
-const VM_FOV = 62;
+export const VIEW = { fov: 60 };   // the view model camera's field of view (exported so it can be tuned live)
 // Aegis's shield in first person, as [x, y, z, yaw]: drawn, it fills most of the view with its viewport
 // (SHIELD_PORT_Y up the shield) right on the line of sight; with the pistol out it is held to the left
 // (further out while aiming); sprinting swings it aside
@@ -116,12 +118,6 @@ function makePlaceItem() {
   lid.position.y = 0.046;
   const led = new THREE.Mesh(new THREE.SphereGeometry(0.008, 8, 6), new THREE.MeshBasicMaterial({ color: 0x4dff88 }));
   led.position.set(0.05, 0.03, -0.056);
-  const glove = new THREE.MeshStandardMaterial({ color: 0x1b1e22, roughness: 0.8 });
-  for (const sx of [-0.1, 0.1]) {
-    const hand = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.07, 0.1), glove);
-    hand.position.set(sx, -0.01, 0.03);
-    g.add(hand);
-  }
   g.add(body, lid, led);
   g.scale.setScalar(0.7);
   g.visible = false;
@@ -131,7 +127,7 @@ function makePlaceItem() {
 export class ViewModel {
   constructor() {
     this.scene = new THREE.Scene();
-    this.camera = new THREE.PerspectiveCamera(VM_FOV, 1, 0.01, 10);
+    this.camera = new THREE.PerspectiveCamera(VIEW.fov, 1, 0.01, 10);
     this.scene.add(new THREE.HemisphereLight(0xffffff, 0x445566, 1.6));
     const key = new THREE.DirectionalLight(0xffffff, 1.6);
     key.position.set(1, 2, 1);
@@ -144,8 +140,11 @@ export class ViewModel {
     this.flashLight = new THREE.PointLight(0xffc060, 0, 2);
     this.scene.add(this.flashLight);
 
+    this.hands = new Hands(this.scene);   // arms and gloved hands (Stage 2H)
     this.placeItem = makePlaceItem();
     this.scene.add(this.placeItem);
+    this.throwT = -1;    // 0..1 while a grenade is being thrown (the hands take it, wind up and throw), else -1
+    this.throwColor = 0x4a5a3a;
     this.placeAmt = 0;   // 0 = gun up ... 1 = gun lowered and the item in the hands (placing)
 
     this.weaponId = null;
@@ -198,7 +197,11 @@ export class ViewModel {
     this.gun.position.set(...this.gun.userData.hold);
     this.holder.add(this.gun);
     this.gun.userData.muzzle.add(this.flash);
+    this.hands.setGun(shield ? null : this.gun, WEAPONS[id]?.model);
   }
+
+  /** Sleeves in the team's colour and cuffs in the operator's. */
+  setOutfit(teamColor, opColor) { this.hands.setOutfit(teamColor, opColor); }
 
   setAspect(aspect) {
     this.camera.aspect = aspect;
@@ -243,6 +246,13 @@ export class ViewModel {
       vel: new THREE.Vector3(0.7 + Math.random() * 0.5, 0.7 + Math.random() * 0.45, 0.15 + Math.random() * 0.3).multiplyScalar(shell ? 0.8 : 1),
       spin: new THREE.Vector3(8 + Math.random() * 14, Math.random() * 10, 6 + Math.random() * 10),
     });
+  }
+
+  /** Throwing a utility (frag, impact, flash or smoke): the gun drops to the left hand, the right takes a grenade, winds up and throws. */
+  throwUtility(kind) {
+    if (this.throwT >= 0) return;
+    this.throwT = 0;
+    this.throwColor = { frag: 0x4a5a3a, impact: 0x6a6f78, flash: 0xd8d8e8, smoke: 0x8a8f96 }[kind] ?? 0x4a5a3a;
   }
 
   /** Melee strike: the gun is thrust forward and across. */
@@ -296,7 +306,12 @@ export class ViewModel {
     // Placing (Stage 27): the gun drops out of view and the hands lower the item into place
     const place = ctx.place;
     this.placeAmt += ((place ? 1 : 0) - this.placeAmt) * Math.min(1, dt * 10);
-    let dip = this.raise * this.raise * 0.3 + this.placeAmt * 0.45, tilt = this.raise * 0.5 + this.placeAmt * 0.4;
+    let throwAmt = 0;
+    if (this.throwT >= 0) {
+      this.throwT += dt / 0.6;
+      if (this.throwT >= 1) this.throwT = -1; else throwAmt = Math.min(seg01(this.throwT / 0.2), 1 - seg01((this.throwT - 0.8) / 0.2));
+    }
+    let dip = this.raise * this.raise * 0.3 + this.placeAmt * 0.45 + throwAmt * 0.16, tilt = this.raise * 0.5 + this.placeAmt * 0.4 + throwAmt * 0.3;
     this.placeItem.visible = this.placeAmt > 0.05;
     if (this.placeItem.visible) {
       const f = place ? place.frac : 1, e = f * f * (3 - 2 * f), floor = place?.pose === 'floor';
@@ -308,7 +323,7 @@ export class ViewModel {
     }
     if (ctx.reloadFrac >= 0) {
       const s = Math.sin(Math.min(1, ctx.reloadFrac) * Math.PI);
-      dip += s * 0.16; tilt += s * 0.7;
+      dip += s * 0.05; tilt += s * 0.45;   // the gun tips over to show the magazine well; the hands work it
     }
     const sprint = ctx.sprinting ? 1 : 0;
 
@@ -332,7 +347,7 @@ export class ViewModel {
       sprint * 0.6 + swing * 0.7 - this.sway.x + sp.side,
       tilt + ctx.lean * 0.2 * hip + sprint * 0.25 + swing * 0.5 + this.sway.x * 0.6 + sp.roll,
     );
-    const fov = VM_FOV - 14 * (1 - hip);
+    const fov = VIEW.fov - 14 * (1 - hip);
     if (Math.abs(this.camera.fov - fov) > 0.01) { this.camera.fov = fov; this.camera.updateProjectionMatrix(); }
 
     if (this.shield) {
@@ -361,6 +376,8 @@ export class ViewModel {
       this.gun.userData.charm?.update(dt, this.holder.position);
       this.gun.userData.muzzle.getWorldPosition(this.flashLight.position);
     }
+    this.holder.updateMatrixWorld(true);
+    this.hands.update(dt, { reload: ctx.reloadFrac, swing, kick: this.kick, hidden: this.hidden, throwT: this.throwT, throwColor: this.throwColor, placeItem: this.placeItem, placeAmt: this.placeAmt });
   }
 
   render(renderer) {
