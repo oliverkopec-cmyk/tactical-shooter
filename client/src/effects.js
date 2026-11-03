@@ -8,12 +8,19 @@ const PUFF_LIFE = 0.25;
 
 const unitBox = new THREE.BoxGeometry(1, 1, 1);
 const tracerMat = new THREE.MeshBasicMaterial({ color: 0xffe9a0, transparent: true, opacity: 0.9, depthWrite: false });
-const decalMat = new THREE.MeshBasicMaterial({ color: 0x1a1a1a, polygonOffset: true, polygonOffsetFactor: -2 });
 const puffGeo = new THREE.SphereGeometry(1, 8, 6);
 const DEBRIS_LIFE = 1.3;
 const SPARK_LIFE = 0.5;
 const sparkMat = new THREE.MeshBasicMaterial({ color: 0xffe08a, transparent: true });
 const MAX_DEBRIS = 300;
+// What a bullet leaves on each kind of surface (dust colour and size, a scuff on the wall, chips, sparks)
+const decalOf = (color, opacity = 1) => new THREE.MeshBasicMaterial({ color, transparent: opacity < 1, opacity, polygonOffset: true, polygonOffsetFactor: -2 });
+const IMPACT = {
+  wood: { decal: decalOf(0x2a1c10), size: 0.06, dust: 0xb08a5a, puff: 0.07, chips: 3, chipColor: 0x9a6a38, sparks: 0 },
+  metal: { decal: decalOf(0x33363a), size: 0.05, dust: 0x9aa0a8, puff: 0.04, chips: 0, chipColor: 0, sparks: 5 },
+  concrete: { decal: decalOf(0x1a1a1a), size: 0.07, dust: 0xb8b4aa, puff: 0.09, chips: 2, chipColor: 0x8c8a84, sparks: 0 },
+  glass: { decal: decalOf(0xdff4ff, 0.8), size: 0.12, dust: 0xe8f6ff, puff: 0.05, chips: 4, chipColor: 0xbfe4f5, sparks: 0 },
+};
 
 export class Effects {
   constructor(scene) {
@@ -34,15 +41,37 @@ export class Effects {
     this.add(mesh, TRACER_LIFE, 'tracer');
   }
 
-  bulletHole(point, normal, panelId = null) {
-    const mesh = new THREE.Mesh(unitBox, decalMat);
+  /**
+   * A bullet hit a wall: the hole, and what flies off depends on what it hit (surfaceOf() in shared/gunConfig.js):
+   * wood throws splinters and tan dust, metal sparks and a dark scuff, concrete grey dust and chips, glass shards.
+   */
+  bulletHole(point, normal, panelId = null, surface = 'concrete') {
+    const look = IMPACT[surface] || IMPACT.concrete;
+    const mesh = new THREE.Mesh(unitBox, look.decal);
     mesh.userData.panelId = panelId;
-    mesh.scale.set(normal[0] ? 0.01 : 0.07, normal[1] ? 0.01 : 0.07, normal[2] ? 0.01 : 0.07);
+    const w = look.size;
+    mesh.scale.set(normal[0] ? 0.01 : w, normal[1] ? 0.01 : w, normal[2] ? 0.01 : w);
     mesh.position.set(point[0] + normal[0] * 0.006, point[1] + normal[1] * 0.006, point[2] + normal[2] * 0.006);
     this.scene.add(mesh);
     this.decals.push(mesh);
     if (this.decals.length > MAX_DECALS) this.scene.remove(this.decals.shift());
-    this.puff(point, 0xcfc6b0, 0.06);
+    this.puff(point, look.dust, look.puff);
+    const away = [-normal[0], -normal[1], -normal[2]];
+    if (look.chips) this.debris(point, look.chipColor, look.chips, away);
+    if (look.sparks) this.sparks(point, look.sparks, false);
+  }
+
+  /** A shell casing thrown out of a gun at `from`, to the `right` of the shooter (a short arc, then gone). */
+  casing(from, right, kind = 'rifle') {
+    if (kind === 'none' || this.debrisCount >= MAX_DEBRIS) return;
+    const shell = kind === 'shell', big = kind === 'rifle';
+    const mesh = new THREE.Mesh(unitBox, new THREE.MeshStandardMaterial({ color: shell ? 0xb02a22 : 0xd9a441, roughness: 0.4, metalness: 0.7, transparent: true }));
+    mesh.scale.set(shell ? 0.02 : 0.012, shell ? 0.02 : 0.012, shell ? 0.05 : big ? 0.045 : 0.03);
+    mesh.position.set(...from);
+    const vel = new THREE.Vector3(right[0] * (1.6 + Math.random()), 1.4 + Math.random(), right[2] * (1.6 + Math.random()));
+    this.debrisCount++;
+    this.scene.add(mesh);
+    this.live.push({ mesh, life: 0.8, maxLife: 0.8, kind: 'debris', vel });
   }
 
   puff(point, color, size) {
@@ -93,7 +122,7 @@ export class Effects {
   }
 
   /** A burst of bright sparks that fall and fade (a gadget hit by a bullet), with a short flash of light. */
-  sparks(center, count = 8) {
+  sparks(center, count = 8, light = true) {
     for (let i = 0; i < count && this.debrisCount < MAX_DEBRIS; i++) {
       const mesh = new THREE.Mesh(unitBox, sparkMat.clone());
       mesh.material.color.setHex(Math.random() < 0.4 ? 0xffffff : Math.random() < 0.5 ? 0xffc23a : 0x8fd8ff);
@@ -105,10 +134,11 @@ export class Effects {
       this.scene.add(mesh);
       this.live.push({ mesh, life: SPARK_LIFE * (0.5 + Math.random() * 0.5), maxLife: SPARK_LIFE, kind: 'spark', vel });
     }
-    const light = new THREE.PointLight(0x9fd8ff, 30, 4, 1.5);
-    light.position.set(...center);
-    this.scene.add(light);
-    this.live.push({ mesh: light, life: 0.12, maxLife: 0.12, kind: 'light' });
+    if (!light) return;     // (bullet impacts: no point light, they come too fast)
+    const lamp = new THREE.PointLight(0x9fd8ff, 30, 4, 1.5);
+    lamp.position.set(...center);
+    this.scene.add(lamp);
+    this.live.push({ mesh: lamp, life: 0.12, maxLife: 0.12, kind: 'light' });
   }
 
   /**

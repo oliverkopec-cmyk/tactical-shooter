@@ -2,7 +2,16 @@
 
 A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite on the client, Node.js + Socket.IO on an authoritative server. One Node process serves both the game client and the realtime server, so the whole thing deploys as a single Render web service.
 
-## Status: Stage 2F (bug fixes and quick changes)
+## Status: Stage 2G (gun feel, recoil and sound)
+
+All the tuning lives in one file, **`shared/gunConfig.js`**: every gun has an entry with its `type` (rifle, smg, machinePistol, lmg, shotgun, dmr, pistol, revolver, which supplies the defaults from `GUN_TYPES`) and optional `recoil` / `sound` overrides. The comments at the top of the file explain every number. `recoilPitch` / `recoilYaw` are gone from `shared/weapons.js`.
+
+- **Recoil patterns** (`kickView` in `client/src/player.js`): each shot adds a climb that builds up over the first shots (`ramp`), a sideways drift you can learn (`sway`) plus randomness, smaller while aiming or crouched, and the pattern restarts after a pause (`resetS`). Rifles climb steadily, SMGs and machine pistols jitter fast, the LMG climbs and keeps climbing, the shotgun and revolver have one big kick, pistols snap up and reset quickly. Overall about 3-4x stronger than before because the view now recovers much more slowly while the trigger is held (`recoverFiring`). The bullets follow the view, so pulling the mouse down cancels it. A shot's kick is applied over a few frames, not in one jump, and recovers smoothly.
+- **Gun and camera:** the gun model is thrown back, twists a little and returns at its own speed; a small camera shake per shot (visual only); a bigger muzzle flash with a white core and spike (size per gun); shell casings fly out of the gun in first person (and out of other players' guns near you): brass for rifles and pistols, red for shotgun shells, none for revolvers.
+- **Impacts** (`surfaceOf` in `shared/gunConfig.js`): wood and plaster walls splinter with tan dust, metal (cars, barrels, rails, armour) sparks and gets a dark scuff, concrete throws grey dust and chips, glass leaves a pale crack and shards. Each also makes a short sound.
+- **Sounds** (`client/src/audio.js`, all synthesised): a shot is a sharp crack + the body of the bang + a low thump, with its own character per gun type. Up close the crack dominates; further away it fades, the echo takes over and the sound arrives a little late (distance / speed of sound). Two made-up rooms give the echo: short and boomy indoors, long and thin outdoors. Indoors (checked with the map's building boundary) everything is duller, and more so when a wall is between you and the shooter. Also: dry click on an empty gun, bolt (DMR), pump (shotguns) and hammer (revolvers) sounds after a shot, and reload sequences per type (magazine, SMG, shell by shell, LMG belt box, revolver).
+
+### Earlier: Stage 2F (bug fixes and quick changes)
 
 - **Bots on rappel:** if the window a bot is heading for gets blocked (an armour panel goes on it) or it hangs at the window for 3.5 s without getting in, it picks another window on the same rope, else goes up and in through a roof hatch. If a rope has nothing usable it tries another rope or walks.
 - **Stuck check (all bots):** a bot that is trying to move but makes no progress (under 1.2 m) for 5 s drops its plan and chooses a new one: lets go of a rope, switches between walking and rappelling, picks another angle to hold, and walks to a nearby spot first (`watchProgress` / `replan` in `server/bots.js`).
@@ -341,13 +350,6 @@ Six new operators, bought with Money in the Operators tab (the original eight an
 ## Planned: later stages
 
 Written down so they aren't forgotten (see Status for what is built). They are built one at a time, one PR each, and the next one starts once the previous is confirmed. Server memory must stay low enough for Render's 512 MB plan.
-
-### Stage 2G - Gun feel, recoil and sound
-- Every gun gets its own recoil pattern: vertical climb, horizontal kick and randomness that suit its type (LMG climbs steadily, SMG jitters fast, shotgun one big kick, pistol snaps up and resets). Overall recoil noticeably stronger than now and controllable by pulling the mouse down.
-- Recoil moves the gun model and the camera, then recovers smoothly.
-- Muzzle flash, shell casings, small camera shake, gun kick-back, impact effects on different surfaces (wood, metal, concrete, glass).
-- Better sounds: each gun type sounds different, a sharp close sound and an echoey distant one; indoors more muffled than outdoors; reload, empty-click and bolt sounds. Generated in code or layered synthesised samples, no copied audio.
-- All recoil and sound settings per gun in the gun config file.
 
 ### Stage 2H - First-person hands
 - The player's arms and gloved hands holding the gun in first person: one hand on the grip with a finger by the trigger, the other on the front of the gun. Pistols are held with both hands.

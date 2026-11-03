@@ -6,6 +6,7 @@ import { WEAPONS } from '../../shared/weapons.js';
 import { FEEL } from '../../shared/constants.js';
 import { makeGunModel, animateGun } from './gunModels.js';
 import { attachCharm } from './charmModels.js';
+import { gunTuning } from '../../shared/gunConfig.js';
 
 const REST = new THREE.Vector3(0.2, -0.2, -0.42);
 const ADS_Z = -0.4;     // aiming: the gun comes to the middle with its sights on the line of sight, this far ahead
@@ -24,13 +25,20 @@ const SIDEARM_IN = 0.12;   // with the shield at its side, the pistol is held th
 
 export { makeGunModel, animateGun };
 
+const casingGeo = new THREE.BoxGeometry(1, 1, 1);
+
 function makeFlash() {
-  const mat = new THREE.MeshBasicMaterial({ color: 0xffd27a, transparent: true, opacity: 0.95, depthWrite: false });
+  const mat = new THREE.MeshBasicMaterial({ color: 0xffd27a, transparent: true, opacity: 0.95, depthWrite: false, side: THREE.DoubleSide });
+  const hot = new THREE.MeshBasicMaterial({ color: 0xfff6d8, transparent: true, opacity: 0.95, depthWrite: false, side: THREE.DoubleSide });
   const flash = new THREE.Group();
   const a = new THREE.Mesh(new THREE.PlaneGeometry(0.16, 0.16), mat);
   const b = a.clone(); b.rotation.y = Math.PI / 2;
   const c = new THREE.Mesh(new THREE.PlaneGeometry(0.12, 0.12), mat); c.rotation.x = Math.PI / 2;
-  flash.add(a, b, c);
+  // A white-hot core and a long spike forward, so it reads as a burst from the barrel
+  const core = new THREE.Mesh(new THREE.PlaneGeometry(0.07, 0.07), hot); core.position.z = -0.01;
+  const spike = new THREE.Mesh(new THREE.PlaneGeometry(0.05, 0.3), mat); spike.rotation.x = Math.PI / 2; spike.position.z = -0.12;
+  const spike2 = spike.clone(); spike2.rotation.z = Math.PI / 2;
+  flash.add(a, b, c, core, spike, spike2);
   flash.visible = false;
   return flash;
 }
@@ -88,6 +96,9 @@ export class ViewModel {
     this.weaponKey = null;
     this.gun = null;
     this.kick = 0;
+    this.kickDecay = 9;
+    this.kickX = 0; this.kickRoll = 0;     // a little random sideways throw and twist per shot
+    this.casings = [];                    // shell casings flying out of the gun
     this.raise = 0;
     this.swingT = 0;
     this.flashTime = 0;
@@ -137,12 +148,30 @@ export class ViewModel {
     this.camera.updateProjectionMatrix();
   }
 
+  /** A shot: the gun is thrown back and up by its own kick (shared/gunConfig.js), the flash bursts, a casing flies out. */
   fire(weaponId) {
-    const recoil = WEAPONS[weaponId]?.recoilPitch ?? 0.012;
-    this.kick = Math.min(1.5, this.kick + Math.max(0.35, recoil * 40));
-    this.flashTime = 0.045;
+    const { recoil: rc } = gunTuning(weaponId);
+    this.kick = Math.min(2.6, this.kick + 0.5 * rc.kick);
+    this.kickDecay = rc.kickDecay;
+    this.kickX = (Math.random() - 0.5) * 0.5 * rc.kick;
+    this.kickRoll = (Math.random() - 0.5) * 0.7 * rc.kick;
+    this.flashTime = 0.05;
     this.flash.rotation.z = Math.random() * Math.PI;
-    this.gun?.userData.charm?.push((Math.random() - 0.5) * 0.8, 2.2);   // recoil flicks the charm
+    this.flash.scale.setScalar(rc.flash * (0.85 + Math.random() * 0.3));
+    this.gun?.userData.charm?.push((Math.random() - 0.5) * 0.8, 2.2 * rc.kick);   // recoil flicks the charm
+    this.eject(rc.casing);
+  }
+
+  /** Throw a casing out of the right side of the gun (in the holder's space, so it moves with the view model). */
+  eject(kind) {
+    if (!this.gun || kind === 'none' || this.casings.length > 14) return;
+    const shell = kind === 'shell', m = this.gun.userData.muzzle.position;
+    const mesh = new THREE.Mesh(casingGeo, new THREE.MeshStandardMaterial({ color: shell ? 0xb02a22 : 0xd9a441, roughness: 0.35, metalness: 0.8 }));
+    mesh.scale.set(shell ? 0.016 : 0.01, shell ? 0.016 : 0.01, shell ? 0.04 : kind === 'rifle' ? 0.034 : 0.022);
+    const at = this.gun.position;
+    mesh.position.set(at.x + 0.03, at.y + 0.04, at.z + Math.min(-0.08, m.z * 0.35));
+    this.holder.add(mesh);
+    this.casings.push({ mesh, vel: new THREE.Vector3(0.9 + Math.random() * 0.6, 0.9 + Math.random() * 0.5, 0.25 + Math.random() * 0.4), spin: new THREE.Vector3(Math.random() * 20, Math.random() * 20, Math.random() * 20), life: 0.7 });
   }
 
   /** Melee strike: the gun is thrust forward and across. */
@@ -157,7 +186,16 @@ export class ViewModel {
   update(dt, ctx) {
     const ads = ctx.ads || 0, hip = 1 - ads * ads * (3 - 2 * ads);   // eased: 1 at the hip, 0 fully aimed
     this.hidden = !!ctx.hidden;                                       // looking through a scope: no gun in view
-    this.kick = Math.max(0, this.kick - dt * 9);
+    this.kick = Math.max(0, this.kick - dt * this.kickDecay * Math.max(0.4, this.kick));
+    this.kickX *= Math.exp(-dt * 14); this.kickRoll *= Math.exp(-dt * 12);
+    for (let i = this.casings.length - 1; i >= 0; i--) {
+      const c = this.casings[i];
+      c.life -= dt;
+      c.vel.y -= 4.5 * dt;
+      c.mesh.position.addScaledVector(c.vel, dt * 0.6);
+      c.mesh.rotation.x += c.spin.x * dt; c.mesh.rotation.y += c.spin.y * dt; c.mesh.rotation.z += c.spin.z * dt;
+      if (c.life <= 0) { this.holder.remove(c.mesh); c.mesh.material.dispose(); this.casings.splice(i, 1); }
+    }
     this.raise = Math.max(0, this.raise - dt * 4.5);
     this.flashTime -= dt;
     this.flash.visible = this.flashTime > 0;
@@ -202,6 +240,7 @@ export class ViewModel {
       REST.y * hip + aimY * (1 - hip) - bobY - dip - sprint * 0.04 + this.sway.y * 0.25,
       REST.z * hip + ADS_Z * (1 - hip) + this.kick * (0.03 + 0.03 * hip),
     );
+    this.holder.position.x += this.kickX * 0.02;
     let swing = 0;
     if (this.swingT > 0) {
       this.swingT += dt / 0.3;
@@ -211,8 +250,8 @@ export class ViewModel {
     this.holder.position.x -= 0.18 * swing;
     this.holder.rotation.set(
       this.kick * (0.04 + 0.05 * hip) - tilt * 0.3 - swing * 0.25 + this.sway.y,
-      sprint * 0.6 + swing * 0.7 - this.sway.x,
-      tilt + ctx.lean * 0.2 * hip + sprint * 0.25 + swing * 0.5 + this.sway.x * 0.6,
+      sprint * 0.6 + swing * 0.7 - this.sway.x + this.kickX * 0.03,
+      tilt + ctx.lean * 0.2 * hip + sprint * 0.25 + swing * 0.5 + this.sway.x * 0.6 + this.kickRoll * 0.04,
     );
     const fov = VM_FOV - 14 * (1 - hip);
     if (Math.abs(this.camera.fov - fov) > 0.01) { this.camera.fov = fov; this.camera.updateProjectionMatrix(); }
