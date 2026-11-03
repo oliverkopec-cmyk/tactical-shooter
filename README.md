@@ -2,7 +2,26 @@
 
 A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite on the client, Node.js + Socket.IO on an authoritative server. One Node process serves both the game client and the realtime server, so the whole thing deploys as a single Render web service.
 
-## Status: Stage 2I (tester role, chat, reports and the owner's inboxes)
+## Status: Stage 2J (graphics settings and update notes)
+
+**Graphics** (Settings, `client/src/graphics.js`): a preset, **Low, Medium, High, Ultra**, or **Auto** (Low on weak computers: little memory, 2 or fewer cores or a phone; High otherwise), plus separate options. Changing one option switches the preset to **Custom**, starting from what was in use. Everything is saved with the account's settings.
+
+| Option | Low | Medium | High | Ultra |
+|---|---|---|---|---|
+| Shadows | off | 1024 map, hard edges | 2048 map, soft | 2048 map, soft |
+| Resolution | 75% | 100% | up to 150% | up to 200% |
+| Effects | few bullet holes and chips, no smoke or casings, no muzzle light | 90 holes, smoke and casings | everything | everything |
+| View distance | short (110 m, fog 35-85) | medium (180 m) | long (300 m) | long |
+| Anti-aliasing | off | off | on | on |
+
+Resolution never goes above the screen's own pixel ratio (a 200% choice on a normal screen is 100%). The **FPS counter** (also shows ping and unacked inputs) can be shown or hidden. **Anti-aliasing is chosen when the page loads**, so changing it shows a "Reload now" button. Everything else applies at once, in the menu's rooftop scene and in matches (`Game.applyGraphics()`); the table's numbers are in `PRESETS`, `DISTANCES`, `SHADOWS` and `EFFECT_LEVELS` in `graphics.js`.
+
+**What's new.** `CHANGELOG.md` in the repo root is bundled into the game when it is built (`client/src/whatsNew.js`). Each entry is `## <id> · <date> · <title>` followed by `- plain English bullets`. The first time an account logs in after an update, a pop-up shows the entries it hasn't seen (up to 5, or just the newest if it never saw any); closing it saves the newest id on the account (the `lastSeenUpdate` setting, so it follows the account to other devices). **What's new** in the top bar reopens the latest entries any time.
+
+### Changelog: every merged pull request adds an entry
+Add an entry at the top of `CHANGELOG.md` in the same pull request (plain English, written for players, a new unique id like `2K`). It reaches players when the pull request is merged and deployed, because the file is built into the page.
+
+### Earlier: Stage 2I (tester role, chat, reports and the owner's inboxes)
 
 **Tester role.** Set the environment variable `TESTER_USERNAMES` (comma-separated, for example `max, Anna`):
 - **On Render:** open the `breachline` service, then **Environment**, then **Add Environment Variable**, name `TESTER_USERNAMES`, value `max` (more names separated by commas), Save. Render redeploys. The account has to exist (it has, for `max`); names aren't case sensitive.
@@ -394,10 +413,6 @@ Six new operators, bought with Money in the Operators tab (the original eight an
 
 Written down so they aren't forgotten (see Status for what is built). They are built one at a time, one PR each, and the next one starts once the previous is confirmed. Server memory must stay low enough for Render's 512 MB plan.
 
-### Stage 2J - Settings and update notes
-- Graphics settings: presets (Low, Medium, High, Ultra) plus separate shadows, render resolution, effects/particles, view distance and anti-aliasing, and an FPS counter option. Low runs smoothly on weak laptops.
-- "What's new": a `CHANGELOG` file in the repo with a plain-English entry for every merged PR; the first login after an update shows a popup with that update's changes, reopenable from the menu.
-
 ### Stage 2K - Shop redesign
 - Per-gun skin crates removed (owned skins stay owned). One combined crate with every crate skin and charm for every gun, odds and contents shown before buying, duplicate refund stays.
 - Daily shop: a pool of 50 new original skins; every day at the same time 6 are picked at random for 24 hours with a countdown. Roughly Rare 3000, Epic 5000, Legendary 8000 Money. Some daily items are skin packs: one skin applied to 5 randomly chosen guns each time the pack appears.
@@ -505,6 +520,8 @@ client/
   src/chat.js      in-match chat box (Y / U), messages fade after a few seconds
   src/moderation.js  report dialog and the warning pop-up
   src/modAdmin.js  the owner's inboxes: reports, suspended and banned, chat
+  src/graphics.js  graphics presets and options (what Low / Medium / High / Ultra mean)
+  src/whatsNew.js  the changelog pop-up (reads ../CHANGELOG.md)
   src/hands.js     first-person arms and gloved hands: grips per gun, reload/throw/place poses
   src/recoil.js    your recoil: aim climb and pattern, camera punch and shake
   src/effects.js   tracers, bullet holes per surface, impact particles, casings, muzzle smoke

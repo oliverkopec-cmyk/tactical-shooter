@@ -40,7 +40,7 @@ import { OPERATORS } from '../../shared/operators.js';
 import { TEAM_COLORS } from '../../shared/constants.js';
 import { UTILITIES } from '../../shared/utilities.js';
 import { settings, onSettingsChange } from './settings.js';
-import { lowGraphics } from './graphics.js';
+import { quality, pixelRatioFor, PRESETS, DISTANCES, SHADOWS, EFFECT_LEVELS } from './graphics.js';
 import { DRONE } from '../../shared/drone.js';
 import { actionFor, mouseCode, keyFor } from './controls.js';
 
@@ -53,11 +53,9 @@ export class Game {
     this.network = network;
     this.ui = ui;
 
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-    // Low graphics: render at 1x resolution and without shadows
-    this.renderer.setPixelRatio(lowGraphics() ? 1 : Math.min(window.devicePixelRatio, 2));
-    this.renderer.shadowMap.enabled = !lowGraphics();
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // Anti-aliasing is chosen when the renderer is made, so changing it needs a page reload (the menu says so)
+    this.startAA = quality().aa === 'on';
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: this.startAA });
 
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(settings.fov, 1, 0.05, 300);
@@ -70,6 +68,7 @@ export class Game {
     this.muzzleLight.position.copy(TRACER_OFFSET);
     this.camera.add(this.muzzleLight);
     this.effects = new Effects(this.scene);
+    this.applyGraphics();
     this.audio = new Audio(settings.volume);
     this.sound = new Soundscape(this);
     this.drones = new DroneView(this.scene, this.effects, this.audio);
@@ -145,12 +144,7 @@ export class Game {
     onSettingsChange((name, v) => {
       if (name === 'fov') { this.camera.fov = v; this.camera.updateProjectionMatrix(); }
       if (name === 'volume') this.audio.setVolume(v);
-      if (name === 'graphics') {
-        this.renderer.setPixelRatio(lowGraphics() ? 1 : Math.min(window.devicePixelRatio, 2));
-        this.renderer.shadowMap.enabled = !lowGraphics();
-        this.scene.traverse((o) => { if (o.material) o.material.needsUpdate = true; });
-        this.resize?.();
-      }
+      if (name === 'graphics' || name === 'showFps' || /^g[A-Z]/.test(name)) this.applyGraphics();
     });
     this.stats = {};
     this.runout = { left: null, detected: false };   // the defenders' run-out countdown
@@ -348,6 +342,33 @@ export class Game {
       const p = this.canvas.requestPointerLock();
       p?.catch?.((err) => { if (err?.name !== 'SecurityError') this.lockFailed = true; });
     } catch { this.lockFailed = true; }
+  }
+
+  /**
+   * Apply the graphics options in use (quality() in graphics.js): render resolution, shadows (off, 1024 or 2048
+   * maps), view distance (camera range and fog), and how many bullet holes, chips, smoke and casings there may be.
+   */
+  applyGraphics() {
+    const q = quality(), r = this.renderer;
+    r.setPixelRatio(pixelRatioFor(q.resolution));
+    const on = q.shadows !== 'off', size = SHADOWS[q.shadows]?.size || 0, type = q.shadows === 'low' ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
+    const rebuild = r.shadowMap.enabled !== on || (on && r.shadowMap.type !== type);
+    r.shadowMap.enabled = on;
+    this.sun.castShadow = on;
+    if (on) {
+      r.shadowMap.type = type;
+      if (this.sun.shadow.mapSize.x !== size) { this.sun.shadow.mapSize.set(size, size); this.sun.shadow.map?.dispose(); this.sun.shadow.map = null; }
+    }
+    const d = DISTANCES[q.distance];
+    this.camera.far = d.far; this.camera.updateProjectionMatrix();
+    this.scene.fog.near = d.fog[0]; this.scene.fog.far = d.fog[1];
+    const level = EFFECT_LEVELS[q.effects];
+    this.effects.setLevel(level);
+    this.viewModel.casingsOn = level.casings;
+    this.muzzleLight.visible = level.light;
+    if (rebuild) this.scene.traverse((o) => { if (o.material) o.material.needsUpdate = true; });
+    this.ui?.setFpsVisible?.(settings.showFps === 'on');
+    this.resize?.();
   }
 
   resize() {

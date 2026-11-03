@@ -2,7 +2,6 @@
 
 import * as THREE from 'three';
 
-const MAX_DECALS = 150;
 const TRACER_LIFE = 0.07;
 const PUFF_LIFE = 0.25;
 
@@ -12,7 +11,6 @@ const puffGeo = new THREE.SphereGeometry(1, 8, 6);
 const DEBRIS_LIFE = 1.3;
 const SPARK_LIFE = 0.5;
 const sparkMat = new THREE.MeshBasicMaterial({ color: 0xffe08a, transparent: true });
-const MAX_DEBRIS = 300;
 
 // ---- bullet impacts (Stage 2G): a hole drawn in code for each kind of surface, and what flies off it
 
@@ -86,6 +84,15 @@ export class Effects {
     this.live = [];     // { mesh, life, maxLife, kind, vel? }
     this.decals = [];   // meshes; userData.panelId when stuck to a destructible panel
     this.debrisCount = 0;
+    this.maxDecals = 150; this.maxDebris = 300;
+    this.smokeOn = true; this.casingsOn = true;
+  }
+
+  /** The Effects graphics option (EFFECT_LEVELS in graphics.js): fewer bullet holes and chips, and no smoke or casings on Low. */
+  setLevel(level) {
+    this.maxDecals = level.decals; this.maxDebris = level.debris;
+    this.smokeOn = level.smoke; this.casingsOn = level.casings;
+    while (this.decals.length > this.maxDecals) this.scene.remove(this.decals.shift());
   }
 
   tracer(from, to) {
@@ -114,7 +121,7 @@ export class Effects {
     mesh.scale.setScalar(look.size * (0.85 + Math.random() * 0.3));
     this.scene.add(mesh);
     this.decals.push(mesh);
-    if (this.decals.length > MAX_DECALS) this.scene.remove(this.decals.shift());
+    if (this.decals.length > this.maxDecals) this.scene.remove(this.decals.shift());
     const out = [point[0] + normal[0] * 0.05, point[1] + normal[1] * 0.05, point[2] + normal[2] * 0.05];
     this.puff(out, look.dust, look.puff, surface === 'concrete' ? 0.55 : PUFF_LIFE);
     const away = [-normal[0], -normal[1], -normal[2]];
@@ -124,7 +131,7 @@ export class Effects {
 
   /** A shell casing thrown out of a gun at `from`, to the `right` of the shooter (a short tumbling arc, then gone). */
   casing(from, right, kind = 'rifle') {
-    if (kind === 'none' || this.debrisCount >= MAX_DEBRIS) return;
+    if (kind === 'none' || !this.casingsOn || this.debrisCount >= this.maxDebris) return;
     const shell = kind === 'shell';
     const mesh = new THREE.Mesh(casingGeo, shell ? casingMats.shell : casingMats.brass);
     mesh.scale.set(shell ? 0.01 : 0.0055, shell ? 0.01 : 0.0055, shell ? 0.05 : kind === 'rifle' ? 0.036 : 0.02);
@@ -137,7 +144,7 @@ export class Effects {
 
   /** Smoke drifting from a muzzle after shooting: a few soft puffs that rise, spread and fade. */
   muzzleSmoke(pos, amount = 1) {
-    if (amount <= 0 || Math.random() > 0.35 * amount + 0.1) return;
+    if (!this.smokeOn || amount <= 0 || Math.random() > 0.35 * amount + 0.1) return;
     smokeTex ||= smokeTexture();
     const mat = new THREE.SpriteMaterial({ map: smokeTex, color: 0xb8b8b8, transparent: true, opacity: 0.22 * Math.min(1.5, amount), depthWrite: false });
     const s = new THREE.Sprite(mat);
@@ -178,7 +185,7 @@ export class Effects {
 
   /** Chunks flying off a broken panel. `push` biases them along a direction. */
   debris(center, color, count = 4, push = null, shape = 'chunk') {
-    for (let i = 0; i < count && this.debrisCount < MAX_DEBRIS; i++) {
+    for (let i = 0; i < count && this.debrisCount < this.maxDebris; i++) {
       const small = shape !== 'chunk', s = small ? 0.012 + Math.random() * 0.02 : 0.06 + Math.random() * 0.12;
       const mesh = new THREE.Mesh(unitBox, new THREE.MeshStandardMaterial({ color, roughness: shape === 'shard' ? 0.1 : 0.9, metalness: shape === 'shard' ? 0.6 : 0, transparent: true, opacity: shape === 'shard' ? 0.7 : 1 }));
       if (shape === 'splinter') mesh.scale.set(s * 0.4, s * 0.4, s * 3.5);           // long thin wood splinters
@@ -200,7 +207,7 @@ export class Effects {
 
   /** A burst of bright sparks that fall and fade (a gadget hit by a bullet), with a short flash of light. */
   sparks(center, count = 8, light = true) {
-    for (let i = 0; i < count && this.debrisCount < MAX_DEBRIS; i++) {
+    for (let i = 0; i < count && this.debrisCount < this.maxDebris; i++) {
       const mesh = new THREE.Mesh(unitBox, sparkMat.clone());
       mesh.material.color.setHex(Math.random() < 0.4 ? 0xffffff : Math.random() < 0.5 ? 0xffc23a : 0x8fd8ff);
       mesh.scale.set(0.012, 0.012, 0.05 + Math.random() * 0.05);

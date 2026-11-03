@@ -10,6 +10,7 @@ import { Social } from './social.js';
 import { AdminPanel } from './admin.js';
 import { ModPanel } from './modAdmin.js';
 import { ReportDialog, WarningPopup } from './moderation.js';
+import { WhatsNew } from './whatsNew.js';
 import * as THREE from 'three';
 import { makeGunModel, animateGun } from './gunModels.js';
 import { sheet } from './gunSheet.js';
@@ -42,6 +43,7 @@ const admin = new AdminPanel({ network, onPreviewSkin: (skin) => menu.previewSki
 const modPanel = new ModPanel({ network });
 new ReportDialog({ network });
 const warnings = new WarningPopup({ network });
+const whatsNew = new WhatsNew();
 const social = new Social({ network, getAccount: () => account, onCreateRoom: () => createRoom() });
 const menu = new Menu({
   getAccount: () => account, setAccount, onSettings: () => ui.openSettings(false),
@@ -54,6 +56,7 @@ syncSettingsToAccount(() => !!account);
 function enterAccount(profile) {
   applyAccountSettings(profile.settings);
   setAccount(profile);
+  setTimeout(() => whatsNew.showIfNew(), 600);   // the first login after an update shows what changed
   ui.homeError('');
   ui.show('home');
   network.connect();
