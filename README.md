@@ -13,6 +13,15 @@ A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite o
 
 Stage names: the original numbered stages ran 1-27 and the first lettered batch A-F, so this next batch is called 2F-2L to avoid clashing with Stage F below.
 
+### Earlier: Stage 27 (placing gadgets takes time)
+
+Everything that is put down now takes time: hold its key while a circle in the middle of the screen fills clockwise, with the item's name under it; when it's full the item is placed. Letting go, getting hit, sprinting or switching weapons stops it and nothing is used up; you can walk slowly meanwhile but can't shoot. The server times every placement (`server/placing.js`), so it can't be skipped.
+
+- **Times** (`PLACE` in `shared/placing.js`): claymore, camera, barbed wire, deployable shield, barricade, shock trap, healing field, alarm sensor and interceptor 1 s; jammer, breach charge, heavy breach charge, shock wire and armour panel 1.5 s; reinforcing a wall or hatch keeps its 1.2 s. Detonating a charge, picking a shield back up and throwing grenades stay instant.
+- **Ghost:** while the key is held, a see-through copy shows where it will go (a box on the floor or wall, the whole doorway for a barricade or armour panel, the wall section for a reinforcement), white if the spot is valid and red if it isn't (`client/src/placeGhost.js`, using the same check the server makes when placing starts). An invalid spot is refused at once with the reason.
+- **Animation:** in first person the gun drops away and your hands lower a small case into place, kneeling (the view drops) for floor items and reaching forward for wall items. Everyone else sees your character kneel or reach out with it (`pl` in snapshots), and hears a short rustle when you start.
+- Bots place things the same way (they keep the key "held" until it's done).
+
 ### Earlier: Stage F (round flow and operator selection)
 
 Every round now runs **location (10 s) → loadout (15 s) → prep (30 s) → action**, with the step's name and timer at the top of each screen (`client/src/preRound.js`; the server's `RoundManager` keeps both steps inside the intro phase as `step`).
@@ -409,6 +418,7 @@ shared/            Code used by BOTH client and server
   world.js         destructible wall panels/sections + the collidable world
   drone.js         drone physics (shared prediction + authority) and tuning
   operators.js     OPERATOR CONFIG: one entry per operator (shared by client and server)
+  placing.js       PLACING TIMES: how long each gadget takes to place, and the spot check the ghost uses
   rules.js         which inputs are allowed in each round phase, objective zone test
   account.js       username/password rules, which operators an account owns
   settings.js      setting defaults and limits (the server cleans saved settings with these)
@@ -428,6 +438,7 @@ server/
   roles.js         owner and admin lookup from the environment variables
   admin.js         the admin tools: online list, matches, join as spectator or player
   gifts.js         announcements, sending gifts, the gift list and claiming (one claim per account)
+  placing.js       times every placement; cancels it on letting go, a hit, sprinting or a weapon switch
   db.js            Postgres connection (DATABASE_URL) or local PGlite fallback, table setup
   accounts.js      sign-up/log-in API, session cookies, socket login check
   profile.js       what an account's profile looks like to its owner
@@ -453,6 +464,7 @@ client/
   src/preRound.js  the location and loadout screens before each round (and the attackers' prep loadout)
   src/topMap.js    the top-down map plan on the location screen
   src/opPreview.js the turning 3D operator on the loadout screen
+  src/placeGhost.js the see-through preview of what you're placing
   src/player.js    local player: input, prediction, reconciliation, camera
   src/avatars.js   other players: bodies, guns, name tags, interpolation
   src/weapons.js   first-person gun models, recoil/reload animation

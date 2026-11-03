@@ -17,6 +17,7 @@ import { raycastWorld, rayBox, rayPlayer } from '../shared/raycast.js';
 import { droneEye } from '../shared/drone.js';
 import { UTILITIES, UTIL_STATS, ABILITY_STATS, claymoreLines } from '../shared/utilities.js';
 import { barricadePlanks, sectionSegments, sectionAt, BARRICADE_COLS, armorBox } from '../shared/barricade.js';
+import { PLACE, PLACE_SLOW } from '../shared/placing.js';
 
 const r2 = (v) => Math.round(v * 100) / 100;
 
@@ -48,12 +49,10 @@ export class Gadgets {
     this.heals = new Map();            // Tonic: id -> { id, owner, team, pos, until }
     this.sensors = new Map();          // Picket: id -> { id, owner, team, pos, dir, seen }
     this.barricades = new Map();       // id -> { id, openingId, hits, planks: [{ i, min, max, hp, alive }] }
-    this.barricading = new Map();      // playerId -> { openingId, doneAt, x, z }
     this.barricadesLeft = BARRICADE.pool;
     // Stage E
     this.batteries = new Map();        // Current: id -> { id, owner, team, pos, dir, sectionId, armorId, panelId, box, nextPulse }
     this.armors = new Map();           // Rampart: id -> { id, openingId, owner, hits, hammer, box }
-    this.armoring = new Map();         // playerId -> { openingId, doneAt, x, z }
     this.interceptors = new Map();     // Interceptor: id -> { id, owner, team, pos, dir, catches }
     this.volleys = new Map();          // Flint: id -> { id, owner, pos, normal, panelId, barricadeId, armorId }
     this.placeStartBarricades();       // windows and outside doors start the round barricaded
@@ -112,8 +111,36 @@ export class Gadgets {
     if (phase !== PHASE.PREP && phase !== PHASE.ACTION) return this.error(id, 'Abilities work once the round is under way.');
     if (p.spawned === false && ab.id !== 'shockDrone') return this.error(id, 'Your operator is not on the field yet.');   // Wasp zaps from her drone
     if (p.camView >= 0) return;
+    if (this.placeAbility(id, p, ab)) return;
     ABILITIES[ab.id]?.(this, id, p, ab);
     this.game.sendLoadout(id, p);
+  }
+
+  /**
+   * Stage 27: an ability that puts something down takes time. Starts placing it and returns true, or
+   * returns false to use the ability at once (nothing to place, none left, or picking a shield back up).
+   * Breach charges and Mason's reinforcements time themselves (destruction.js).
+   */
+  placeAbility(id, p, ab) {
+    if (!PLACE[ab.id] || ab.id === 'heavyBreach' || ab.id === 'masonReinforce') return false;
+    if (p.ability.charges <= 0 || (ab.id === 'shield' && p.ability.shieldId)) return false;
+    if (this.game.placing.isPlacing(id)) return true;
+    const sig = () => `${p.ability.charges}|${p.ability.shieldId}`;
+    // Rampart's armour panel picks its opening now and fits it there
+    const pre = ab.id === 'armorPanel' ? ABILITIES.armorPanel(this, id, p, ab) : null;
+    if (ab.id === 'armorPanel' && !pre) return true;
+    this.game.placing.start(id, p, ab.id, {
+      action: 'ability', target: pre?.target ?? null, check: pre?.check,
+      finish: (rec) => {
+        const before = sig();
+        ABILITIES[ab.id](this, id, p, ab, rec);
+        this.game.sendLoadout(id, p);
+        if (sig() === before) return false;
+        this.game.voice(id, p, 'ability');
+        return true;
+      },
+    });
+    return true;
   }
 
   // ---------------------------------------------------------------- per-tick
@@ -125,14 +152,13 @@ export class Gadgets {
     this.updateShocks(now);
     this.updateHeals(dt, now);
     this.checkSensors(now);
-    this.updateBarricading(now);
-    this.updateArmoring(now);
     this.updateBatteries(now);
     for (const p of this.game.players.values()) {
       // Medic's overheal drains back to 100
       if (p.alive && p.health > 100) p.health = Math.max(100, p.health - ABILITY_STATS.stim.drain * dt);
       let slow = 1;
       if (p.stunUntil > now) slow = Math.min(slow, STUN.slow);
+      if (p.placing) slow = Math.min(slow, PLACE_SLOW);   // placing something: you walk slowly
       if (p.shockUntil > now) slow = Math.min(slow, ABILITY_STATS.shock.slow);
       if (p.alive) {
         for (const w of this.wires.values()) {
@@ -293,15 +319,28 @@ export class Gadgets {
     const now = Date.now();
     if (now < (p.utilityReadyAt || 0)) return;
     if (u.charges <= 0) return this.error(id, `No ${def.name.toLowerCase()}s left.`);
+    const used = () => {
+      u.charges--;
+      p.stats.utilities++;
+      p.utilityReadyAt = Date.now() + UTIL_STATS.cooldown * 1000;
+      this.game.sendLoadout(id, p);
+    };
     if (def.kind === 'placed') {
-      if (!this.placeClaymore(id, p)) return;
-    } else {
-      this.throwGrenade(p, id, u.id);
+      // Stage 27: a claymore is placed by holding the key while the circle fills
+      if (this.game.placing.isPlacing(id)) return;
+      this.game.placing.start(id, p, u.id, {
+        action: 'utility',
+        finish: () => {
+          if (u.charges <= 0 || !this.placeClaymore(id, p)) return false;
+          used();
+          this.game.voice(id, p, 'utility');
+          return true;
+        },
+      });
+      return;
     }
-    u.charges--;
-    p.stats.utilities++;
-    p.utilityReadyAt = now + UTIL_STATS.cooldown * 1000;
-    this.game.sendLoadout(id, p);
+    this.throwGrenade(p, id, u.id);
+    used();
   }
 
   // ---------------------------------------------------------------- claymores
@@ -489,37 +528,31 @@ export class Gadgets {
     return false;
   }
 
-  /** B: a defender starts nailing planks over the doorway or window they're aiming at. */
+  /** Someone is already placing `kind` on this opening (a barricade or an armour panel). */
+  openingBusy(kind, openingId) {
+    return [...this.game.placing.active.values()].some((r) => r.kind === kind && r.target === openingId);
+  }
+
+  /** B: a defender holds the key to nail planks over the doorway or window they're aiming at (Stage 27: it takes time). */
   startBarricade(id, p) {
     if (!p.alive || p.member.team !== 'defense') return this.error(id, 'Only defenders can barricade.');
     if (this.game.rounds.phase !== PHASE.PREP) return this.error(id, 'Barricades can only be built during the prep phase.');
-    if (this.barricading.has(id)) return;
     if (this.barricadesLeft <= 0) return this.error(id, 'Your team has no barricades left.');
     const eye = getEyePosition(p.state, this.world);
     const o = findOpening(this.game.map, [eye.x, eye.y, eye.z], aimDirection(p.state.yaw, p.state.pitch), BARRICADE.reach);
     if (!o) return this.error(id, 'Aim at a doorway or window within 2.5 m.');
-    if (this.armorAt(o.id)) return this.error(id, 'That opening has an armour panel.');
-    if (this.barricadeAt(o.id) || [...this.barricading.values()].some((b) => b.openingId === o.id)) return this.error(id, 'That opening is already barricaded.');
-    if (this.openingBlocked(o)) return this.error(id, 'Someone is standing in the way.');
-    this.barricading.set(id, { openingId: o.id, doneAt: Date.now() + BARRICADE.channelMs, x: p.state.x, z: p.state.z });
-    this.game.io.to(id).emit('barricadeStart', { ms: BARRICADE.channelMs });
-  }
-
-  cancelBarricade(id, reason) {
-    if (this.barricading.delete(id)) this.game.io.to(id).emit('reinforceCancel', { reason });
-  }
-
-  updateBarricading(now) {
-    for (const [id, b] of this.barricading) {
-      const p = this.game.players.get(id);
-      if (!p || !p.alive || this.game.rounds.phase !== PHASE.PREP) { this.barricading.delete(id); continue; }
-      if (Math.hypot(p.state.x - b.x, p.state.z - b.z) > 0.8) { this.cancelBarricade(id, 'You moved away.'); continue; }
-      if (now < b.doneAt) continue;
-      this.barricading.delete(id);
-      const o = this.game.map.openings[b.openingId];
-      if (this.openingBlocked(o)) { this.game.io.to(id).emit('reinforceCancel', { reason: 'Someone is standing in the way.' }); continue; }
-      this.placeBarricade(o, id);
-    }
+    this.game.placing.start(id, p, 'barricade', {
+      action: 'barricade', target: o.id,
+      check: () => (this.armorAt(o.id) ? 'That opening has an armour panel.'
+        : this.barricadeAt(o.id) || this.openingBusy('barricade', o.id) ? 'That opening is already barricaded.'
+          : this.openingBlocked(o) ? 'Someone is standing in the way.' : null),
+      finish: () => {
+        if (this.barricadesLeft <= 0 || this.barricadeAt(o.id) || this.armorAt(o.id)) return false;
+        if (this.openingBlocked(o)) { this.error(id, 'Someone is standing in the way.'); return false; }
+        this.placeBarricade(o, id);
+        return true;
+      },
+    });
   }
 
   /** Nail a barricade over an opening. `free` ones (the windows at round start) cost no one anything and aren't announced one by one. */
@@ -722,24 +755,6 @@ export class Gadgets {
 
   armorAt(openingId) {
     return [...this.armors.values()].find((a) => a.openingId === openingId);
-  }
-
-  updateArmoring(now) {
-    const phase = this.game.rounds.phase;
-    for (const [id, a] of this.armoring) {
-      const p = this.game.players.get(id);
-      if (!p || !p.alive || (phase !== PHASE.PREP && phase !== PHASE.ACTION)) { this.armoring.delete(id); continue; }
-      if (Math.hypot(p.state.x - a.x, p.state.z - a.z) > 0.8) { this.armoring.delete(id); this.game.io.to(id).emit('reinforceCancel', { reason: 'You moved away.' }); continue; }
-      if (now < a.doneAt) continue;
-      this.armoring.delete(id);
-      const o = this.game.map.openings[a.openingId];
-      if (this.openingBlocked(o)) { this.game.io.to(id).emit('reinforceCancel', { reason: 'Someone is standing in the way.' }); continue; }
-      if (this.armorAt(o.id) || !(p.ability?.charges > 0)) { this.game.io.to(id).emit('reinforceCancel', { reason: '' }); continue; }
-      this.placeArmor(o, id);
-      p.ability.charges--;
-      p.stats.barricades++;
-      this.game.sendLoadout(id, p);
-    }
   }
 
   /** A bulletproof slab over the whole opening; a wooden barricade there is taken down first. */
@@ -1247,17 +1262,23 @@ const ABILITIES = {
   },
 
   /** Rampart (Castle): start fitting an armour panel over the opening in front. */
-  armorPanel(g, id, p) {
+  armorPanel(g, id, p, ab, placed = null) {
     const A = ABILITY_STATS.armor;
     if (p.ability.charges <= 0) return g.error(id, 'No armour panels left.');
-    if (g.armoring.has(id)) return;
+    // Placed (Stage 27): the opening was picked when placing started
+    if (placed) {
+      const o = g.game.map.openings[placed.target];
+      if (g.armorAt(o.id)) return;
+      if (g.openingBlocked(o)) return g.error(id, 'Someone is standing in the way.');
+      g.placeArmor(o, id);
+      p.ability.charges--;
+      p.stats.barricades++;
+      return;
+    }
     const eye = getEyePosition(p.state, g.world);
     const o = findOpening(g.game.map, [eye.x, eye.y, eye.z], aimDirection(p.state.yaw, p.state.pitch), A.reach);
     if (!o) return g.error(id, 'Aim at a doorway or window within 2.5 m.');
-    if (g.armorAt(o.id) || [...g.armoring.values()].some((a) => a.openingId === o.id)) return g.error(id, 'That opening already has an armour panel.');
-    if (g.openingBlocked(o)) return g.error(id, 'Someone is standing in the way.');
-    g.armoring.set(id, { openingId: o.id, doneAt: Date.now() + A.channelMs, x: p.state.x, z: p.state.z });
-    g.game.io.to(id).emit('barricadeStart', { ms: A.channelMs, label: 'Fitting armour panel…' });
+    return { target: o.id, check: () => (g.armorAt(o.id) || g.openingBusy('armorPanel', o.id) ? 'That opening already has an armour panel.' : g.openingBlocked(o) ? 'Someone is standing in the way.' : null) };
   },
 
   /** Medic (Doc): a stim dart for the teammate under the crosshair, or for yourself. */

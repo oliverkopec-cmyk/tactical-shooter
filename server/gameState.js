@@ -30,6 +30,8 @@ import { BotBrains } from './bots.js';
 import { VOICE_LINES, VOICE_COOLDOWN, PING_TYPES, PING } from '../shared/voiceLines.js';
 import { RoundManager } from './rounds.js';
 import { Gadgets } from './abilities.js';
+import { Placing } from './placing.js';
+import { PLACE_SLOW } from '../shared/placing.js';
 
 const TICK_RATE = 60;
 const MAX_QUEUED_INPUTS = 120;
@@ -48,6 +50,7 @@ export class GameState {
     this.defuser = new Defuser(this);
     this.rounds = new RoundManager(this);
     this.gadgets = new Gadgets(this);
+    this.placing = new Placing(this);   // Stage 27: placing things takes time
     this.players = new Map(); // id -> ServerPlayer
     this.history = new PoseHistory();
     this.drones = new Map();   // id -> { id, owner, state, hp, alive }
@@ -141,8 +144,12 @@ export class GameState {
     this.rosterDirty = true;
     for (const d of [...this.drones.values()]) if (d.owner === id) this.drones.delete(d.id);
     this.destruction.removeChargesOf(id);
-    this.destruction.reinforcing.delete(id);
-    this.gadgets.barricading.delete(id);
+    this.placing.active.delete(id);
+  }
+
+  /** A held action's key went up: if it was placing something, that stops (Stage 27). */
+  handleActionEnd(id, type) {
+    this.placing.release(id, String(type));
   }
 
   /** Discrete actions that aren't part of the movement input stream. */
@@ -655,6 +662,7 @@ export class GameState {
 
   /** Put everyone back at their spawn with full health and a fresh map. */
   resetRound() {
+    this.placing.clear();
     this.world.reset();
     this.destruction.reset();
     this.defuser.reset();
@@ -923,6 +931,7 @@ export class GameState {
           if (!drone.jammed) stepDrone(drone.state, { ...input, keys: input.keys & DRONE_KEYS }, input.dt, this.world.droneView);
         } else {
           input.keys = maskKeys(input.keys, p.member.team, phase, p.camView >= 0);
+          if (p.placing) input.keys &= ~KEY.FIRE;   // placing something: hands full, no shooting
           if (input.keys & KEY.INTERACT) p.interactAt = wallNow;
           // Defenders can't leave the building during prep
           const solid = phase === PHASE.PREP && p.member.team === 'defense' ? this.world.barrierView : this.world;
@@ -937,6 +946,7 @@ export class GameState {
       }
     }
 
+    this.placing.update(wallNow);
     this.rounds.update(wallNow, realDt);
     this.updateRunOut(realDt, phase);
     this.gadgets.update(realDt, wallNow);
@@ -1058,6 +1068,7 @@ export class GameState {
     victim.health = Math.max(0, victim.health - dealt);
     if (this.withBots && victim.member.bot) this.bots.onHurt(victimId, attackerId);
     const killed = victim.health === 0;
+    if (!killed) this.placing.cancel(victimId, 'You were hit.');   // getting hurt stops a placement
     this.gadgets.exitCamera(victimId, victim);   // getting shot pulls you out of a camera feed
 
     if (attackerId !== victimId) this.io.to(attackerId).emit('hitConfirm', { victim: victimId, damage: dealt, head, killed });
@@ -1074,8 +1085,7 @@ export class GameState {
     this.rosterDirty = true;
     victim.queue.length = 0;
     this.gadgets.exitCamera(victimId, victim);
-    this.gadgets.cancelBarricade(victimId, 'You were eliminated.');
-    this.destruction.cancelReinforce(victimId, 'You were eliminated.');
+    this.placing.cancel(victimId);
     this.defuser.onGone(victimId, victim);
     this.emitAll('kill', { killer: killerId, victim: victimId, weapon: weaponId, head });
     // Then the victim gets a replay of the last seconds from the killer's eyes (after the kill, so their client knows they died)
@@ -1113,6 +1123,7 @@ export class GameState {
         ad: s.ads > 0 ? Math.round(s.ads * 1000) / 1000 : undefined,   // aiming down sights
         ds: s.dash > 0 ? [round2(s.dash), round2(s.dashX), round2(s.dashZ)] : undefined,   // Aegis's shield charge
         sh: shieldCover(w, s) || undefined,   // what a ballistic shield covers (shown even before the operator is known)
+        pl: p.placing || undefined,   // placing something: 1 kneeling at the floor, 2 reaching forward (Stage 27)
         det: p.detected ? 1 : undefined,
       });
     }

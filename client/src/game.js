@@ -2,7 +2,7 @@
 
 import * as THREE from 'three';
 import {
-  MAX_HEALTH, MAX_SHOT_RANGE, BARRICADE, CHARGE_REACH, REINFORCE_REACH, TEAM_REINFORCEMENTS, PHASE, ROUNDS_TO_WIN, REPICK_CUTOFF_MS,
+  MAX_HEALTH, MAX_SHOT_RANGE, BARRICADE, CHARGE_REACH, REINFORCE_REACH, TEAM_REINFORCEMENTS, PHASE, ROUNDS_TO_WIN, REPICK_CUTOFF_MS, KEY,
 } from '../../shared/constants.js';
 import { maskKeys } from '../../shared/rules.js';
 import { getMap, DEFAULT_MAP_ID } from '../../shared/map.js';
@@ -24,6 +24,8 @@ import { LocalPlayer } from './player.js';
 import { RemotePlayer } from './avatars.js';
 import { ViewModel } from './weapons.js';
 import { PreRound } from './preRound.js';
+import { PlaceGhost } from './placeGhost.js';
+import { PLACE } from '../../shared/placing.js';
 import { sightOf } from './gunModels.js';
 import { Effects } from './effects.js';
 import { Audio } from './audio.js';
@@ -83,7 +85,8 @@ export class Game {
     this.wasSelecting = false;
     this.loadout = { charges: 0, placed: false };
     this.reinforcementsLeft = TEAM_REINFORCEMENTS;
-    this.reinforcing = null; // { start, ms }
+    this.placing = null;     // what the server is timing us placing: { kind, label, ms, start } (Stage 27)
+    this.heldPlace = null;   // what the held key would place (for the ghost before the server answers)
 
     this.local = null;
     this.remotes = new Map();
@@ -199,16 +202,19 @@ export class Game {
       if (!this.running) return;
       this.destruction.reinforce(section);
       this.reinforcementsLeft = left;
-      if (this.reinforcing?.section === section) this.reinforcing = null;
     });
-    network.on('reinforceStart', ({ section, ms }) => { this.reinforcing = { section, start: performance.now(), ms }; });
-    network.on('reinforceCancel', ({ reason }) => {
-      this.reinforcing = null;
+    // Placing takes time (Stage 27): the server starts and ends it
+    network.on('placeStart', ({ kind, label, ms }) => {
+      this.placing = { kind, label, ms, start: performance.now() };
+      this.sound.self('placeStart');
+    });
+    network.on('placeEnd', ({ done, reason }) => {
+      if (this.placing && done) this.placeFlash = { label: this.placing.label, until: performance.now() + 250 };
+      this.placing = null;
       if (reason) this.ui.toast(reason);
     });
     network.on('loadout', (l) => { this.loadout = l; this.abilityCdEnd = performance.now() + (l.ability?.cdLeft || 0); });
     network.on('stats', (s) => { this.stats = s; });
-    network.on('barricadeStart', ({ ms, label }) => { this.reinforcing = { section: null, start: performance.now(), ms, label: label || 'Barricading…' }; });
     network.on('runout', (r) => { this.runout = r; });
     network.on('killcam', (data) => this.startKillcam(data));
     network.on('teamPing', (p) => {
@@ -396,13 +402,14 @@ export class Game {
       onShot: (shot) => this.onLocalShot(shot),
       renderTime: () => this.network.renderTime(),
       canFireUnlocked: () => this.lockFailed,
-      mask: (keys) => (this.preRound.open ? 0 : maskKeys(keys, this.myTeam, this.round.phase, !!this.local?.viewLocked)),   // no input while a pre-round screen is open
+      mask: (keys) => (this.preRound.open ? 0 : maskKeys(keys, this.myTeam, this.round.phase, !!this.local?.viewLocked) & (this.placing ? ~KEY.FIRE : ~0)),   // no input while a pre-round screen is open; no shooting while placing
       collisionWorld: () => (this.myTeam === 'defense' && this.round.phase === PHASE.PREP ? this.world.barrierView : this.world),
       onDigit: (n) => this.pickSpawn(n),
       onAction: (type) => { if (type === 'melee') { this.viewModel.melee(); this.audio.beep(260, 0.08, 0.12, 'sawtooth'); } },
     });
     this.local.onPing = (down) => this.onPingKey(down);
     this.local.onLoadoutKey = () => (this.prepLoadout ? this.closePrepLoadout() : this.openPrepLoadout());
+    this.local.onPlaceKey = (action, down) => { this.heldPlace = down ? this.placeKindFor(action) : null; };
     this.local.onWheelMove = (dx, dy) => this.onWheelMove(dx, dy);
     this.loadRound(payload, me);
 
@@ -422,7 +429,8 @@ export class Game {
     this.spawnChoice = me.spawnChoice || 1;
     this.health = me.health ?? MAX_HEALTH;
     this.loadout = { ...this.loadout, op: me.operator, charges: me.charges ?? 0, placed: !!me.placed };
-    this.reinforcing = null;
+    this.placing = null;
+    this.heldPlace = null;
     this.runout = { left: null, detected: false };
     this.setMode(payload);
     this.picks = payload.picks || {};
@@ -851,7 +859,8 @@ export class Game {
     if (victimAvatar) victimAvatar.alive = false; // hide now rather than at the next snapshot
     if (victim === myId && this.local) {
       this.local.die();
-      this.reinforcing = null;
+      this.placing = null;
+    this.heldPlace = null;
       this.exitCam();
       this.health = 0;
       const s = this.local.state;
@@ -1175,6 +1184,39 @@ export class Game {
   }
 
   /** Gadget counters, the "press G / V" prompt for the wall you're aiming at, and progress. */
+  // ---------------------------------------------------------------- placing takes time (Stage 27)
+
+  /** What a held key would place right now, or null (detonating, picking up, throwing...). */
+  placeKindFor(action) {
+    const op = OPERATORS[this.loadout.op], ab = this.loadout.ability;
+    if (action === 'utility') return this.loadout.utility?.id === 'claymore' ? 'claymore' : null;
+    if (action === 'breach') return this.myTeam === 'attack' && !this.loadout.placed ? 'breach' : null;
+    if (action === 'barricade') return this.myTeam === 'defense' ? 'barricade' : null;
+    if (action === 'reinforce') return this.myTeam === 'defense' ? 'reinforce' : null;
+    if (action === 'ability' && op?.ability && PLACE[op.ability.id]) return ab?.deployed || !(ab?.charges > 0) ? null : op.ability.id;
+    return null;
+  }
+
+  /** Each frame: the circle filling, the ghost where it will go, and kneeling for floor items. */
+  updatePlacing(local) {
+    const t = performance.now(), dt = Math.min(0.1, (t - (this.placeT || t)) / 1000);
+    this.placeT = t;
+    this.placeGhost ||= new PlaceGhost(this.scene);
+    const kind = local.alive && !local.droneState ? (this.placing?.kind || this.heldPlace) : null;
+    const aimState = { ...local.state, yaw: local.aimYaw, pitch: local.aimPitch };
+    const aim = this.placeGhost.update(kind, this.world, this.mapDef, aimState, dt);
+    if (this.placing) {
+      const frac = Math.min(1, (t - this.placing.start) / this.placing.ms);
+      this.ui.setPlaceRing(frac, this.placing.label, aim ? !aim.ok : false);
+    } else if (this.placeFlash && t < this.placeFlash.until) this.ui.setPlaceRing(1, this.placeFlash.label);
+    else this.ui.setPlaceRing(null);
+    // Kneel for floor items: the view eases down, and back up when done
+    const pose = this.placing && aim ? aim.pose : null;
+    const want = pose === 'floor' ? 0.42 : 0;
+    local.kneel = (local.kneel || 0) + (want - (local.kneel || 0)) * Math.min(1, dt * 8);
+    this.placePose = this.placing ? { pose: pose || 'wall', frac: Math.min(1, (t - this.placing.start) / this.placing.ms) } : null;
+  }
+
   updateGadgetHud(now) {
     const local = this.local;
     const attack = this.myTeam === 'attack';
@@ -1191,18 +1233,18 @@ export class Game {
         prompt = '';   // defenders reinforce in prep and in the action phase
       } else if (attack && !this.loadout.placed && panel) {
         if (this.world.isReinforcedPanel(panel.id)) prompt = 'Reinforced wall: breach charges won\'t break it';
-        else if (this.loadout.charges > 0) prompt = `Press ${keyFor('breach')} to plant a breach charge`;
-      } else if (!attack && panel && !this.reinforcing) {
+        else if (this.loadout.charges > 0) prompt = `Hold ${keyFor('breach')} to plant a breach charge`;
+      } else if (!attack && panel && !this.placing) {
         const section = this.world.sections[panel.sectionId];
         if (this.world.reinforced[section.id]) prompt = 'Reinforced';
-        else if (section.reinforceable && this.reinforcementsLeft > 0) prompt = `Press ${keyFor('reinforce')} to reinforce this wall`;
+        else if (section.reinforceable && this.reinforcementsLeft > 0) prompt = `Hold ${keyFor('reinforce')} to reinforce this wall`;
       }
     }
     // Defenders in prep: aiming at a bare doorway or window offers a barricade
-    if (!prompt && !attack && local.alive && this.round.phase === PHASE.PREP && !this.reinforcing && this.barricadesLeft > 0) {
+    if (!prompt && !attack && local.alive && this.round.phase === PHASE.PREP && !this.placing && this.barricadesLeft > 0) {
       const eye = getEyePosition(local.state, this.world);
       const o = findOpening(this.mapDef, [eye.x, eye.y, eye.z], aimDirection(local.aimYaw, local.aimPitch), BARRICADE.reach);
-      if (o && !this.gadgets.hasBarricade(o.id)) prompt = `Press ${keyFor('barricade')} to barricade (${this.barricadesLeft} left)`;
+      if (o && !this.gadgets.hasBarricade(o.id)) prompt = `Hold ${keyFor('barricade')} to barricade (${this.barricadesLeft} left)`;
     }
     // Defuser mode: what the carrier or a defender can do here
     if (!prompt && this.mode === 'defuser' && local.alive && this.round.phase === PHASE.ACTION) {
@@ -1212,7 +1254,7 @@ export class Game {
       else if (this.myTeam === 'defense' && this.df?.p && inZone) prompt = `Hold ${keyFor('interact')} (stand still) to disable the defuser`;
     }
     // Rope and vault prompts (action phase, nothing more important on screen)
-    if (!prompt && local.alive && this.round.phase === PHASE.ACTION && !this.camView && !this.reinforcing) {
+    if (!prompt && local.alive && this.round.phase === PHASE.ACTION && !this.camView && !this.placing) {
       const st = local.state;
       if (st.rap) prompt = `${keyFor('forward')}/${keyFor('back')} climb · ${keyFor('left')}/${keyFor('right')} sideways · ${keyFor('jump')} at a window swings in · ${keyFor('flip')} flip · ${keyFor('rappel')} let go`;
       else if (st.vaultT > 0) prompt = '';
@@ -1221,14 +1263,14 @@ export class Game {
     }
     this.ui.setPrompt(prompt);
 
-    let progress = null, label = this.reinforcing?.label || 'Reinforcing…';
-    if (this.reinforcing) progress = Math.min(1, (now - this.reinforcing.start) / this.reinforcing.ms);
-    else if (this.defuserAct) {
+    let progress = null, label = '';
+    if (this.defuserAct) {
       progress = Math.min(1, (performance.now() - this.defuserAct.start) / this.defuserAct.ms);
       label = this.defuserAct.kind === 'plant' ? 'Planting the defuser…' : 'Disabling the defuser…';
       if (performance.now() >= (this.nextTick || 0)) { this.nextTick = performance.now() + 450; this.audio.beep(this.defuserAct.kind === 'plant' ? 700 : 520, 0.05, 0.14, 'square'); }
     }
     this.ui.setProgress(progress, label);
+    this.updatePlacing(local);
     this.beepDefuser();
 
     // Operator + ability panel
@@ -1419,7 +1461,7 @@ export class Game {
       crouch: Math.max(s.crouch, s.prone || 0),
       lean: s.lean,
       reloadFrac: local.weapon.reload > 0 ? 1 - local.weapon.reload / w.reloadTime : -1,
-      ads, hidden: scoped, cover: shieldCover(local.weapon, s),
+      ads, hidden: scoped, cover: shieldCover(local.weapon, s), place: this.placePose,
       stepPhase: local.feel.phase, stepAmp: local.feel.amp || 0, ...this.turnRate(local, dt),
     });
     this.sound.update(dt);

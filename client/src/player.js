@@ -25,6 +25,8 @@ const HOLD_BITS = {
 const EVENT_ACTIONS = new Set(['breach', 'reinforce', 'droneNext', 'ability', 'utility', 'camView', 'barricade']);
 // Keys 1-3 choose the attacker entry point during prep (fixed: not rebindable)
 const DIGIT_KEYS = { Digit1: 1, Digit2: 2, Digit3: 3 };
+// Keys that place something: they're held while it's placed, and letting go stops it (Stage 27)
+const PLACE_ACTIONS = new Set(['utility', 'ability', 'breach', 'barricade', 'reinforce']);
 
 const MOUSE_SENSITIVITY = 0.0022;
 const TWO_PI = Math.PI * 2;
@@ -164,6 +166,8 @@ export class LocalPlayer {
       if (action === 'sprint') this.aimOn = false;                          // sprinting lowers the sights
       return;
     }
+    if (PLACE_ACTIONS.has(action) && !repeat) this.onPlaceKey?.(action, down);
+    if (!down && PLACE_ACTIONS.has(action)) { this.network.sendActionEnd(action); return; }
     if (!down || repeat || !this.alive) return;
     if (action === 'prone') this.proneOn = !this.proneOn;
     else if (action === 'primary' || action === 'secondary') {
@@ -449,7 +453,8 @@ export class LocalPlayer {
     const bobY = -Math.abs(Math.sin(f.phase)) * amp + f.dip;
     const side = Math.sin(f.phase) * amp * FEEL.bobSide;
     const [rx, rz] = rightVec(this.aimYaw);
-    this.camera.position.set(eye.x + this.smoothing.x + rx * side, eye.y + this.smoothing.y + bobY, eye.z + this.smoothing.z + rz * side);
+    // Kneeling to put something on the floor lowers the view (Stage 27; the body's height doesn't change)
+    this.camera.position.set(eye.x + this.smoothing.x + rx * side, eye.y + this.smoothing.y + bobY - (this.kneel || 0), eye.z + this.smoothing.z + rz * side);
     const roll = Math.sin(f.phase) * FEEL.bobRoll * (amp / FEEL.bobWalk);
     this.camera.rotation.set(this.aimPitch, this.aimYaw, -eye.lean * LEAN_ROLL + roll + (this.state.rapFlip || 0) * Math.PI, 'YXZ');   // upside down on a rope
   }
