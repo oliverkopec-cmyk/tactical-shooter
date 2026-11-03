@@ -93,9 +93,16 @@ export function rayPlayer(o, d, pose, maxT) {
   // A ballistic shield (pose.sh, from shieldCover() in shared/weapons.js) in the way stops the bullet
   const sh = lying ? 0 : pose.sh || 0;
   if (sh && best) {
-    const box = shieldBox(sh, h);
-    const hit = rayBox(lo, ld, box.min, box.max, best.t);
-    if (hit) best = { t: hit.t, head: false, shield: true };
+    // Bulletproof from the front: anything shot from within 60 degrees of where they face is stopped
+    // (a drawn shield covers the whole front, one held to the side only the left half)
+    const along = Math.hypot(lx, lz) || 1;
+    const front = -lz / along > 0.5 && (sh === 1 || lx < 0);
+    if (front) best = { t: best.t, head: false, shield: true };
+    else {
+      const box = shieldBox(sh, h);
+      const hit = rayBox(lo, ld, box.min, box.max, best.t);
+      if (hit) best = { t: hit.t, head: false, shield: true };
+    }
   }
   return best;
 }

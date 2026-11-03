@@ -748,7 +748,7 @@ export class UI {
     const sig = JSON.stringify([mine, enemy]);
     if (sig === this.lastTopIcons) return;
     this.lastTopIcons = sig;
-    const draw = (list) => list.map((r) => `<span class="top-icon${r.alive ? '' : ' dead'}" title="${r.op ? escapeHtml(OPERATORS[r.op]?.name || '') : 'Unknown'}">${operatorIcon(r.op, 34, { dead: !r.alive })}</span>`).join('');
+    const draw = (list) => list.map((r) => `<span class="top-icon${r.alive ? '' : ' dead'}" title="${r.op ? escapeHtml(OPERATORS[r.op]?.name || '') : 'Unknown'}">${operatorIcon(r.op, 34, { dead: !r.alive })}${r.hp === undefined ? '' : `<span class="hp-bar"><i style="width:${Math.max(0, Math.min(100, r.hp))}%;background:hsl(${Math.round(Math.max(0, Math.min(100, r.hp)) * 1.2)} 80% 48%)"></i></span>`}</span>`).join('');
     $('top-icons-mine').innerHTML = draw(mine);
     $('top-icons-enemy').innerHTML = draw(enemy);
   }

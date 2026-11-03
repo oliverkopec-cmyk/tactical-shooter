@@ -2,7 +2,7 @@
 // reload, spread). Client and server run the same code on the same inputs, so
 // the client can predict shots while the server stays authoritative.
 
-import { KEY, WALK_SPEED, ADS } from './constants.js';
+import { KEY, WALK_SPEED, ADS, RAPPEL } from './constants.js';
 
 // A gun is used by at most 2 operators (see operators.js).
 // Fields:
@@ -380,7 +380,11 @@ export function currentSpread(ws, ps) {
   const speed = Math.hypot(ps.vx, ps.vz) / WALK_SPEED;
   let spread = w.baseSpread + ws.bloom + w.moveSpread * Math.min(1.6, speed);
   if (!ps.onGround && !ps.rap) spread += w.moveSpread * 2;
-  if (ps.rap) spread = (spread + w.moveSpread) * 2.2;   // swinging on a rope: much less accurate
+  if (ps.rap) {
+    // On a rope: hanging still or creeping is as accurate as standing; it only widens while moving fast
+    const fast = Math.max(0, Math.min(1, ((ps.rapSpeed || 0) / RAPPEL.up - 0.4) / 0.6));
+    spread += ((spread + w.moveSpread) * RAPPEL.spreadMul - spread) * fast;
+  }
   spread *= 1 - Math.max(0.3 * ps.crouch, 0.45 * (ps.prone || 0));   // steadier crouched, steadiest lying down
   spread *= 1 - (1 - ADS.spreadMul) * (ps.ads || 0);                   // aiming down the sights
   return spread;

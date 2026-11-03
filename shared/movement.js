@@ -29,7 +29,7 @@ export function createPlayerState(spawn) {
     // vault: while vaultT > 0 the body follows a hop from (vax,vay,vaz) to (vbx,vby,vbz) over a top at vtop
     vaultT: 0, vax: 0, vay: 0, vaz: 0, vbx: 0, vby: 0, vbz: 0, vtop: 0,
     // rappel: rap = rope number (1-based, 0 = not on a rope), rapSide = metres along the wall, rapFlip 0..1 upside down
-    rap: 0, rapSide: 0, rapFlip: 0, rapPrev: 0, rapCd: 0,
+    rap: 0, rapSide: 0, rapFlip: 0, rapPrev: 0, rapCd: 0, rapSpeed: 0,
     swing: -1,     // set to an opening id when the player just swung in through it (the server breaks its barricade)
     dash: 0, dashX: 0, dashZ: 0,   // Aegis's shield charge: seconds left and direction, set by the server
   };
@@ -419,6 +419,7 @@ function stepRappel(s, keys, rapPressed, dt, world) {
   s.vx = s.vy = s.vz = 0;
   s.sprinting = false;
   s.crouch = 0; s.prone = 0; s.lean = 0;
+  const from = [s.x, s.y, s.z, s.rapSide];
   s.ads = Math.max(0, Math.min(1, (s.ads || 0) + ((keys & KEY.AIM) ? dt : -dt) / ADS.time));   // you can aim on a rope
   const flipping = (keys & KEY.FLIP) !== 0;
   s.rapFlip = Math.max(0, Math.min(1, (s.rapFlip || 0) + (flipping ? 1 : -1) * dt * RAPPEL.flipSpeed));
@@ -443,6 +444,9 @@ function stepRappel(s, keys, rapPressed, dt, world) {
   s.y = Math.max(r.bottom, Math.min(maxY, s.y + (up > 0 ? RAPPEL.up : up < 0 ? -RAPPEL.down : 0) * dt));
   const pos = ropePosition(r, s.rapSide);
   s.x = pos.x; s.z = pos.z;
+  // How fast you are moving on the rope (smoothed), for the aiming spread
+  const moved = Math.hypot(s.x - from[0], s.y - from[1], s.z - from[2]) / Math.max(dt, 1e-4);
+  s.rapSpeed = (s.rapSpeed || 0) + (moved - (s.rapSpeed || 0)) * Math.min(1, dt * 8);
 }
 
 /** Let go: from the foot of the wall you land; anywhere else you drop. */

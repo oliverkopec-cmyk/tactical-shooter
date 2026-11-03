@@ -87,6 +87,7 @@ export class Game {
 
     this.local = null;
     this.remotes = new Map();
+    this.hpById = {};          // everyone's health from the latest snapshot (only teammates' is shown)
     this.members = new Map(); // id -> { name, team }
     this.health = MAX_HEALTH;
     this.running = false;
@@ -343,7 +344,7 @@ export class Game {
 
   /** Operator icons at the top of the screen: my team on the left, the enemy on the right. */
   renderRoster() {
-    const mine = this.roster.filter((r) => r.team === this.myTeam), enemy = this.roster.filter((r) => r.team !== this.myTeam);
+    const mine = this.roster.filter((r) => r.team === this.myTeam).map((r) => ({ ...r, hp: r.alive ? Math.round((this.hpById[r.id] ?? MAX_HEALTH) / 4) * 4 : 0 })), enemy = this.roster.filter((r) => r.team !== this.myTeam);
     this.ui.renderTopIcons(mine, enemy);
   }
 
@@ -730,6 +731,7 @@ export class Game {
     this.droneJammed = !!myDrone?.j;
     if (this.local?.alive) this.local.setDrone(myDrone);
     for (const p of snap.players) {
+      this.hpById[p.id] = p.alive ? p.hp : 0;
       if (p.id === this.network.id) {
         this.local?.reconcile(p, myDrone);
         if (typeof p.hp === 'number' && this.local?.alive) this.health = p.hp;
@@ -738,6 +740,7 @@ export class Game {
         if (r) { r.spotted = !!p.sp && r.team !== this.myTeam; r.push(snap.t, p); }
       }
     }
+    this.renderRoster();      // teammates' health bars under their icons (redraws only when one changes)
   }
 
   // ---------------------------------------------------------------- Stage E operator events

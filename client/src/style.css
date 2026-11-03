@@ -869,7 +869,9 @@ button.small { font-size: 12px; padding: 4px 10px; margin-top: 6px; }
 #round-clock { order: 2; }
 #score-attack-box:not(.mine), #score-defense-box:not(.mine) { order: 3; }
 #top-icons-enemy { order: 4; }
-.top-icon { display: inline-flex; line-height: 0; border-radius: 8px; }
+.top-icon { display: inline-flex; flex-direction: column; align-items: center; gap: 3px; line-height: 0; border-radius: 8px; }
+.top-icon .hp-bar { display: block; width: 100%; height: 4px; border-radius: 2px; background: rgba(255,255,255,0.16); overflow: hidden; }   /* teammates only: green, yellow, red as health drops */
+.top-icon .hp-bar i { display: block; height: 100%; transition: width 0.15s, background 0.15s; }
 .top-icon.dead { filter: grayscale(0.7); }
 @media (max-width: 900px) { .top-icon svg { width: 26px; height: 26px; } }
 
