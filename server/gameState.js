@@ -1165,7 +1165,7 @@ export class GameState {
       mode: this.mode,
       defuser: this.mode === 'defuser' ? this.defuser.view(team) : null,
       players: [...this.players.entries()].map(([id, p]) => ({
-        id, name: p.member.name, owner: !!p.member.owner, team: p.member.team, skins: p.member.skins || {}, charms: p.member.charms || {}, owned: p.member.owned || [], opMatches: p.member.opMatches || {}, state: p.state,
+        id, name: p.member.name, owner: !!p.member.owner, tester: !!p.member.tester, bot: !!p.member.bot, team: p.member.team, skins: p.member.skins || {}, charms: p.member.charms || {}, owned: p.member.owned || [], opMatches: p.member.opMatches || {}, state: p.state,
         weapon: this.canSee(team, p) ? p.weapon : null, health: p.health, alive: p.alive,
         charges: p.charges, placed: !!p.placedCharge, spawnChoice: p.spawnChoice, operator: this.canSee(team, p) ? p.operator : null,
       })),

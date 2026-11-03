@@ -11,6 +11,7 @@ import { Accounts } from './accounts.js';
 import { sharedCodeVersion } from './sharedVersion.js';
 import { Admin } from './admin.js';
 import { Gifts } from './gifts.js';
+import { Moderation } from './moderation.js';
 
 // Local secrets (e.g. DATABASE_URL) can live in a .env file, which git ignores.
 try { process.loadEnvFile(); } catch { /* no .env file */ }
@@ -39,6 +40,8 @@ const rooms = new RoomManager(io, accounts.progression, accounts.social);
 const social = accounts.social;
 const admin = new Admin({ db, accounts, rooms, social });
 const gifts = new Gifts({ db, accounts });
+const moderation = new Moderation({ db, accounts, io });
+accounts.moderation = moderation;   // suspended and banned accounts can't log in
 const SHARED_VERSION = sharedCodeVersion();
 // Pages built from different shared code would mispredict movement: send them back to reload.
 // ('dev' is the Vite dev server, which always runs the current files.)
@@ -114,6 +117,19 @@ io.on('connection', (socket) => {
   socket.on('adminFindPlayer', safely((q) => gifts.findPlayers(socket, q)));
   socket.on('giftClaim', safely((id) => gifts.claim(socket, id)));
   socket.on('giftList', safely(async () => ({ gifts: await gifts.pendingFor(socket.data.account.id) })));
+
+  // ---- chat, reports and the owner's moderation tools (the owner-only ones re-check the caller on the server)
+  socket.on('chat', (req, ack) => reply(ack, moderation.chat(socket, obj(req))));
+  socket.on('report', safely((req) => moderation.report(socket, obj(req))));
+  socket.on('warnings', safely(() => moderation.deliverWarnings(socket)));
+  socket.on('warningsSeen', safely((ids) => moderation.markWarningsSeen(socket, ids)));
+  socket.on('modReports', safely((req) => moderation.reports(socket, obj(req))));
+  socket.on('modReport', safely((req) => moderation.reportDetail(socket, obj(req))));
+  socket.on('modResolve', safely((req) => moderation.resolve(socket, obj(req))));
+  socket.on('modSanction', safely((req) => moderation.sanction(socket, obj(req))));
+  socket.on('modLift', safely((req) => moderation.lift(socket, obj(req))));
+  socket.on('modBlocked', safely(() => moderation.blocked(socket)));
+  socket.on('modChat', safely((req) => moderation.chatLog(socket, obj(req))));
 
   socket.on('adminJoin', (req, ack) => reply(ack, admin.join(socket, req && typeof req === 'object' ? { code: String(req.code || ''), mode: String(req.mode || '') } : {})));
 

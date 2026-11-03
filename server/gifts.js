@@ -12,7 +12,7 @@ import crypto from 'node:crypto';
 import { SKINS, CRATE, rollCrate, isExclusive } from '../shared/skins.js';
 import { CHARMS, CHARM_CRATE, rollCharmCrate } from '../shared/charms.js';
 import { WEAPONS } from '../shared/weapons.js';
-import { isAdmin } from './roles.js';
+import { isAdmin, isStaff } from './roles.js';
 import { profileOf, ownsSkin, ownsCharm } from './profile.js';
 
 export const GIFT_LIMITS = { title: 60, message: 300, money: 10000000, announce: 200, seconds: [5, 10, 30], pending: 20, history: 50 };
@@ -42,8 +42,14 @@ export class Gifts {
     this.lastSend = new Map();   // admin account id -> time of their last announcement or gift
   }
 
+  /** Gifts, Money and the history: admins and the owner only (never testers). */
   allowed(socket) {
     return isAdmin(socket.data.account?.username);
+  }
+
+  /** Announcements: also open to testers. */
+  allowedToAnnounce(socket) {
+    return isStaff(socket.data.account?.username);
   }
 
   /** A short pause between sends, so a stuck button can't flood everyone. */
@@ -58,7 +64,7 @@ export class Gifts {
 
   /** Admin: a banner for everyone online right now, for 5, 10 or 30 seconds. */
   announce(socket, { text, seconds } = {}) {
-    if (!this.allowed(socket)) return { error: 'Not allowed.' };
+    if (!this.allowedToAnnounce(socket)) return { error: 'Not allowed.' };
     const msg = cleanText(text, GIFT_LIMITS.announce);
     if (!msg) return { error: 'Type a message first.' };
     const secs = GIFT_LIMITS.seconds.includes(Number(seconds)) ? Number(seconds) : 10;

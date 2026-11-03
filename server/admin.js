@@ -4,7 +4,7 @@
 import { MAX_PER_TEAM, TEAMS } from '../shared/constants.js';
 import { rankInfo } from '../shared/progression.js';
 import { getMap } from '../shared/map.js';
-import { isAdmin, isOwner } from './roles.js';
+import { isStaff, badgeFlags } from './roles.js';
 
 export class Admin {
   constructor({ db, accounts, rooms, social }) {
@@ -15,7 +15,7 @@ export class Admin {
   }
 
   allowed(socket) {
-    return isAdmin(socket.data.account?.username);
+    return isStaff(socket.data.account?.username);   // admins, the owner and testers (testers get only what this class offers)
   }
 
   /** Every online account with its rank, level and what it is doing. */
@@ -27,7 +27,7 @@ export class Admin {
       : { rows: [] };
     return {
       players: rows.map((r) => ({
-        id: r.id, username: r.username, owner: isOwner(r.username), level: r.level,
+        id: r.id, username: r.username, ...badgeFlags(r.username), level: r.level,
         rank: rankInfo(r.rank_points).label, rankPoints: r.rank_points,
         status: this.social.statusOf(r.id),
         room: this.accounts.online.get(r.id)?.data.room?.code || this.accounts.online.get(r.id)?.data.spectating?.code || null,
@@ -41,7 +41,7 @@ export class Admin {
     const out = [];
     for (const room of this.rooms.rooms.values()) {
       const info = room.game?.rounds.info();
-      const team = (t) => [...room.members.values()].filter((m) => m.team === t).map((m) => ({ name: m.name, owner: !!m.owner }));
+      const team = (t) => [...room.members.values()].filter((m) => m.team === t).map((m) => ({ name: m.name, owner: !!m.owner, tester: !!m.tester }));
       out.push({
         code: room.code, phase: room.phase, map: getMap(room.mapId).name,
         attack: team(TEAMS.ATTACK), defense: team(TEAMS.DEFENSE),

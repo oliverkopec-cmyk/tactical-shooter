@@ -70,6 +70,54 @@ const SCHEMA = `
     PRIMARY KEY (gift_id, account_id)
   );
   CREATE INDEX IF NOT EXISTS gift_claims_account_idx ON gift_claims (account_id);
+  CREATE TABLE IF NOT EXISTS chat_log (
+    id             BIGSERIAL PRIMARY KEY,
+    account_id     BIGINT,
+    username       TEXT NOT NULL,
+    username_lower TEXT NOT NULL,
+    room_code      TEXT,
+    match_id       TEXT,
+    team           TEXT,
+    scope          TEXT NOT NULL,
+    text           TEXT NOT NULL,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+  );
+  CREATE INDEX IF NOT EXISTS chat_log_match_idx ON chat_log (match_id);
+  CREATE INDEX IF NOT EXISTS chat_log_time_idx ON chat_log (created_at);
+  CREATE INDEX IF NOT EXISTS chat_log_user_idx ON chat_log (username_lower);
+  CREATE TABLE IF NOT EXISTS reports (
+    id            BIGSERIAL PRIMARY KEY,
+    reporter_id   BIGINT NOT NULL,
+    reporter_name TEXT NOT NULL,
+    target_id     BIGINT NOT NULL,
+    target_name   TEXT NOT NULL,
+    reason        TEXT NOT NULL,
+    comment       TEXT NOT NULL DEFAULT '',
+    match_id      TEXT,
+    room_code     TEXT,
+    status        TEXT NOT NULL DEFAULT 'open',
+    action        TEXT,
+    resolved_by   TEXT,
+    resolved_at   TIMESTAMPTZ,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+  );
+  CREATE INDEX IF NOT EXISTS reports_status_idx ON reports (status, created_at);
+  CREATE INDEX IF NOT EXISTS reports_target_idx ON reports (target_id);
+  CREATE TABLE IF NOT EXISTS sanctions (
+    id          BIGSERIAL PRIMARY KEY,
+    account_id  BIGINT NOT NULL,
+    username    TEXT NOT NULL,
+    kind        TEXT NOT NULL,
+    reason      TEXT NOT NULL DEFAULT '',
+    created_by  TEXT NOT NULL,
+    report_id   BIGINT,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    until       TIMESTAMPTZ,
+    lifted_at   TIMESTAMPTZ,
+    lifted_by   TEXT,
+    seen_at     TIMESTAMPTZ
+  );
+  CREATE INDEX IF NOT EXISTS sanctions_account_idx ON sanctions (account_id);
 `;
 
 /** Create or update the tables (safe to run every start). */

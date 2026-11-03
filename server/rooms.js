@@ -4,7 +4,7 @@ import { TEAMS, MAX_PER_TEAM, ROOM_CODE_LENGTH, MAX_NAME_LENGTH } from '../share
 import { GameState } from './gameState.js';
 import { DEFAULT_MAP_ID, MAP_IDS } from '../shared/map.js';
 import { MODE_IDS, DEFAULT_MODE_ID } from '../shared/modes.js';
-import { isOwner } from './roles.js';
+import { badgeFlags } from './roles.js';
 import { OPERATORS } from '../shared/operators.js';
 import { BOT_DIFFICULTIES } from './bots.js';
 import { navFor } from './nav.js';
@@ -71,6 +71,8 @@ class Room {
     this.mode = DEFAULT_MODE_ID;   // and the game mode
     this.phase = 'lobby';     // 'lobby' | 'match'
     this.game = null;
+    this.matchId = null;      // names the running match (chat and reports point at it)
+    this.matchPlayers = new Map();   // socket id -> { accountId, name }: who was in it (for reporting people after it ends)
   }
 
   teamCount(team) {
@@ -87,7 +89,7 @@ class Room {
   add(socket, forceTeam = null) {
     const team = forceTeam || (this.teamCount(TEAMS.ATTACK) <= this.teamCount(TEAMS.DEFENSE) ? TEAMS.ATTACK : TEAMS.DEFENSE);
     const { id: accountId, username } = socket.data.account;
-    const member = { id: socket.id, accountId, name: cleanName(username), owner: isOwner(username), team, ...loadoutFrom(socket) };
+    const member = { id: socket.id, accountId, name: cleanName(username), ...badgeFlags(username), team, ...loadoutFrom(socket) };
     this.members.set(socket.id, member);
     if (!this.hostId) this.hostId = socket.id;
     socket.join(this.channel);
@@ -95,12 +97,19 @@ class Room {
 
     if (this.phase === 'match') {
       // Late joiners drop straight into the running match.
+      this.noteMatchPlayer(socket, member);
       this.game.addPlayer(member);
       socket.emit('matchStart', this.game.startPayload(member.team));
     }
     this.broadcastState();
     this.social?.presenceChanged(accountId);
     return member;
+  }
+
+  /** Remember someone as part of this match, and let every human player report them (also after the match). */
+  noteMatchPlayer(socket, member) {
+    this.matchPlayers.set(member.id, { accountId: member.accountId, name: member.name });
+    socket.data.recent = { matchId: this.matchId, roomCode: this.code, players: this.matchPlayers };
   }
 
   get spectatorChannel() { return `${this.channel}:spectators`; }
@@ -240,6 +249,9 @@ class Room {
     // Pick up any skin or operator changes made since each player joined the room
     for (const m of this.members.values()) if (!m.bot) Object.assign(m, loadoutFrom(this.io.sockets.sockets.get(m.id)));
     this.game = new GameState(this);
+    this.matchId = `${this.code}-${Date.now().toString(36)}`;
+    this.matchPlayers = new Map();
+    for (const m of this.members.values()) { const s = m.bot ? null : this.io.sockets.sockets.get(m.id); if (s) this.noteMatchPlayer(s, m); }
     for (const m of this.members.values()) this.game.addPlayer(m);
     this.game.start();
     for (const m of this.members.values()) this.io.to(m.id).emit('matchStart', this.game.startPayload(m.team));
@@ -276,7 +288,7 @@ class Room {
       phase: this.phase,
       mapId: this.mapId,
       mode: this.mode,
-      players: [...this.members.values()].map(({ id, name, team, skins, charms, owner, bot }) => ({ id, name, team, skins, charms, owner, bot: bot || null })),
+      players: [...this.members.values()].map(({ id, name, team, skins, charms, owner, tester, bot }) => ({ id, name, team, skins, charms, owner, tester, bot: bot || null })),
     };
   }
 

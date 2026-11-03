@@ -22,3 +22,7 @@ services:
         sync: false
       - key: ADMIN_USERNAMES
         sync: false
+      # Testers (comma-separated, e.g. "max"): a TESTER badge and a limited Admin tab
+      # (online list, matches, announcements). Set it in the Render dashboard too.
+      - key: TESTER_USERNAMES
+        sync: false

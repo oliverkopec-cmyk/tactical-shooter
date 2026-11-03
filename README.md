@@ -2,7 +2,25 @@
 
 A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite on the client, Node.js + Socket.IO on an authoritative server. One Node process serves both the game client and the realtime server, so the whole thing deploys as a single Render web service.
 
-## Status: Stage 2H (first-person hands)
+## Status: Stage 2I (tester role, chat, reports and the owner's inboxes)
+
+**Tester role.** Set the environment variable `TESTER_USERNAMES` (comma-separated, for example `max, Anna`):
+- **On Render:** open the `breachline` service, then **Environment**, then **Add Environment Variable**, name `TESTER_USERNAMES`, value `max` (more names separated by commas), Save. Render redeploys. The account has to exist (it has, for `max`); names aren't case sensitive.
+- **Locally:** put `TESTER_USERNAMES=max` in the `.env` file and restart the server.
+
+A tester gets a black-and-white **TESTER** badge next to their name everywhere names appear (lobby, scoreboard, kill feed, chat, friends, the admin lists), like the gold OWNER one. They can open the Admin tab but only get: **announcements, everyone online, and the running matches (join or spectate)**. The server refuses everything else from a tester even if someone forces the request: gifts, Money, the gift history, reports, the chat log and warning, suspending or banning (`server/gifts.js` and `server/moderation.js` check the role again on every request; `server/roles.js` says who is who). An owner or admin who is also listed as a tester keeps their bigger role.
+
+**In-match chat** (`client/src/chat.js`, `server/moderation.js`): **Y** for everyone and **U** for your team (both rebindable under Interface; the defuser plant key moved from Y to J, and accounts that had saved Y for it are moved to J). Enter sends, Esc cancels. Messages show at the bottom left for 9 seconds with the sender's name, badge and [ALL] or [TEAM]. At most 120 characters, a 1.2 s cooldown between messages and 5 per 10 s; the server only sends a team message to that team (staff spectating see everything), and every message is stored in `chat_log` for 14 days with the match it came from. Text is shown as plain text, never as markup.
+
+**Reporting.** From the scoreboard (Tab; with the mouse free, Tab keeps it open so you can click) or the end-of-match screen, **Report** next to a player lets you pick a reason (cheating, abusive chat, offensive name, griefing, other) and add a comment. You can report anyone from your current or last match, once per match, and send at most 5 reports in 10 minutes.
+
+**The owner's inboxes** (Admin tab, owner only; the server checks the owner on every request, so admins and testers get "Not allowed"):
+- **Reports:** who, why, when, the match, and that match's whole chat log (the reported player's lines highlighted). Open, Resolved or All. For each: **Mark resolved**, **Warn** (the player gets a message the next time they're in the menu), **Suspend** for 1 minute, 1 hour, 1 day, 3 days, 7 days, 30 days or a custom number of minutes, or **Ban** permanently. Acting on a report resolves it.
+- **Suspended and banned:** everyone currently blocked, with time left and who did it, and a button to lift it early.
+- **Chat:** every chat message from every match, newest first, searchable by username, 14 days kept (older ones are deleted every hour).
+- A suspended or banned player is disconnected at once, can't log in and is told how long is left (or that the account is banned) with the reason. Tables: `chat_log`, `reports` and `sanctions` (created automatically).
+
+### Earlier: Stage 2H (first-person hands)
 
 You now see your own arms and gloved hands holding the gun (`client/src/hands.js`, built from boxes in code, no external assets).
 
@@ -171,9 +189,9 @@ Defenders:
 - **Game mode picker:** the host chooses **Secure the objective** (the original mode) or **Defuser** in the room lobby, above the map choice. It is locked once the match starts.
 - **Defuser mode:**
   - **The carrier:** when the action phase starts, one random attacker carries the defuser. A yellow arrow shows who it is over their head to their teammates (through walls), and they see "You carry the defuser". Defenders are only told when the carrier goes down. If the carrier dies or leaves, the defuser drops where they fell, with a yellow beacon only attackers can see, and **any attacker who walks over it picks it up**.
-  - **Planting:** the carrier holds **Y** (rebindable: "Plant / disable the defuser") for **7 seconds**, standing still inside the defenders' chosen objective zone. Letting go, moving, leaving the zone or dying cancels it. Defenders get a warning ("The defuser is being planted!") the moment it starts.
+  - **Planting:** the carrier holds **J** (rebindable: "Plant / disable the defuser"; it was Y before chat took that key) for **7 seconds**, standing still inside the defenders' chosen objective zone. Letting go, moving, leaving the zone or dying cancels it. Defenders get a warning ("The defuser is being planted!") the moment it starts.
   - **Planted:** a device with a blinking light sits at the site, visible to everyone. It counts down **45 seconds**; the round clock turns into the countdown, the light blinks and it beeps faster and faster. Eliminating every attacker after the plant does **not** end the round.
-  - **Disabling:** any defender holds Y for **7 seconds**, standing still inside the zone beside it. The attackers are warned.
+  - **Disabling:** any defender holds J for **7 seconds**, standing still inside the zone beside it. The attackers are warned.
   - **Winning:** defenders win by disabling it, by eliminating all attackers before it is planted, or by running out the timer before a plant. Attackers win when the countdown finishes ("The defuser went off") or by eliminating all defenders at any time.
   - **Feedback:** banners and sounds for the carrier, a drop, planting started, planted, disabling started, disabled and the explosion; a progress bar and a ticking sound while you plant or disable; prompts for the carrier and the defenders.
 - **Server:** `server/defuser.js` decides everything (the client only sends the held key bit `KEY.INTERACT`, and draws what the snapshot's `df` field says). Attackers' snapshots carry the carrier and the dropped position, everyone's carry the planted device and its time left. Everything resets each round. Standard mode is unchanged.
@@ -376,13 +394,6 @@ Six new operators, bought with Money in the Operators tab (the original eight an
 
 Written down so they aren't forgotten (see Status for what is built). They are built one at a time, one PR each, and the next one starts once the previous is confirmed. Server memory must stay low enough for Render's 512 MB plan.
 
-### Stage 2I - Tester role, chat, reports and admin inbox
-- Tester role set by the `TESTER_USERNAMES` environment variable on Render (comma-separated; the account "max" is a tester). Testers get a black and white "TESTER" badge wherever names show, like OWNER.
-- Testers can open the admin tab but STRICTLY only: see everyone online, see all active matches and join or spectate them, and send announcements. Reports, chat logs, gifts, Money, warn/suspend/ban are hidden and refused by the server for testers.
-- In-match chat: Y for all, U for team (rebindable); messages bottom left for a few seconds with name, badge and [TEAM] or [ALL]; max length and a short cooldown.
-- Report player from the scoreboard or end-of-match screen: reason (cheating, abusive chat, offensive name, griefing, other) and optional comment.
-- Owner-only inboxes: Reports (who, why, when, match and its chat log; mark resolved, warn, suspend for a chosen time (1 minute, 1 hour, 1 day, 3 days, 7 days, 30 days or custom), ban, lift early), Chat (all messages from all matches, newest first, searchable by username, kept 14 days), and a list of everyone currently suspended or banned. Suspended players can't log in and see how long is left.
-
 ### Stage 2J - Settings and update notes
 - Graphics settings: presets (Low, Medium, High, Ultra) plus separate shadows, render resolution, effects/particles, view distance and anti-aliasing, and an FPS counter option. Low runs smoothly on weak laptops.
 - "What's new": a `CHANGELOG` file in the repo with a plain-English entry for every merged PR; the first login after an update shows a popup with that update's changes, reopenable from the menu.
@@ -457,7 +468,8 @@ server/
   nav.js           the walking grid and distance fields bots move by
   killcam.js       the last 4.5 s of everyone's movement and shots, sent to a player who is killed
   defuser.js       the Defuser mode: carrier, drop, plant, countdown, disable
-  roles.js         owner and admin lookup from the environment variables
+  roles.js         owner, admin and tester lookup from the environment variables
+  moderation.js    in-match chat, reports, warnings, suspensions and bans (and the owner's inboxes)
   admin.js         the admin tools: online list, matches, join as spectator or player
   gifts.js         announcements, sending gifts, the gift list and claiming (one claim per account)
   placing.js       times every placement; cancels it on letting go, a hit, sprinting or a weapon switch
@@ -490,6 +502,9 @@ client/
   src/player.js    local player: input, prediction, reconciliation, camera
   src/avatars.js   other players: bodies, guns, name tags, interpolation
   src/weapons.js   first-person gun: kick spring, muzzle flash, casings, reload animation
+  src/chat.js      in-match chat box (Y / U), messages fade after a few seconds
+  src/moderation.js  report dialog and the warning pop-up
+  src/modAdmin.js  the owner's inboxes: reports, suspended and banned, chat
   src/hands.js     first-person arms and gloved hands: grips per gun, reload/throw/place poses
   src/recoil.js    your recoil: aim climb and pattern, camera punch and shake
   src/effects.js   tracers, bullet holes per surface, impact particles, casings, muzzle smoke
@@ -519,16 +534,17 @@ client/
 
 ## Owner and admins
 
-Set two environment variables on the server:
+Set these environment variables on the server:
 
 - `OWNER_USERNAME`: the owner's username (one name).
 - `ADMIN_USERNAMES`: extra admins, comma-separated (for example `Anna, Ben`). Optional.
+- `TESTER_USERNAMES`: testers, comma-separated (for example `max`). Optional.
 
 **On Render:** open the `breachline` service, then **Environment**, then **Add Environment Variable**. Add `OWNER_USERNAME` with your username as the value, and (if you want) `ADMIN_USERNAMES`. Save, and Render redeploys. **Create your account in the game first, then set the variable**: whoever registers that username owns the role, so don't leave it unregistered.
 
 **Locally:** put `OWNER_USERNAME=yourname` (and optionally `ADMIN_USERNAMES=...`) in the `.env` file in the project folder (git ignores it), then restart the server.
 
-Admins get an **Admin** tab: announcements, gifts and Send Money, the gifts sent so far, everyone online, and every match (spectate or join). Gifts are stored in the `gifts`, `gift_recipients` and `gift_claims` tables (created automatically).
+Admins get an **Admin** tab (testers, see Stage 2I, get a small part of it, and only the owner gets the reports and chat inboxes): announcements, gifts and Send Money, the gifts sent so far, everyone online, and every match (spectate or join). Gifts are stored in the `gifts`, `gift_recipients` and `gift_claims` tables (created automatically).
 
 There is no in-game way to become owner or admin. Roles are worked out on the server from the username stored at login (`server/roles.js`), and each admin action (`server/admin.js`) checks again.
 
