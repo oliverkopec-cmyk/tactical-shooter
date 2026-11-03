@@ -1,6 +1,6 @@
 // Your own recoil (Stage 2G), from each gun's settings in shared/gunConfig.js. Three separate things:
 //
-//   aim     where the gun now points. Every shot climbs it (more with each shot of a burst, up to maxClimb) and
+//   aim     where the gun now points. Every shot climbs it (more with each shot of a burst, and it never levels off) and
 //           pushes it sideways along the gun's own pattern. The bullets go where the view points, so pulling the
 //           mouse down really cancels the climb. Let go of the trigger and it settles back down.
 //   punch   a quick extra snap of the camera that springs straight back (visual only)
@@ -53,10 +53,7 @@ export class Recoil {
     const mul = (1 - (1 - rc.aimMul) * (stance.ads || 0)) * (1 - (1 - rc.crouchMul) * (stance.crouch || 0));
     const grow = 1 + rc.upGrowth * Math.min(1, i / Math.max(1, rc.growShots));
     const rnd = () => (Math.random() * 2 - 1) * rc.jitter;
-    let up = rc.up * grow + rnd() * 0.5, side = rc.side * sideOf(id, i, rc.swing) + rnd();
-    // Topped out: the climb turns into a sideways wander
-    const climbed = (this.pitch + this.inP) / DEG;
-    if (climbed > rc.maxClimb) { side += Math.sign(side || 1) * up * 0.6; up *= 0.15; }
+    const up = rc.up * grow + rnd() * 0.5, side = rc.side * sideOf(id, i, rc.swing) + rnd();
     this.inP += up * mul * DEG;
     this.inY -= side * mul * DEG;
     // Visual only: the camera snaps a bit further and springs back, and buzzes

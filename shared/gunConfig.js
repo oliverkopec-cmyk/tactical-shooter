@@ -11,10 +11,10 @@
 //   side              sideways kick per shot. Its direction follows the gun's own pattern (the same every
 //                     time, so it can be learned); `swing` = shots before the pattern changes direction
 //   jitter            random extra in any direction per shot (0 = perfectly repeatable)
-//   maxClimb          once the view has climbed this far the gun stops climbing and wanders sideways instead
 //   aimMul / crouchMul  multipliers while aiming down sights / crouched or prone
 //   returnSpeed       how fast the view goes back down after you stop firing (per second; higher = faster)
-//   returnWhileFiring the same while the trigger is held (low = the climb builds up and you must pull down)
+//   returnWhileFiring the same while the trigger is held. 0 on automatic guns: the climb never stops or levels
+//                     off, it keeps going until the magazine is empty unless you pull the mouse down
 //   resetTime         seconds without firing before the pattern starts again from the first shot
 // What only moves the picture (never where the bullets go):
 //   punch             a quick extra snap of the camera per shot, which springs straight back
@@ -45,39 +45,39 @@
 export const GUN_TYPES = {
   rifle: {
     recoil: {
-      up: 0.75, upGrowth: 0.8, growShots: 7, side: 0.5, swing: 9, jitter: 0.12, maxClimb: 12, aimMul: 0.75, crouchMul: 0.85,
-      returnSpeed: 8, returnWhileFiring: 0.35, resetTime: 0.32, punch: 0.7, shake: 0.5,
+      up: 0.7, upGrowth: 0.6, growShots: 7, side: 0.5, swing: 9, jitter: 0.12, aimMul: 0.75, crouchMul: 0.85,
+      returnSpeed: 8, returnWhileFiring: 0, resetTime: 0.32, punch: 0.7, shake: 0.5,
       gunBack: 0.045, gunUp: 5, gunSide: 1.2, gunRoll: 3, gunSpring: 160, gunDamping: 15, casing: 'rifle', flash: 1, flashColor: 0xffc46b, smoke: 0.6,
     },
     sound: { crack: 0.9, crackTone: 4200, blast: 1, blastTone: 1700, blastLength: 0.11, boom: 0.8, boomPitch: 95, boomLength: 0.16, mech: 0.35, mechPitch: 1900, tail: 1, distant: 1, volume: 0.9, pitchVar: 0.05, after: 'none', reload: 'mag' },
   },
   smg: {
     recoil: {
-      up: 0.45, upGrowth: 0.3, growShots: 5, side: 0.45, swing: 3, jitter: 0.3, maxClimb: 8, aimMul: 0.75, crouchMul: 0.85,
-      returnSpeed: 11, returnWhileFiring: 0.6, resetTime: 0.22, punch: 0.45, shake: 0.4,
+      up: 0.45, upGrowth: 0.3, growShots: 5, side: 0.45, swing: 3, jitter: 0.3, aimMul: 0.75, crouchMul: 0.85,
+      returnSpeed: 11, returnWhileFiring: 0, resetTime: 0.22, punch: 0.45, shake: 0.4,
       gunBack: 0.03, gunUp: 3, gunSide: 2.5, gunRoll: 4, gunSpring: 220, gunDamping: 18, casing: 'pistol', flash: 0.75, flashColor: 0xffd27a, smoke: 0.4,
     },
     sound: { crack: 0.5, crackTone: 5200, blast: 0.8, blastTone: 2600, blastLength: 0.07, boom: 0.45, boomPitch: 140, boomLength: 0.09, mech: 0.5, mechPitch: 2600, tail: 0.7, distant: 0.7, volume: 0.8, pitchVar: 0.05, after: 'none', reload: 'smg' },
   },
   machinePistol: {
     recoil: {
-      up: 0.6, upGrowth: 0.5, growShots: 5, side: 0.6, swing: 2, jitter: 0.45, maxClimb: 10, aimMul: 0.8, crouchMul: 0.9,
-      returnSpeed: 12, returnWhileFiring: 0.8, resetTime: 0.2, punch: 0.5, shake: 0.45,
+      up: 0.6, upGrowth: 0.5, growShots: 5, side: 0.6, swing: 2, jitter: 0.45, aimMul: 0.8, crouchMul: 0.9,
+      returnSpeed: 12, returnWhileFiring: 0, resetTime: 0.2, punch: 0.5, shake: 0.45,
       gunBack: 0.03, gunUp: 5, gunSide: 3, gunRoll: 5, gunSpring: 240, gunDamping: 18, casing: 'pistol', flash: 0.65, flashColor: 0xffd27a, smoke: 0.3,
     },
     sound: { crack: 0.4, crackTone: 6000, blast: 0.75, blastTone: 3000, blastLength: 0.055, boom: 0.35, boomPitch: 170, boomLength: 0.07, mech: 0.55, mechPitch: 3000, tail: 0.6, distant: 0.6, volume: 0.75, pitchVar: 0.06, after: 'none', reload: 'smg' },
   },
   lmg: {
     recoil: {
-      up: 0.4, upGrowth: 1.6, growShots: 25, side: 0.25, swing: 14, jitter: 0.1, maxClimb: 18, aimMul: 0.8, crouchMul: 0.75,
-      returnSpeed: 5, returnWhileFiring: 0.25, resetTime: 0.45, punch: 0.9, shake: 0.8,
+      up: 0.35, upGrowth: 1.2, growShots: 25, side: 0.25, swing: 14, jitter: 0.1, aimMul: 0.8, crouchMul: 0.75,
+      returnSpeed: 5, returnWhileFiring: 0, resetTime: 0.45, punch: 0.9, shake: 0.8,
       gunBack: 0.05, gunUp: 3, gunSide: 0.8, gunRoll: 2, gunSpring: 120, gunDamping: 13, casing: 'rifle', flash: 1.3, flashColor: 0xffb85a, smoke: 1,
     },
     sound: { crack: 1, crackTone: 3600, blast: 1.1, blastTone: 1300, blastLength: 0.14, boom: 1, boomPitch: 75, boomLength: 0.2, mech: 0.5, mechPitch: 1300, tail: 1.2, distant: 1.2, volume: 1, pitchVar: 0.04, after: 'none', reload: 'belt' },
   },
   shotgun: {
     recoil: {
-      up: 5.5, upGrowth: 0, growShots: 1, side: 1.2, swing: 1, jitter: 0.8, maxClimb: 30, aimMul: 0.85, crouchMul: 0.85,
+      up: 5.5, upGrowth: 0, growShots: 1, side: 1.2, swing: 1, jitter: 0.8, aimMul: 0.85, crouchMul: 0.85,
       returnSpeed: 6, returnWhileFiring: 6, resetTime: 0.6, punch: 3, shake: 2.2,
       gunBack: 0.12, gunUp: 14, gunSide: 2, gunRoll: 6, gunSpring: 90, gunDamping: 10, casing: 'shell', flash: 1.6, flashColor: 0xffb04a, smoke: 1.2,
     },
@@ -85,7 +85,7 @@ export const GUN_TYPES = {
   },
   dmr: {
     recoil: {
-      up: 3.2, upGrowth: 0, growShots: 1, side: 0.5, swing: 1, jitter: 0.4, maxClimb: 25, aimMul: 0.75, crouchMul: 0.85,
+      up: 3.2, upGrowth: 0, growShots: 1, side: 0.5, swing: 1, jitter: 0.4, aimMul: 0.75, crouchMul: 0.85,
       returnSpeed: 6, returnWhileFiring: 6, resetTime: 0.5, punch: 2, shake: 1.3,
       gunBack: 0.08, gunUp: 9, gunSide: 1.5, gunRoll: 3, gunSpring: 110, gunDamping: 11, casing: 'rifle', flash: 1.3, flashColor: 0xffc46b, smoke: 0.9,
     },
@@ -93,7 +93,7 @@ export const GUN_TYPES = {
   },
   pistol: {
     recoil: {
-      up: 2.4, upGrowth: 0, growShots: 1, side: 0.35, swing: 1, jitter: 0.35, maxClimb: 20, aimMul: 0.8, crouchMul: 0.9,
+      up: 2.4, upGrowth: 0, growShots: 1, side: 0.35, swing: 1, jitter: 0.35, aimMul: 0.8, crouchMul: 0.9,
       returnSpeed: 14, returnWhileFiring: 12, resetTime: 0.2, punch: 1.2, shake: 0.6,
       gunBack: 0.04, gunUp: 16, gunSide: 2, gunRoll: 4, gunSpring: 260, gunDamping: 20, casing: 'pistol', flash: 0.7, flashColor: 0xffd27a, smoke: 0.3,
     },
@@ -101,7 +101,7 @@ export const GUN_TYPES = {
   },
   revolver: {
     recoil: {
-      up: 4.8, upGrowth: 0, growShots: 1, side: 0.6, swing: 1, jitter: 0.5, maxClimb: 25, aimMul: 0.8, crouchMul: 0.9,
+      up: 4.8, upGrowth: 0, growShots: 1, side: 0.6, swing: 1, jitter: 0.5, aimMul: 0.8, crouchMul: 0.9,
       returnSpeed: 8, returnWhileFiring: 8, resetTime: 0.4, punch: 2.4, shake: 1.4,
       gunBack: 0.07, gunUp: 24, gunSide: 3, gunRoll: 6, gunSpring: 140, gunDamping: 12, casing: 'none', flash: 1.4, flashColor: 0xffb85a, smoke: 0.8,
     },

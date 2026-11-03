@@ -61,9 +61,8 @@ function renderClose(s, sr, seed) {
   const n = Math.floor(len * sr), out = new Float32Array(n);
   const crackBP = new Biquad('bandpass', sr).set(s.crackTone, 0.8), crackHP = new Biquad('highpass', sr).set(1500);
   const lp1 = new Biquad('lowpass', sr), lp2 = new Biquad('lowpass', sr);
-  const mechHP = new Biquad('highpass', sr).set(2500);
+  const mechBP = new Biquad('bandpass', sr).set(s.mechPitch * 0.5, 1.1);
   const mechAt = 0.006 + rnd() * 0.004, mech2At = mechAt + 0.03 + rnd() * 0.01;
-  const partials = [[1, 1, 0.03], [2.76, 0.6, 0.02], [5.4, 0.35, 0.012], [8.9, 0.2, 0.008]];
   let phase = 0;
   for (let i = 0; i < n; i++) {
     const t = i / sr, noise = rnd() * 2 - 1;
@@ -77,15 +76,15 @@ function renderClose(s, sr, seed) {
     const f = s.boomPitch * (0.55 + 1.3 * Math.exp(-t / 0.02));
     phase += (2 * Math.PI * f) / sr;
     const boom = Math.tanh(1.6 * Math.sin(phase)) * (1 - Math.exp(-t / 0.001)) * Math.exp(-t / (s.boomLength * 0.4));
-    // The action: the bolt slamming back and forward, a short metallic ring plus a click
+    // The action: the bolt slamming back and forward, a short dull clack (mostly noise, only a hint of ring)
     let mech = 0;
+    const m = mechBP.run(noise);
     for (const [at, amp] of [[mechAt, 1], [mech2At, 0.6]]) {
       const u = t - at;
-      if (u < 0 || u > 0.08) continue;
-      for (const [mul, a, d] of partials) mech += Math.sin(2 * Math.PI * s.mechPitch * mul * u) * a * Math.exp(-u / d) * amp;
-      mech += mechHP.run(noise) * Math.exp(-u / 0.002) * amp;
+      if (u < 0 || u > 0.04) continue;
+      mech += (m * 2.5 * Math.exp(-u / 0.004) + Math.sin(2 * Math.PI * s.mechPitch * u) * 0.15 * Math.exp(-u / 0.005)) * amp;
     }
-    out[i] = crack * s.crack * 0.9 + blast * s.blast + boom * s.boom * 0.9 + mech * s.mech * 0.45;
+    out[i] = crack * s.crack * 0.9 + blast * s.blast + boom * s.boom * 0.9 + mech * s.mech * 0.25;
   }
   return finish(out);
 }
@@ -152,9 +151,10 @@ function renderFoley(hits, sr, seed) {
     const ratio = 2.3 + rnd() * 0.4;
     for (let i = start; i < end; i++) {
       const u = (i - start) / sr;
-      const ring = (Math.sin(2 * Math.PI * f * u) + 0.5 * Math.sin(2 * Math.PI * f * ratio * u)) * Math.exp(-u / d);
+      // A short ring under a click: kept low and quick so it reads as a clack, not a bell
+      const ring = (Math.sin(2 * Math.PI * f * u) + 0.4 * Math.sin(2 * Math.PI * f * ratio * u)) * Math.exp(-u / (d * 0.5));
       const click = bp.run(rnd() * 2 - 1) * Math.exp(-u / (d * 0.5)) * 3;
-      out[i] += g * (ring * (1 - nz * 0.6) + click * nz);
+      out[i] += g * (ring * 0.35 * (1 - nz * 0.6) + click * Math.max(nz, 0.5));
     }
   }
   return finish(out, 1.3);
