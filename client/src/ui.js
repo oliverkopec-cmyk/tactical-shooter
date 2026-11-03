@@ -10,7 +10,7 @@ import { operatorIcon } from './operatorIcons.js';
 import { mapChoices } from '../../shared/map.js';
 import { rankInfo, rankStep, xpForLevel } from '../../shared/progression.js';
 import { BIND_ACTIONS, DEFAULT_KEYBINDS, keyLabel, isBindableCode, RESERVED_CODES } from '../../shared/keybinds.js';
-import { ownerTag, ownerTagEl } from './badge.js';
+import { badge, badgeEls } from './badge.js';
 import { MODES } from '../../shared/modes.js';
 import { PING_TYPES } from '../../shared/voiceLines.js';
 
@@ -283,20 +283,23 @@ export class UI {
   }
 
   /** Tab scoreboard. rows: [{ id, name, team, k, d, alive, op, me }] */
-  renderBoard(visible, rows, scores) {
+  renderBoard(visible, rows, scores, canReport = false) {
     const el = $('board');
     el.classList.toggle('hidden', !visible);
-    if (!visible) return;
+    el.classList.toggle('interactive', visible && canReport);
+    if (!visible) { this.lastBoard = ''; return; }
     const table = (team, title, score) => {
       const list = rows.filter((r) => r.team === team).sort((a, b) => b.k - a.k || a.d - b.d);
       const body = list.map((r) => `
         <tr class="${r.me ? 'me' : ''}${r.alive ? '' : ' dead'}">
-          <td class="nm">${escapeHtml(r.name)}${r.owner ? ownerTag : ''}</td><td class="opn">${r.op ? escapeHtml(OPERATORS[r.op]?.name || '') : '—'}</td>
-          <td>${r.k}</td><td>${r.d}</td></tr>`).join('');
+          <td class="nm">${escapeHtml(r.name)}${badge(r)}</td><td class="opn">${r.op ? escapeHtml(OPERATORS[r.op]?.name || '') : '—'}</td>
+          <td>${r.k}</td><td>${r.d}</td>${canReport ? `<td>${r.me || r.bot ? '' : `<button type="button" class="board-report" data-report="${escapeHtml(r.id)}" data-name="${escapeHtml(r.name)}">Report</button>`}</td>` : ''}</tr>`).join('');
       return `<div class="board-team ${team}"><h3>${title} <span>${score}</span></h3>
-        <table><thead><tr><th>Player</th><th>Operator</th><th>K</th><th>D</th></tr></thead><tbody>${body}</tbody></table></div>`;
+        <table><thead><tr><th>Player</th><th>Operator</th><th>K</th><th>D</th>${canReport ? '<th></th>' : ''}</tr></thead><tbody>${body}</tbody></table></div>`;
     };
-    el.innerHTML = `<div class="board-inner">${table('attack', 'Attack', scores.attack)}${table('defense', 'Defense', scores.defense)}</div>`;
+    const note = canReport ? '<div class="board-note">Click Report next to a player to report them. Press the scoreboard key again to close.</div>' : '';
+    const html = `<div class="board-wrap"><div class="board-inner">${table('attack', 'Attack', scores.attack)}${table('defense', 'Defense', scores.defense)}</div>${note}</div>`;
+    if (html !== this.lastBoard) { this.lastBoard = html; el.innerHTML = html; }   // (not redrawn every frame, so a click lands on the same button it started on)
   }
 
   /** Lobby: copy the room code to the clipboard. */
@@ -344,7 +347,7 @@ export class UI {
   clearPassword() { $('auth-password').value = ''; }
 
   renderProfile(p) {
-    $('profile-name').innerHTML = `${escapeHtml(p.username)}${p.owner ? ownerTag : ''}`;
+    $('profile-name').innerHTML = `${escapeHtml(p.username)}${badge(p)}`;
     $('profile-level').textContent = `· Level ${p.level} (${(p.xp - xpForLevel(p.level)).toLocaleString()} / ${(xpForLevel(p.level + 1) - xpForLevel(p.level)).toLocaleString()} XP)`;
     $('profile-money').textContent = p.money.toLocaleString();
     $('profile-polish').textContent = p.polishMoney.toLocaleString();
@@ -392,7 +395,7 @@ export class UI {
       $('summary-title').textContent = 'MATCH OVER';
       $('summary-title').className = 'summary-title';
       $('summary-score').textContent = '';
-      body.innerHTML = `<div class="summary-name">${escapeHtml(s.name || '')}${s.owner ? ownerTag : ''}</div><p class="muted center">${escapeHtml(s.reason || '')}</p>`;
+      body.innerHTML = `<div class="summary-name">${escapeHtml(s.name || '')}${badge(s)}</div><p class="muted center">${escapeHtml(s.reason || '')}</p>${this.reportList(s.reportable)}`;
       return;
     }
     $('summary-title').textContent = s.won ? 'VICTORY' : 'DEFEAT';
@@ -419,13 +422,19 @@ export class UI {
       ? `<div class="sum-sub">Quests completed</div>${s.money.quests.map((q) => `<div class="sum-line quest-done"><span>✔ ${escapeHtml(q.label)}</span><b>+${q.reward}</b></div>`).join('')}` : '';
     const leveled = s.xp.levelAfter > s.xp.levelBefore ? `<div class="levelup">LEVEL UP! You are now level ${s.xp.levelAfter}</div>` : '';
     body.innerHTML = `
-      <div class="summary-name">${escapeHtml(s.name || '')}${s.owner ? ownerTag : ''}</div>
+      <div class="summary-name">${escapeHtml(s.name || '')}${badge(s)}</div>
       ${rankBlock}
       <div class="sum-sub">Money earned</div>
       ${lines}${quests}
       <div class="sum-line total"><span>Total</span><b>+${s.money.total + s.money.questTotal}</b></div>
       <div class="muted center small-note">Balance: ${s.money.balance.toLocaleString()} · +${s.xp.gained} XP</div>
-      ${leveled}`;
+      ${leveled}${this.reportList(s.reportable)}`;
+  }
+
+  /** "Report a player": one row per other human player of the match just played. */
+  reportList(players) {
+    if (!players?.length) return '';
+    return `<div class="sum-sub">Report a player</div><div class="summary-report">${players.map((p) => `<div class="sum-line"><span>${escapeHtml(p.name)}</span><button type="button" data-report="${escapeHtml(p.id)}" data-name="${escapeHtml(p.name)}">Report</button></div>`).join('')}</div>`;
   }
 
   hideMatchSummary() {
@@ -493,7 +502,7 @@ export class UI {
         const name = document.createElement('span');
         name.textContent = p.name;
         li.appendChild(name);
-        if (p.owner) li.appendChild(ownerTagEl());
+        for (const el of badgeEls(p)) li.appendChild(el);
         if (p.bot) {
           const tag = document.createElement('span');
           tag.className = 'tag bot-tag';
@@ -612,12 +621,12 @@ export class UI {
     if (mine) li.classList.add('mine');
     const k = document.createElement('span');
     k.className = killer.team; k.textContent = killer.name;
-    if (killer.owner) k.appendChild(ownerTagEl());
+    for (const el of badgeEls(killer)) k.appendChild(el);
     const w = document.createElement('span');
     w.className = 'weapon'; w.textContent = `${WEAPONS[weapon]?.name || UTILITIES[weapon]?.name || KILL_NAMES[weapon] || weapon}${head ? ' · head' : ''}`;
     const v = document.createElement('span');
     v.className = victim.team; v.textContent = victim.name;
-    if (victim.owner) v.appendChild(ownerTagEl());
+    for (const el of badgeEls(victim)) v.appendChild(el);
     li.append(k, w, v);
     const feed = $('killfeed');
     feed.prepend(li);

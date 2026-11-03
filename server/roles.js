@@ -16,3 +16,23 @@ export function isOwner(username) {
 export function isAdmin(username) {
   return isOwner(username) || names(process.env.ADMIN_USERNAMES).has(norm(username));
 }
+
+/**
+ * TESTER_USERNAMES (comma-separated): testers. A tester gets a TESTER badge and can open the Admin tab, but only
+ * to see who is online, see and join or spectate matches, and send announcements. Nothing else there is theirs:
+ * reports, chat logs, gifts, Money and warning, suspending or banning are refused by the server for testers.
+ * (An owner or admin who is also listed as a tester keeps their larger role.)
+ */
+export function isTester(username) {
+  return names(process.env.TESTER_USERNAMES).has(norm(username));
+}
+
+/** May open the Admin tab and use its safe parts (online list, matches, join / spectate, announcements). */
+export function isStaff(username) {
+  return isAdmin(username) || isTester(username);
+}
+
+/** The badge flags sent with a name: { owner, tester }. An owner or admin never shows as a tester. */
+export function badgeFlags(username) {
+  return { owner: isOwner(username), tester: isTester(username) && !isAdmin(username) };
+}

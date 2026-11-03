@@ -154,6 +154,7 @@
         <div id="admin-history" class="card"></div>
         <div id="admin-online" class="card"></div>
       </div>
+      <div id="admin-mod" class="hidden"></div>
     </section>
 
     <section id="tab-friends" class="tab-panel hidden">
@@ -255,6 +256,7 @@
     <div id="hud-room" class="hud-chip"></div>
     <div id="net-stats" class="hud-chip"></div>
     <ul id="killfeed"></ul>
+    <div id="chat"><ul id="chat-log"></ul><div id="chat-row"><span id="chat-scope">ALL</span><input id="chat-input" type="text" maxlength="120" autocomplete="off" spellcheck="false" placeholder="Type a message, Enter to send, Esc to cancel" /></div></div>
     <ul id="voice-feed"></ul>
     <div id="ping-wheel" class="hidden"></div>
     <div id="killcam" class="hidden">
@@ -349,6 +351,27 @@
       <div id="summary-score" class="muted center"></div>
       <div id="summary-body"></div>
       <button id="summary-close" class="primary">Continue</button>
+    </div>
+  </div>
+
+  <!-- Report a player (from the scoreboard or the end-of-match screen) -->
+  <div id="report-dialog" class="hidden">
+    <div class="summary-card">
+      <h2>Report <span id="report-who"></span></h2>
+      <div id="report-reasons" class="report-reasons"></div>
+      <textarea id="report-comment" maxlength="200" rows="3" placeholder="Anything else we should know? (optional)"></textarea>
+      <p id="report-status" class="adm-status"></p>
+      <div class="invite-buttons"><button type="button" id="report-send" class="primary">Send report</button><button type="button" id="report-cancel">Cancel</button></div>
+    </div>
+  </div>
+
+  <!-- A warning from the owner, shown in the menu -->
+  <div id="warn-dialog" class="hidden">
+    <div class="summary-card">
+      <h2>⚠ Warning</h2>
+      <div id="warn-body"></div>
+      <p class="muted small-note">Keep it friendly and fair. More serious or repeated problems can lead to a suspension or a ban.</p>
+      <button type="button" id="warn-ok" class="primary">I understand</button>
     </div>
   </div>
 

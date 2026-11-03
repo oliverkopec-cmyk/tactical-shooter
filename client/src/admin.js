@@ -2,7 +2,7 @@
 // announcements, gifts and Money, the gifts sent so far, everyone online, every running
 // match, and joining a match to watch or play.
 
-import { ownerTag } from './badge.js';
+import { badge } from './badge.js';
 import { SKINS, RARITIES, skinList } from '../../shared/skins.js';
 import { CHARMS, charmList } from '../../shared/charms.js';
 import { WEAPONS } from '../../shared/weapons.js';
@@ -45,8 +45,22 @@ export class AdminPanel {
     this.sendTab = 'announce';
     this.giftSkin = '';          // the skin picked in the gift gallery ('' = none)
     this.thumbsStarted = false;
+    this.level = 'admin';        // 'owner' | 'admin' | 'tester' (a tester only gets announcements, the online list and matches)
     $('admin-matches').addEventListener('click', (e) => this.onClick(e));
     this.buildSend();
+  }
+
+  /** Testers get announcements, the online list and the matches: no gifts, no Money, no gift history (the server refuses them too). */
+  setRole(level) {
+    this.level = level || 'admin';
+    const tester = this.level === 'tester';
+    $('admin-history').classList.toggle('hidden', tester);
+    for (const b of document.querySelectorAll('#admin-send [data-send-tab="gift"], #admin-send [data-send-tab="money"]')) b.classList.toggle('hidden', tester);
+    $('admin-send').querySelector('.adm-tabs').style.gridTemplateColumns = tester ? '1fr' : '';
+    if (tester) {
+      this.sendTab = 'announce';
+      for (const p of document.querySelectorAll('#admin-send [data-pane]')) p.classList.toggle('hidden', p.dataset.pane !== 'announce');
+    }
   }
 
   // ---------------------------------------------------------------- announcements, gifts, Money
@@ -188,6 +202,7 @@ export class AdminPanel {
   }
 
   async loadHistory() {
+    if (this.level === 'tester') return;
     const res = await this.network.request('adminGifts');
     if (!res.error) this.history = res.gifts;
     if (this.visible) this.renderHistory();
@@ -232,7 +247,7 @@ export class AdminPanel {
   }
 
   render() {
-    const names = (list) => list.length ? list.map((p) => `${esc(p.name)}${p.owner ? ownerTag : ''}`).join(', ') : '<span class="muted">nobody</span>';
+    const names = (list) => list.length ? list.map((p) => `${esc(p.name)}${badge(p)}`).join(', ') : '<span class="muted">nobody</span>';
     $('admin-matches').innerHTML = `
       <h2>Matches</h2>
       ${this.message ? `<div class="error">${esc(this.message)}</div>` : ''}
@@ -250,7 +265,7 @@ export class AdminPanel {
     $('admin-online').innerHTML = `
       <h2>Online (${this.online.length})</h2>
       ${this.online.map((p) => `
-        <div class="friend-row"><span class="friend-who"><span><span class="friend-name">${esc(p.username)}${p.owner ? ownerTag : ''}</span>
+        <div class="friend-row"><span class="friend-who"><span><span class="friend-name">${esc(p.username)}${badge(p)}</span>
           <span class="muted friend-status">${esc(p.rank)} · level ${p.level} · ${STATUS[p.status] || p.status}${p.room ? ` (${esc(p.room)})` : ''}</span></span></span></div>`).join('')}`;
   }
 }

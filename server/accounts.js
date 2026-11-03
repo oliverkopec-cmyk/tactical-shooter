@@ -46,6 +46,7 @@ export class Accounts {
     this.attempts = new Map(); // ip -> { count, resetAt }
     this.progression = new Progression(this);   // money, xp, rank points and daily quests
     this.social = new Social(this);             // friends, presence and parties
+    this.moderation = null;                     // set by index.js (chat, reports, suspensions): checked at every login
     this.lookups = new Map();                   // ip -> { count, resetAt } for friend searches
     // Skins are earned or bought. UNLOCK_ALL_SKINS=1 is a developer switch that unlocks them all.
     configureProfile({
@@ -78,8 +79,11 @@ export class Accounts {
     return token;
   }
 
-  /** The account row for a Cookie header, or null if not logged in. */
-  async fromCookie(cookieHeader) {
+  /**
+   * The account row for a Cookie header, or null if not logged in. A suspended or banned account counts as not
+   * logged in (`withBlocked` keeps it, with the reason, for the login page to explain).
+   */
+  async fromCookie(cookieHeader, { withBlocked = false } = {}) {
     const token = readCookie(cookieHeader, COOKIE);
     if (!token) return null;
     const { rows } = await this.db.query(
@@ -87,7 +91,10 @@ export class Accounts {
        WHERE s.token_hash = $1 AND s.expires_at > now()`,
       [hashToken(token)],
     );
-    return rows[0] ? { row: rows[0], tokenHash: hashToken(token) } : null;
+    if (!rows[0]) return null;
+    const block = this.moderation ? await this.moderation.blockOf(rows[0].id) : null;
+    if (block && !withBlocked) return null;
+    return { row: rows[0], tokenHash: hashToken(token), block };
   }
 
   setCookie(req, res, token) {
@@ -114,7 +121,8 @@ export class Accounts {
     r.use(express.json({ limit: '8kb' }));
 
     r.get('/session', async (req, res) => {
-      const found = await this.fromCookie(req.headers.cookie);
+      const found = await this.fromCookie(req.headers.cookie, { withBlocked: true });
+      if (found?.block) return res.json({ account: null, blocked: this.moderation.blockMessage(found.block), storage: this.db.kind });
       if (found) {
         // Each visit pushes the expiry back, so regular players never get logged out.
         await this.db.query(`UPDATE sessions SET expires_at = now() + interval '${SESSION_DAYS} days' WHERE token_hash = $1`, [found.tokenHash]);
@@ -149,6 +157,8 @@ export class Accounts {
       const { rows } = await this.db.query('SELECT * FROM accounts WHERE username_lower = $1', [username.toLowerCase()]);
       const ok = await bcrypt.compare(password, rows[0]?.password_hash || await this.dummyHash);
       if (!rows[0] || !ok) return res.status(401).json({ error: 'Wrong username or password.' });
+      const block = this.moderation ? await this.moderation.blockOf(rows[0].id) : null;
+      if (block) return res.status(403).json({ error: this.moderation.blockMessage(block) });
       this.setCookie(req, res, await this.createSession(rows[0].id));
       res.json({ account: profileOf(await this.progression.ensureQuests(rows[0])) });
     });

@@ -25,13 +25,15 @@ export const BIND_ACTIONS = [
   { id: 'utility', label: 'Use utility', group: 'Combat', key: 'Digit4' },
   { id: 'ability', label: 'Operator ability', group: 'Combat', key: 'KeyF' },
   { id: 'breach', label: 'Breach charge (attack)', group: 'Gadgets', key: 'KeyG' },
-  { id: 'interact', label: 'Plant / disable the defuser (hold)', group: 'Gadgets', key: 'KeyY' },
+  { id: 'interact', label: 'Plant / disable the defuser (hold)', group: 'Gadgets', key: 'KeyJ' },
   { id: 'droneNext', label: 'Switch drone (attack)', group: 'Gadgets', key: 'KeyX' },
   { id: 'reinforce', label: 'Reinforce wall (defense)', group: 'Gadgets', key: 'KeyV' },
   { id: 'barricade', label: 'Barricade (defense)', group: 'Gadgets', key: 'KeyB' },
   { id: 'camView', label: 'Cameras (defense)', group: 'Gadgets', key: 'KeyT' },
   { id: 'ping', label: 'Ping (tap) / ping wheel (hold)', group: 'Interface', key: 'Mouse1' },
   { id: 'scoreboard', label: 'Scoreboard (hold)', group: 'Interface', key: 'Tab' },
+  { id: 'chatAll', label: 'Chat: everyone', group: 'Interface', key: 'KeyY' },
+  { id: 'chatTeam', label: 'Chat: your team', group: 'Interface', key: 'KeyU' },
   { id: 'toggleHint', label: 'Show / hide key hints', group: 'Interface', key: 'KeyH' },
   { id: 'loadout', label: 'Loadout in prep: operator, utility, spawn (attack)', group: 'Interface', key: 'Digit6' },
 ];
@@ -60,6 +62,8 @@ export function sanitizeKeybinds(raw) {
   const src = raw && typeof raw === 'object' ? { ...raw } : {};
   // Saved before aiming existed: melee was on right click, which aiming now has by default
   if (!('aim' in src) && src.melee === 'Mouse2') delete src.melee;
+  // Saved before chat existed: Y was the plant key, and chat now has it (the plant key moved to J)
+  if (!('chatAll' in src) && src.interact === 'KeyY') src.interact = 'KeyJ';
   const out = {};
   const used = new Set();
   for (const { id, key } of BIND_ACTIONS) {

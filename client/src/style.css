@@ -896,6 +896,31 @@ button.small { font-size: 12px; padding: 4px 10px; margin-top: 6px; }
 .invite-buttons button { flex: 1; }
 #social-toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 80; padding: 10px 16px; border-radius: 10px; background: rgba(20, 24, 30, 0.97); border: 1px solid var(--line); font-size: 14px; }
 
+/* The tester's black and white tag */
+.tester-tag {
+  display: inline-block; margin-left: 6px; padding: 0 5px; border-radius: 3px;
+  font-size: 10px; font-weight: 800; letter-spacing: 0.08em; line-height: 16px; vertical-align: middle;
+  color: #fff; background: #000; border: 1px solid #fff;
+}
+
+/* In-match chat (bottom left, above the kit box) */
+#chat { position: absolute; left: 16px; bottom: 258px; width: min(440px, 46vw); display: flex; flex-direction: column; gap: 4px; pointer-events: none; font-size: 13px; }
+#chat-log { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+#chat-log li { background: rgba(10, 12, 16, 0.6); padding: 3px 8px; border-radius: 5px; line-height: 1.35; transition: opacity 1.4s; word-break: break-word; }
+#chat-log li.fade { opacity: 0; }
+#chat-log li.sys { color: var(--muted); font-size: 12px; }
+#chat-log li.mine { background: rgba(30, 40, 56, 0.7); }
+.chat-tag { font-size: 10px; font-weight: 800; letter-spacing: 0.04em; color: #9aa4b2; }
+.chat-tag.team { color: #6fdc7a; }
+.chat-name { font-weight: 700; }
+.chat-name.attack { color: var(--attack); }
+.chat-name.defense { color: var(--defense); }
+#chat-row { display: none; align-items: center; gap: 6px; background: rgba(10, 12, 16, 0.85); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; pointer-events: auto; }
+#chat.open #chat-row { display: flex; }
+#chat-scope { font-size: 10px; font-weight: 800; padding: 1px 5px; border-radius: 3px; background: #3a4350; color: #fff; }
+#chat[data-scope="team"] #chat-scope { background: #2f8f4a; }
+#chat-input { flex: 1; background: transparent; border: 0; outline: 0; color: #fff; font: inherit; }
+
 /* The owner's gold tag, next to their name wherever names appear */
 .owner-tag {
   display: inline-block; margin-left: 6px; padding: 0 5px; border-radius: 3px;
@@ -1328,3 +1353,38 @@ button.primary:hover:not(:disabled) { background: linear-gradient(180deg, #ffd47
 #place-ring.bad .fill { stroke: #ff5a5a; }
 #place-ring.done .fill { stroke: #3bd16f; }
 #place-label { font-family: Rajdhani, Inter, sans-serif; font-weight: 700; font-size: 15px; letter-spacing: 0.08em; text-transform: uppercase; color: #fff; text-shadow: 0 1px 4px #000; white-space: nowrap; }
+
+/* Report and warning dialogs, and the owner's moderation inbox */
+#report-dialog, #warn-dialog { position: fixed; inset: 0; z-index: 90; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(6, 8, 12, 0.8); }
+#report-dialog.hidden, #warn-dialog.hidden { display: none; }
+#report-dialog .summary-card, #warn-dialog .summary-card { max-width: 440px; }
+#report-dialog h2, #warn-dialog h2 { margin: 0 0 4px; }
+.report-reasons { display: flex; flex-direction: column; gap: 6px; }
+#warn-body p { margin: 6px 0; font-size: 15px; }
+#board.interactive { pointer-events: auto; }
+.board-report { background: transparent; border: 1px solid var(--line); color: var(--muted); border-radius: 4px; font-size: 11px; padding: 1px 6px; cursor: pointer; }
+.board-report:hover { color: #ff8a8a; border-color: #ff8a8a; }
+.board-note { text-align: center; font-size: 12px; color: var(--muted); margin-top: 8px; }
+.summary-report { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; }
+.summary-report .sum-line button { font-size: 12px; padding: 2px 8px; }
+#admin-mod { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; margin-top: 16px; }
+#admin-mod.hidden { display: none; }
+.mod-tabs { display: flex; gap: 6px; }
+.mod-tabs button.active { border-color: var(--accent); color: var(--accent); background: rgba(240, 180, 60, 0.1); }
+.mod-list { display: flex; flex-direction: column; gap: 8px; max-height: 560px; overflow-y: auto; }
+.mod-item { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.mod-item .mod-head { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.mod-item .tag { font-size: 10px; font-weight: 800; padding: 1px 6px; border-radius: 3px; background: #3a4350; color: #fff; }
+.mod-item .tag.open { background: #b8402f; }
+.mod-item .tag.ban { background: #7a1f1f; }
+.mod-item .tag.suspend { background: #8a5a12; }
+.mod-chat { max-height: 220px; overflow-y: auto; background: rgba(0, 0, 0, 0.25); border-radius: 6px; padding: 6px 8px; font-size: 12px; }
+.mod-chat .hit { background: rgba(255, 200, 60, 0.18); }
+.mod-chat .scope { color: var(--muted); font-size: 10px; margin-right: 4px; }
+.mod-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.mod-actions select, .mod-actions input { font-size: 12px; padding: 3px 6px; }
+.mod-actions input.mod-reason { flex: 1; min-width: 120px; }
+.mod-search { display: flex; gap: 6px; }
+.mod-search input { flex: 1; }
+.mod-msg { font-size: 12px; padding: 2px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.05); }
+.board-wrap { display: flex; flex-direction: column; align-items: center; }

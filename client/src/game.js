@@ -34,6 +34,7 @@ import { DestructionView } from './destruction.js';
 import { DroneView } from './drones.js';
 import { GadgetView } from './gadgets.js';
 import { Soundscape } from './soundscape.js';
+import { Chat } from './chat.js';
 import { findOpening } from '../../shared/map.js';
 import { OPERATORS } from '../../shared/operators.js';
 import { TEAM_COLORS } from '../../shared/constants.js';
@@ -157,6 +158,9 @@ export class Game {
     this.df = null;                                  // defuser state from the server: { c: carrier, d: dropped, p: planted }
     this.defuserAct = null;                          // my plant / disable in progress: { kind, start, ms }
     this.boardOn = false;
+    this.boardPinned = false;     // with the mouse free, Tab keeps the scoreboard open so its Report buttons can be clicked
+    this.chat = new Chat({ network, getMe: () => this.network.id, onOpenChange: (open) => { if (open && this.local) this.local.keys = 0; } });
+    document.addEventListener('pointerlockchange', () => { if (document.pointerLockElement) this.boardPinned = false; });
     window.addEventListener('keydown', (e) => this.onKeyDown(e));
     window.addEventListener('keyup', (e) => { if (actionFor(e.code) === 'scoreboard') this.boardOn = false; });
     // The scoreboard and hint toggle can be bound to mouse buttons too
@@ -400,7 +404,7 @@ export class Game {
     this.myOwned = me.owned || [];   // operators I own (the select screen locks the others)
     this.myOpMatches = me.opMatches || {};   // matches played with each operator (the badges on the select screen)
     this.members.clear();
-    for (const p of payload.players) this.members.set(p.id, { name: p.name, team: p.team, owner: !!p.owner });
+    for (const p of payload.players) this.members.set(p.id, { name: p.name, team: p.team, owner: !!p.owner, tester: !!p.tester, bot: !!p.bot });
 
     this.local = new LocalPlayer({
       id: myId, team: me.team, state: me.state, weapon: me.weapon, world: this.world,
@@ -485,7 +489,7 @@ export class Game {
   newRound(payload) {
     if (this.spec && this.running) {
       this.members.clear();
-      for (const p of payload.players) this.members.set(p.id, { name: p.name, team: p.team, owner: !!p.owner });
+      for (const p of payload.players) this.members.set(p.id, { name: p.name, team: p.team, owner: !!p.owner, tester: !!p.tester, bot: !!p.bot });
       this.loadRoundSpectator(payload);
       return;
     }
@@ -494,7 +498,7 @@ export class Game {
     if (!me) return;
     this.myTeam = me.team;
     this.members.clear();
-    for (const p of payload.players) this.members.set(p.id, { name: p.name, team: p.team, owner: !!p.owner });
+    for (const p of payload.players) this.members.set(p.id, { name: p.name, team: p.team, owner: !!p.owner, tester: !!p.tester, bot: !!p.bot });
     this.local.setDrone(null);
     this.drones.clear();
     this.local.respawn(me.state, me.weapon, me.team);
@@ -570,6 +574,8 @@ export class Game {
     if (!this.running) return;
     if (e.code === 'Escape' && this.ui.settingsOpen && this.ui.settingsInGame) { this.ui.closeSettings(); this.ui.onSettingsClosed(); return; }
     if (e.repeat || e.target instanceof HTMLInputElement) return;
+    const chatKey = actionFor(e.code);
+    if ((chatKey === 'chatAll' || chatKey === 'chatTeam') && !this.spec) { e.preventDefault(); this.chat.start(chatKey === 'chatTeam' ? 'team' : 'all'); return; }   // type a message (Y: everyone, U: your team)
     if (this.spec && this.onSpecKey(e)) return;
     if (this.killcam && (e.code === 'Space' || e.code === 'Enter')) { e.preventDefault(); this.skipKillcam(); return; }
     const action = actionFor(e.code);
@@ -579,7 +585,7 @@ export class Game {
 
   onUiAction(action, inGame) {
     if (!this.running || !inGame) return;
-    if (action === 'scoreboard') this.boardOn = true;
+    if (action === 'scoreboard') { this.boardOn = true; if (document.pointerLockElement !== this.canvas) this.boardPinned = !this.boardPinned; }
     else if (action === 'toggleHint') this.ui.toggleHint();
   }
 
@@ -625,6 +631,11 @@ export class Game {
     return `${base}${f} · ${k('reinforce')} reinforce · ${phase === PHASE.PREP ? `${k('barricade')} barricade · ` : ''}${k('camView')} cameras · ${tail}`;
   }
 
+  /** The other human players of this match, for the Report buttons on the end-of-match screen. */
+  reportablePlayers() {
+    return [...this.members].filter(([id, m]) => id !== this.network.id && !m.bot).map(([id, m]) => ({ id, name: m.name }));
+  }
+
   /** Rows for the Tab scoreboard. */
   boardRows() {
     const rows = [];
@@ -632,7 +643,7 @@ export class Game {
       const me = id === this.network.id;
       const r = this.remotes.get(id);
       rows.push({
-        id, me, name: m.name, owner: m.owner, team: m.team,
+        id, me, name: m.name, owner: m.owner, tester: m.tester, bot: m.bot, team: m.team,
         k: this.stats[id]?.k ?? 0, d: this.stats[id]?.d ?? 0,
         alive: me ? !!this.local?.alive : (r ? r.alive : true),
         op: m.team === this.myTeam ? this.picks[id]?.op : null,
@@ -678,6 +689,7 @@ export class Game {
   }
 
   stop() {
+    this.chat.reset();
     this.skipKillcam();
     this.pings.clear();
     this.closeWheel();
@@ -711,7 +723,7 @@ export class Game {
 
   /** Keep the avatar list in sync with room membership. */
   syncRoster(players) {
-    for (const p of players) this.members.set(p.id, { name: p.name, team: p.team, owner: !!p.owner });
+    for (const p of players) this.members.set(p.id, { name: p.name, team: p.team, owner: !!p.owner, tester: !!p.tester, bot: !!p.bot });
     if (!this.running) return;
     const ids = new Set(players.map((p) => p.id));
     for (const [id, r] of this.remotes) {
@@ -1056,7 +1068,7 @@ export class Game {
   startSpectator(payload) {
     this.myTeam = 'attack';
     this.members.clear();
-    for (const p of payload.players) this.members.set(p.id, { name: p.name, team: p.team, owner: !!p.owner });
+    for (const p of payload.players) this.members.set(p.id, { name: p.name, team: p.team, owner: !!p.owner, tester: !!p.tester, bot: !!p.bot });
     this.local = null;
     const site = this.mapDef.sites[payload.site ?? 0];
     this.spec = {
@@ -1167,7 +1179,7 @@ export class Game {
       ? `Watching ${sp.target.name} · click: next player · F: free camera · ${keyFor('scoreboard')} scoreboard · Backspace: stop spectating`
       : 'Free camera: WASD move · Space/C up/down · Shift fast · click: follow a player · Backspace: stop spectating');
     this.ui.setSpectatorInfo(sp.target ? `Watching ${sp.target.name}` : 'Free camera');
-    this.ui.renderBoard(this.boardOn, this.boardRows(), this.round.scores);
+    this.ui.renderBoard(this.boardOn || this.boardPinned, this.boardRows(), this.round.scores, document.pointerLockElement !== this.canvas);
     this.defuserView.update(dt);
     this.pings.update();
     this.drawRopes(null);
@@ -1482,7 +1494,7 @@ export class Game {
     );
     this.ui.setLowHealth(local.alive && this.health > 0 && this.health <= 30);
     this.ui.setHint(this.hintText(watching, inDrone));
-    this.ui.renderBoard(this.boardOn, this.boardRows(), this.round.scores);
+    this.ui.renderBoard(this.boardOn || this.boardPinned, this.boardRows(), this.round.scores, document.pointerLockElement !== this.canvas);
 
     const w = local.weaponDef;
     // Aiming down sights: zoom by the sight on the drawn gun

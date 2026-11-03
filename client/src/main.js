@@ -8,6 +8,8 @@ import { applyAccountSettings } from './settings.js';
 import { Menu } from './menu.js';
 import { Social } from './social.js';
 import { AdminPanel } from './admin.js';
+import { ModPanel } from './modAdmin.js';
+import { ReportDialog, WarningPopup } from './moderation.js';
 import * as THREE from 'three';
 import { makeGunModel, animateGun } from './gunModels.js';
 import { sheet } from './gunSheet.js';
@@ -32,16 +34,21 @@ function setAccount(profile) {
   account = profile;
   ui.renderProfile(profile);
   document.querySelector('[data-tab=admin]').classList.toggle('hidden', !profile.admin);
+  admin.setRole(profile.staffLevel);
+  modPanel.setEnabled(profile.staffLevel === 'owner');   // the reports and chat inboxes are the owner's alone
   menu.refresh();
 }
 const admin = new AdminPanel({ network, onPreviewSkin: (skin) => menu.previewSkin(skin) });
+const modPanel = new ModPanel({ network });
+new ReportDialog({ network });
+const warnings = new WarningPopup({ network });
 const social = new Social({ network, getAccount: () => account, onCreateRoom: () => createRoom() });
 const menu = new Menu({
   getAccount: () => account, setAccount, onSettings: () => ui.openSettings(false),
-  onTab: (tab) => { social.setVisible(tab === 'friends'); admin.setVisible(tab === 'admin'); },
+  onTab: (tab) => { social.setVisible(tab === 'friends'); admin.setVisible(tab === 'admin'); modPanel.setVisible(tab === 'admin'); },
   claimGift: (id) => network.request('giftClaim', id),
 });
-ui.onShow = (screen) => menu.setActive(screen === 'home');
+ui.onShow = (screen) => { menu.setActive(screen === 'home'); if (screen === 'home' && account) warnings.check(); };   // unread warnings show up in the menu
 syncSettingsToAccount(() => !!account);
 
 function enterAccount(profile) {
@@ -174,9 +181,12 @@ network.on('profile', (profile) => {
 // Gifts waiting to be opened (sent when we connect and whenever an admin sends one), and admin announcements
 network.on('gifts', (list) => menu.setGifts(list));
 network.on('announcement', (a) => ui.showAnnouncement(a));
-network.on('matchSummary', (summary) => ui.showMatchSummary({ ...summary, name: account?.username, owner: !!account?.owner }));
+network.on('matchSummary', (summary) => ui.showMatchSummary({ ...summary, name: account?.username, owner: !!account?.owner, tester: !!account?.tester, reportable: game.reportablePlayers() }));
 
 network.on('sessionReplaced', () => { replaced = true; });
+// The owner warned us (while we were in the menu), or suspended or banned us (we are disconnected)
+network.on('warnings', ({ warnings: list }) => warnings.show(list));
+network.on('sanctioned', ({ message }) => { if (account) leaveAccount(message); });
 
 // The server refuses the connection when the login has expired or was logged out elsewhere.
 network.on('connect_error', (err) => {
@@ -217,7 +227,7 @@ getSession().then((res) => {
   if (res.account) enterAccount(res.account);
   else {
     ui.show('auth');
-    ui.authError(res.error);
+    ui.authError(res.blocked || res.error);   // a suspended or banned account sees why, and for how long
   }
 });
 
