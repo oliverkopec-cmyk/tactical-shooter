@@ -4,10 +4,8 @@
 //
 // You get charms two ways:
 //   - levelling up: one charm every CHARM_LEVEL_STEP levels, from the CHARM_LEVEL_REWARDS list
-//   - the charm crate in the shop: any of the 30, same odds, price and duplicate refund as a skin crate
+//   - the crate in the shop (shared/shop.js), which holds every charm as well as every crate skin
 // One charm can be equipped per gun, and other players see it.
-
-import { CRATE } from './skins.js';
 
 export const CHARMS = {
   // ---------------------------------------------------------------- common
@@ -66,9 +64,6 @@ export function charmsFromLevel(level) {
   return CHARM_LEVEL_REWARDS.filter((id) => charmUnlockLevel(id) <= (level || 1));
 }
 
-/** The charm crate costs and pays out like a skin crate (Money only; a duplicate refunds half). */
-export const CHARM_CRATE = { price: CRATE.price, refund: CRATE.refund, odds: CRATE.odds };
-
 export const RARITY_ORDER = ['common', 'rare', 'epic', 'legendary'];
 
 /** Charms in the crate, grouped by rarity. */
@@ -76,18 +71,6 @@ export function charmCrateContents() {
   const out = { common: [], rare: [], epic: [], legendary: [] };
   for (const id of CHARM_IDS) out[CHARMS[id].rarity].push(id);
   return out;
-}
-
-/** Pick a charm. `randInt(n)` must return a whole number in 0..n-1 (the server passes a secure one). */
-export function rollCharmCrate(randInt) {
-  const roll = randInt(10000);
-  let acc = 0, rarity = 'legendary';
-  for (const [r, p] of Object.entries(CHARM_CRATE.odds)) {
-    acc += Math.round(p * 10000);
-    if (roll < acc) { rarity = r; break; }
-  }
-  const pool = charmCrateContents()[rarity];
-  return { rarity, charm: pool[randInt(pool.length)] };
 }
 
 /** Charms sorted by rarity, then name, for menus. */

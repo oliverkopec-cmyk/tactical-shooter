@@ -2,7 +2,20 @@
 
 A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite on the client, Node.js + Socket.IO on an authoritative server. One Node process serves both the game client and the realtime server, so the whole thing deploys as a single Render web service.
 
-## Status: Stage 2J (graphics settings and update notes)
+## Status: Stage 2K (shop redesign)
+
+The Shop tab is rebuilt (`client/src/shopView.js`, the rules in `shared/shop.js`, purchases in `server/shop.js`).
+
+- **Daily shop:** a pool of **50 new skins** (`DAILY_SKINS` in `shared/shopSkins.js`: 20 Rare, 18 Epic, 12 Legendary, never in the crate). Every day at **00:00 UTC** (11:00 in Sydney in summer) **6** are picked and sold for 24 hours, with a countdown. The pick depends only on the day (and leaves out the day before's skins), so everyone sees the same shop and it can't be rerolled. Each item is the skin on one gun picked at random; **2** of the 6 are **skin packs**: the skin on **5** random guns. Prices: **Rare 3,000, Epic 5,000, Legendary 8,000** Money; a pack costs 3 times that, and if you already own it on some of its guns you only pay for the ones you're missing. The most expensive item of the day is the **featured** banner.
+- **Limited:** special skins (`LIMITED` in `shared/shop.js`) on sale between two dates and then gone, owned on every gun once bought: First Frost (until 11 Nov), Harvest Moon (until 18 Nov), Launch Day (until 4 Dec). Add more by adding a skin to `LIMITED_SKINS` and a line to `LIMITED`.
+- **The crate:** the per-gun skin crates and the charm crate are gone; there is **one crate** (900 Money) with every crate skin, on any gun, and every charm. The server draws a rarity (60% Common, 25% Rare, 12% Epic, 3% Legendary), then a charm (35%) or a skin on a random gun (65%), then one of that rarity. Anything you already own gives back 450 Money. Odds and everything inside are shown before you buy. Gifts that held a crate (including older gifts naming a gun or the charm crate) open this crate.
+- **Owned skins stay owned:** nothing about `owned_skins` changed; skins from the old per-gun crates are still yours.
+- **Buying:** Money only, never Polish Money. The client only sends the item's id (`POST /api/shop/buy`); the server checks it is on sale right now, works out the price from the account, and takes the Money and adds the skin in one statement. `GET /api/shop` gives what's on sale with this account's prices. A forged id, an item from another day, a Limited skin outside its dates, or a price sent by the client are all refused.
+- **Looks:** large cards with the gun in its skin turning slowly in 3D (one small renderer draws every card, only while the Shop tab is open: `client/src/shopCards.js`), rarity-coloured borders and glows (Legendary pulses), price tags, OWNED labels, a PACK badge, a Limited countdown, hover lift and faster spin, and a two-click buy (the price button asks to confirm).
+- **New skin patterns** for these skins (`decorate` in `client/src/gunModels.js`): `digital` (pixel blocks), `dots` (studs), `bands` (racing stripes), `split` (two-tone) and `tiger`.
+- Shop skins you don't own don't clutter the Operators tab: like Exclusive skins, they appear there once you have them.
+
+### Earlier: Stage 2J (graphics settings and update notes)
 
 **Graphics** (Settings, `client/src/graphics.js`): a preset, **Low, Medium, High, Ultra**, or **Auto** (Low on weak computers: little memory, 2 or fewer cores or a phone; High otherwise), plus separate options. Changing one option switches the preset to **Custom**, starting from what was in use. Everything is saved with the account's settings.
 
@@ -413,13 +426,6 @@ Six new operators, bought with Money in the Operators tab (the original eight an
 
 Written down so they aren't forgotten (see Status for what is built). They are built one at a time, one PR each, and the next one starts once the previous is confirmed. Server memory must stay low enough for Render's 512 MB plan.
 
-### Stage 2K - Shop redesign
-- Per-gun skin crates removed (owned skins stay owned). One combined crate with every crate skin and charm for every gun, odds and contents shown before buying, duplicate refund stays.
-- Daily shop: a pool of 50 new original skins; every day at the same time 6 are picked at random for 24 hours with a countdown. Roughly Rare 3000, Epic 5000, Legendary 8000 Money. Some daily items are skin packs: one skin applied to 5 randomly chosen guns each time the pack appears.
-- A "Limited" section with a few special skins available for a set number of days, then gone.
-- Money only, never Polish Money; the server handles every purchase.
-- Much better looking: large item cards with the gun in slowly turning 3D, rarity colour borders and glows, price tags, "OWNED" labels, a featured banner for the best daily item and smooth hover animations.
-
 ### Stage 2L - Two new detailed maps
 - Two new, much more detailed maps; the original maps are not changed, and all future maps use this level of detail.
 - Furniture built from many shapes (couches with cushions and armrests, beds, tables with legs, shelves with items, kitchen counters, lamps, rugs) with textures drawn in code (fabric, wood grain, tiles, carpet).
@@ -483,6 +489,7 @@ server/
   nav.js           the walking grid and distance fields bots move by
   killcam.js       the last 4.5 s of everyone's movement and shots, sent to a player who is killed
   defuser.js       the Defuser mode: carrier, drop, plant, countdown, disable
+  shop.js          the shop on the server: what's on sale, buying, opening the crate
   roles.js         owner, admin and tester lookup from the environment variables
   moderation.js    in-match chat, reports, warnings, suspensions and bans (and the owner's inboxes)
   admin.js         the admin tools: online list, matches, join as spectator or player
@@ -507,6 +514,8 @@ client/
   src/menuScene.js 3D scene behind the main menu: operator, lights, camera drift, gifts and crates
   src/menuBackdrop.js  the rooftop at dusk: sky, city, target building, searchlight, fog, rain
   src/menuMusic.js the ambient menu music (Web Audio)
+  src/shopView.js  the Shop tab: featured, daily, Limited, the crate
+  src/shopCards.js the shop's turning 3D cards (one shared renderer)
   src/graphics.js  the graphics setting (auto / high / low)
   src/network.js   Socket.IO wrapper, server clock estimate
   src/game.js      Three.js scene and frame loop
@@ -601,8 +610,8 @@ Other players' sounds are derived on each client from the snapshots (speed, stan
 
 ## Shop
 
-- Prices are in `SKIN_PRICES` in `shared/skins.js` (by rarity). The featured set comes from `featuredSkins(day)` there, seeded by the UTC day number, and the client asks `GET /api/shop` for it so the server's clock decides.
-- `POST /api/shop/buy` runs one `UPDATE ... WHERE money >= price AND NOT owned` that takes the Money and appends the skin to `owned_skins`; no row updated means refused (not enough Money, or already owned). Skin ownership is read through `ownedSkinsOf` in `server/profile.js`, so equipping only ever accepts owned skins.
+- What is sold and for how much is in `shared/shop.js` (`SHOP`, `LIMITED`, `dailyShop(day)`, `rollMystery`); the 50 daily skins and the Limited ones are in `shared/shopSkins.js`. The client asks `GET /api/shop` for today's shop, so the server's clock decides the day.
+- `POST /api/shop/buy` and `POST /api/crates/open` (`server/shop.js`, routes in `server/accounts.js`) run under the account's lock and take the Money with one `UPDATE ... WHERE money >= price`; no row updated means refused. Skin ownership is read through `ownsSkin` in `server/profile.js`, so equipping only ever accepts owned skins.
 - `POST /api/dev/money` adds 10,000 Money and only exists when the database is local and `RENDER` is unset (`devTools` in `server/profile.js`).
 
 ## Main menu, operators and skins

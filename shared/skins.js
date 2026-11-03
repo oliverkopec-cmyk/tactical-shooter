@@ -9,8 +9,12 @@
 //   metal / glow    how shiny (0-1) and how much it glows (0-1)
 //
 // Exclusive skins (shared/exclusiveSkins.js) are gift-only: never in a crate, only an admin can give them.
+// Shop skins (shared/shopSkins.js, `source: 'daily' | 'limited'`) are only sold in the daily shop or the Limited
+// section (shared/shop.js), never in the crate.
+//   pattern also: 'digital' | 'dots' | 'bands' | 'split' | 'tiger' (Stage 2K)
 
 import { EXCLUSIVE_SKINS } from './exclusiveSkins.js';
+import { DAILY_SKINS, LIMITED_SKINS } from './shopSkins.js';
 
 export const RARITIES = {
   common: { id: 'common', name: 'Common', color: '#b0b6bd', order: 0 },
@@ -40,6 +44,9 @@ export const SKINS = {
   gilded: { name: 'Gilded', rarity: 'legendary', pattern: 'solid', body: 0xd9a824, accent: 0x7a5a10, steel: 0xf2d46a, trim: 0xfff0a0, mark: 0xfff0a0, metal: 1, glow: 0.3 },
   inferno: { name: 'Inferno', rarity: 'legendary', pattern: 'flames', body: 0x1a0e0a, accent: 0x5a1a08, steel: 0x3a1408, trim: 0xff7a1a, mark: 0xff7a1a, metal: 0.7, glow: 0.7 },
   void: { name: 'Void', rarity: 'legendary', pattern: 'void', body: 0x07060d, accent: 0x1a0f3a, steel: 0x1a0f3a, trim: 0xa56bff, mark: 0xa56bff, metal: 0.9, glow: 0.8 },
+  // ---------------------------------------------------------------- the daily shop's pool and the limited ones
+  ...DAILY_SKINS,
+  ...LIMITED_SKINS,
   // ---------------------------------------------------------------- exclusive (gifts only)
   ...EXCLUSIVE_SKINS,
 };
@@ -58,33 +65,20 @@ export const hexColor = (n) => `#${n.toString(16).padStart(6, '0')}`;
 // ---------------------------------------------------------------- crates
 
 /**
- * Every gun has one crate. It holds every skin, and the skin you get is picked by the
- * server: first a rarity by these odds, then one skin of that rarity at random.
- * A skin you already own for that gun refunds half the price in Money. Crates cost
- * Money only (never Polish Money).
+ * The one crate (Stage 2K): every crate skin, for every gun, and every charm. The server draws the result: first a
+ * rarity by `odds`, then a charm (`charmChance`) or a skin on a random gun, then one of that rarity at random
+ * (rollMystery in shared/shop.js). Anything you already own refunds half the price. Money only (never Polish Money).
  */
 export const CRATE = {
   price: 900,
   refund: 450,
   odds: { common: 0.6, rare: 0.25, epic: 0.12, legendary: 0.03 },
+  charmChance: 0.35,
 };
 
-/** Skins in a crate, grouped by rarity: { common: [ids], rare: [...], ... }. Exclusive skins are never in one. */
+/** Skins in the crate, grouped by rarity: { common: [ids], rare: [...], ... }. Exclusive and shop skins are never in it. */
 export function crateContents() {
   const out = { common: [], rare: [], epic: [], legendary: [] };
-  for (const id of SKIN_IDS) if (out[SKINS[id].rarity]) out[SKINS[id].rarity].push(id);
+  for (const id of SKIN_IDS) if (out[SKINS[id].rarity] && !SKINS[id].source) out[SKINS[id].rarity].push(id);
   return out;
-}
-
-/** Pick a skin. `randInt(n)` must return a whole number in 0..n-1 (the server passes a secure one). */
-export function rollCrate(randInt) {
-  // Odds are in parts per ten thousand so the draw is exact
-  const roll = randInt(10000);
-  let acc = 0, rarity = 'legendary';
-  for (const [r, p] of Object.entries(CRATE.odds)) {
-    acc += Math.round(p * 10000);
-    if (roll < acc) { rarity = r; break; }
-  }
-  const pool = crateContents()[rarity];
-  return { rarity, skin: pool[randInt(pool.length)] };
 }

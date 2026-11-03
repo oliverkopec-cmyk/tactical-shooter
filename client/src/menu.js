@@ -5,11 +5,11 @@
 import { OPERATORS, operatorsFor } from '../../shared/operators.js';
 import { WEAPONS } from '../../shared/weapons.js';
 import { UTILITIES } from '../../shared/utilities.js';
-import { SKINS, RARITIES, CRATE_RARITIES, skinList, hexColor, CRATE, crateContents, isExclusive } from '../../shared/skins.js';
-import { gunIcon } from './gunIcons.js';
+import { SKINS, RARITIES, skinList, hexColor, CRATE } from '../../shared/skins.js';
 import { operatorIcon, sideSymbol } from './operatorIcons.js';
-import { equipSkin, equipOperator, openCrate as openCrateRequest, devMoney, buyOperator, equipCharm, openCharmCrate } from './account.js';
-import { CHARMS, charmList, charmUnlockLevel, charmCrateContents, CHARM_CRATE } from '../../shared/charms.js';
+import { equipSkin, equipOperator, openCrate as openCrateRequest, buyOperator, equipCharm } from './account.js';
+import { CHARMS, charmList, charmUnlockLevel } from '../../shared/charms.js';
+import { ShopView } from './shopView.js';
 import { fillKeys } from './controls.js';
 import { MenuScene } from './menuScene.js';
 import { menuMusic } from './menuMusic.js';
@@ -38,10 +38,9 @@ export class Menu {
     this.selectedOp = null;
     this.slot = 'primary';
     this.error = '';
-    this.crateGun = null;      // the gun whose crate is selected in the shop
     this.opening = false;      // a crate opening is playing
     this.busy = false;
-    this.shopMessage = '';
+    this.shop = new ShopView({ getAccount, setAccount, onOpenCrate: () => this.openCrate() });
     this.scene = null;        // created the first time the menu is shown (needs WebGL)
     this.active = false;
 
@@ -64,13 +63,8 @@ export class Menu {
     });
     $('op-list').addEventListener('mouseleave', () => $('name-tip').classList.add('hidden'));
     $('op-detail').addEventListener('click', (e) => this.onDetailClick(e));
-    $('shop-main').addEventListener('click', (e) => {
-      const card = e.target.closest('[data-crate-gun]');
-      if (card) { this.crateGun = card.dataset.crateGun; this.shopMessage = ''; this.renderShop(); }
-    });
     this.bindCrateOverlay();
     this.bindGifts();
-    $('shop-detail').addEventListener('click', (e) => this.onShopDetailClick(e));
   }
 
   /** Called when the main menu screen is shown or hidden. */
@@ -79,6 +73,7 @@ export class Menu {
     menuMusic.setWanted(on);   // ambient music while the menu shows, fading out for a match
     $('menu-canvas').classList.toggle('hidden', !on);
     this.onTab(on ? this.tab : null);
+    this.shop.setVisible(on && this.tab === 'shop' && !this.opening);
     if (!on) { this.scene?.stop(); return; }
     if (!this.scene) {
       try { this.scene = new MenuScene($('menu-canvas')); } catch { this.scene = null; $('menu-canvas').classList.add('hidden'); }
@@ -102,6 +97,7 @@ export class Menu {
     this.onTab(tab);
     for (const btn of document.querySelectorAll('#menu-tabs .tab')) btn.classList.toggle('active', btn.dataset.tab === tab);
     for (const panel of document.querySelectorAll('.tab-panel')) panel.classList.toggle('hidden', panel.id !== `tab-${tab}`);
+    this.shop.setVisible(tab === 'shop');   // its 3D cards only turn while it shows
     this.moveIndicator();
     this.refresh();
   }
@@ -109,9 +105,9 @@ export class Menu {
   /** The account changed (login, equip, match payout): redraw whatever is showing. */
   refresh() {
     if (!this.active || !this.getAccount() || this.opening || this.giftOpen) return;
-    this.scene?.setMode(this.tab === 'operators' ? 'operators' : this.tab === 'shop' ? 'shop' : 'play');
+    this.scene?.setMode(this.tab === 'operators' ? 'operators' : 'play');
     if (this.tab === 'operators') this.renderOperators();
-    else if (this.tab === 'shop') this.openShop();
+    else if (this.tab === 'shop') { this.shop.accountChanged(); this.showEquipped(); }
     else this.showEquipped();
   }
 
@@ -168,10 +164,10 @@ export class Menu {
     const owns = new Set(a.ownedSkins[w.id] || []);
     const tiles = [`<button type="button" class="skin-tile${current === null ? ' equipped' : ''}" data-skin="" title="The gun's original look">
         <span class="skin-swatch" style="background:linear-gradient(135deg,${hexColor(w.color)},${hexColor(w.accent)})"></span><span class="skin-name">Default</span><span class="skin-rar" style="color:#8b95a3">Standard</span></button>`]
-      // Exclusive skins are gift-only, so they only show once you have one
-      .concat(skinList().filter((s) => s.rarity !== 'exclusive' || owns.has(s.id)).map((s) => {
+      // Exclusive (gift) and shop skins only show once you have them; the crate's skins always show, locked or not
+      .concat(skinList().filter((s) => (s.rarity !== 'exclusive' && !s.source) || owns.has(s.id)).map((s) => {
         const ok = owns.has(s.id), excl = s.rarity === 'exclusive';
-        return `<button type="button" class="skin-tile${current === s.id ? ' equipped' : ''}${ok ? '' : ' locked'}${excl ? ' exclusive' : ''}" data-skin="${s.id}" style="--rar:${s.rarityInfo.color}" title="${ok ? '' : 'Not owned for this gun yet: click to open its crate in the Shop'}">
+        return `<button type="button" class="skin-tile${current === s.id ? ' equipped' : ''}${ok ? '' : ' locked'}${excl ? ' exclusive' : ''}" data-skin="${s.id}" style="--rar:${s.rarityInfo.color}" title="${ok ? '' : 'Not owned for this gun yet: click to go to the Shop'}">
           ${swatch(s)}
           <span class="skin-name">${esc(s.name)}</span><span class="skin-rar${excl ? ' excl-text' : ''}" style="color:${s.rarityInfo.color}">${excl ? EXCL_TAG : s.rarityInfo.name}${ok ? '' : ' · 🔒'}</span></button>`;
       })).join('');
@@ -227,15 +223,13 @@ export class Menu {
     if (gun) { this.slot = gun.dataset.slot; this.renderOperators(); return; }
     const charmTile = e.target.closest('[data-charm]');
     if (charmTile) {
-      if (charmTile.classList.contains('locked')) { this.crateGun = '__charm'; this.shopMessage = ''; this.setTab('shop'); return; }
+      if (charmTile.classList.contains('locked')) { this.setTab('shop'); return; }
       await this.apply(equipCharm(OPERATORS[this.selectedOp].weapons[this.slot], charmTile.dataset.charm || null));
       return;
     }
     const tile = e.target.closest('[data-skin]');
     if (tile && tile.classList.contains('locked')) {
-      // Not owned yet: take them to the shop with that skin ready to look at
-      this.crateGun = OPERATORS[this.selectedOp].weapons[this.slot];
-      this.shopMessage = '';
+      // Not owned yet: take them to the shop
       this.setTab('shop');
     } else if (tile) {
       const weapon = OPERATORS[this.selectedOp].weapons[this.slot];
@@ -243,113 +237,18 @@ export class Menu {
     }
   }
 
-  // ---------------------------------------------------------------- shop tab: one crate per gun
-
-  /** Every gun, in the order operators list them (primary, then secondary). */
-  gunOrder() {
-    const seen = new Set(), out = [];
-    for (const op of Object.values(OPERATORS)) for (const id of [op.weapons.primary, op.weapons.secondary]) if (!seen.has(id)) { seen.add(id); out.push(id); }
-    return out;
-  }
-
-  openShop() {
-    if (this.opening) return;
-    if (!this.crateGun || (this.crateGun !== '__charm' && !WEAPONS[this.crateGun])) this.crateGun = this.gunOrder()[0];
-    this.renderShop();
-  }
-
-  renderShop() {
-    const a = this.getAccount();
-    if (!a || !this.crateGun || this.opening) return;
-    const total = skinList().length;
-    const haveCharms = (a.ownedCharms || []).length;
-    const charmCard = `<button type="button" class="crate-card charm-crate${this.crateGun === '__charm' ? ' selected' : ''}" data-crate-gun="__charm">
-        <span class="charm-crate-icon">✦</span>
-        <span class="skin-name">Charm crate</span>
-        <span class="shop-row"><span class="skin-rar">${haveCharms} / ${Object.keys(CHARMS).length} charms</span><span class="shop-price${a.money < CHARM_CRATE.price ? ' short' : ''}">${CHARM_CRATE.price.toLocaleString()}</span></span>
-      </button>`;
-    const cards = charmCard + this.gunOrder().map((id) => {
-      const w = WEAPONS[id], have = (a.ownedSkins[id] || []).length;
-      return `<button type="button" class="crate-card${this.crateGun === id ? ' selected' : ''}" data-crate-gun="${id}">
-        ${gunIcon(w.model, hexColor(w.accent))}
-        <span class="skin-name">${esc(w.name)}</span>
-        <span class="shop-row"><span class="skin-rar">${have} / ${total} skins</span><span class="shop-price${a.money < CRATE.price ? ' short' : ''}">${CRATE.price.toLocaleString()}</span></span>
-      </button>`;
-    }).join('');
-    const daily = a.dailyMoney || { earned: 0, limit: 0 };
-    $('shop-main').innerHTML = `
-      <div class="shop-head"><h2>Crates</h2><span class="muted">Money only · one crate per gun</span></div>
-      <p class="muted small-note">Each crate holds skins for one gun. Click a crate to see its odds and every skin inside. Money earned today: ${daily.earned.toLocaleString()} / ${daily.limit.toLocaleString()}.</p>
-      <div class="crate-grid">${cards}</div>`;
-
-    if (this.crateGun === '__charm') return this.renderCharmCrate(a);
-    const id = this.crateGun, w = WEAPONS[id], contents = crateContents(), owns = new Set(a.ownedSkins[id] || []);
-    const odds = CRATE_RARITIES.map((r) => `<div class="odds-row"><span style="color:${r.color}">● ${r.name}</span><b>${Math.round(CRATE.odds[r.id] * 100)}%</b></div>`).join('');
-    const lists = CRATE_RARITIES.map((r) => `
-      <div class="detail-sub" style="color:${r.color}">${r.name}</div>
-      <div class="crate-skins">${contents[r.id].map((sid) => `<span class="crate-skin${owns.has(sid) ? ' owned' : ''}" style="--rar:${r.color}">${owns.has(sid) ? '✔ ' : ''}${esc(SKINS[sid].name)}</span>`).join('')}</div>`).join('');
-    const need = CRATE.price - a.money;
-    $('shop-detail').innerHTML = `
-      <div class="detail-name">${esc(w.name)} crate</div>
-      <div class="muted">${esc(w.kind)} · ${owns.size} of ${total} skins owned</div>
-      <div class="detail-sub">Odds</div>${odds}
-      <p class="muted small-note">A skin you already own gives back ${CRATE.refund.toLocaleString()} Money (half the price).</p>
-      <button type="button" class="primary buy-btn" data-open-crate="${id}" ${need > 0 ? 'disabled' : ''}>${need > 0 ? `Need ${need.toLocaleString()} more Money` : `Open crate · ${CRATE.price.toLocaleString()} Money`}</button>
-      <p class="${this.shopMessageIsError ? 'error' : 'shop-ok'}">${esc(this.shopMessage)}</p>
-      <div class="detail-sub">Possible skins</div>${lists}
-      ${a.devTools ? `<div class="dev-box"><div class="detail-sub">Developer tools</div><div class="muted small-note">Local test database only. Never on the live site.</div><button type="button" data-dev-money>+10,000 Money</button></div>` : ''}`;
-
-    // Preview the gun on the stage
-    const op = Object.values(OPERATORS).find((o) => o.weapons.primary === id || o.weapons.secondary === id);
-    this.scene?.setLook({ team: op.team, operatorId: op.id, weaponId: id, skinId: null });
-  }
-
-  /** The charm crate's detail panel: odds, every charm inside, and the open button. */
-  renderCharmCrate(a) {
-    const owns = new Set(a.ownedCharms || []), contents = charmCrateContents();
-    const odds = CRATE_RARITIES.map((r) => `<div class="odds-row"><span style="color:${r.color}">● ${r.name}</span><b>${Math.round(CHARM_CRATE.odds[r.id] * 100)}%</b></div>`).join('');
-    const lists = CRATE_RARITIES.map((r) => `
-      <div class="detail-sub" style="color:${r.color}">${r.name}</div>
-      <div class="crate-skins">${contents[r.id].map((cid) => `<span class="crate-skin${owns.has(cid) ? ' owned' : ''}" style="--rar:${r.color}">${owns.has(cid) ? '✔ ' : ''}${esc(CHARMS[cid].name)}</span>`).join('')}</div>`).join('');
-    const need = CHARM_CRATE.price - a.money;
-    $('shop-detail').innerHTML = `
-      <div class="detail-name">Charm crate</div>
-      <div class="muted">Charms hang from your guns · ${owns.size} of ${Object.keys(CHARMS).length} owned</div>
-      <div class="detail-sub">Odds</div>${odds}
-      <p class="muted small-note">A charm you already own gives back ${CHARM_CRATE.refund.toLocaleString()} Money (half the price). Some charms also unlock by levelling up.</p>
-      <button type="button" class="primary buy-btn" data-open-crate="__charm" ${need > 0 ? 'disabled' : ''}>${need > 0 ? `Need ${need.toLocaleString()} more Money` : `Open crate · ${CHARM_CRATE.price.toLocaleString()} Money`}</button>
-      <p class="${this.shopMessageIsError ? 'error' : 'shop-ok'}">${esc(this.shopMessage)}</p>
-      <div class="detail-sub">Possible charms</div>${lists}
-      ${a.devTools ? `<div class="dev-box"><div class="detail-sub">Developer tools</div><div class="muted small-note">Local test database only. Never on the live site.</div><button type="button" data-dev-money>+10,000 Money</button></div>` : ''}`;
-    const op = OPERATORS[a.equippedOperators?.menu] || Object.values(OPERATORS)[0];
-    this.scene?.setLook({ team: op.team, operatorId: op.id, weaponId: op.weapons.primary, skinId: a.equippedSkins?.[op.weapons.primary] || null, charmId: a.equippedCharms?.[op.weapons.primary] || null });
-  }
-
-  async onShopDetailClick(e) {
-    if (e.target.closest('[data-dev-money]')) {
-      const res = await devMoney();
-      this.shopMessageIsError = !!res.error;
-      this.shopMessage = res.error || 'Added 10,000 Money.';
-      if (res.account) this.setAccount(res.account); else this.renderShop();
-      return;
-    }
-    const open = e.target.closest('[data-open-crate]');
-    if (open && !open.disabled) this.openCrate(open.dataset.openCrate);
-  }
-
   // ---------------------------------------------------------------- crate opening
 
-  async openCrate(gun) {
+  /** Open the crate (the shop's Open button): the server draws it, then the 3D scene plays the opening. */
+  async openCrate() {
     if (this.opening || this.busy) return;
     this.busy = true;
-    const res = gun === '__charm' ? await openCharmCrate() : await openCrateRequest(gun);
+    const res = await openCrateRequest();
     this.busy = false;
-    this.shopMessageIsError = !res.result;
-    this.shopMessage = res.result ? '' : res.error || 'Could not open the crate.';
-    if (!res.result) { if (res.account) this.setAccount(res.account); else this.renderShop(); return; }
+    if (!res.result) { if (res.account) this.setAccount(res.account); this.shop.say(res.error || 'Could not open the crate.', true); return; }
 
     this.opening = true;
-    this.crateGun = gun;
+    this.shop.setVisible(false);
     this.pending = res;
     document.getElementById('screen-home').classList.add('crate-mode');
     $('crate-overlay').classList.remove('hidden');
@@ -374,7 +273,7 @@ export class Menu {
     $('crate-note').className = result.duplicate ? 'crate-note dup' : 'crate-note new';
     $('crate-equip').textContent = charm ? `Equip on ${w.name}` : 'Equip';
     $('crate-equip').disabled = false;
-    const price = charm ? CHARM_CRATE.price : CRATE.price;
+    const price = CRATE.price;
     $('crate-more').disabled = account.money < price;
     $('crate-more').textContent = account.money < price ? 'Not enough Money' : 'Open another';
     this.setAccount(account);   // updates the Money in the top bar (menu.refresh does nothing while opening)
@@ -386,6 +285,7 @@ export class Menu {
     $('crate-overlay').classList.add('hidden');
     this.scene?.stopCrate();
     this.refresh();
+    this.shop.setVisible(this.active && this.tab === 'shop');
   }
 
   bindCrateOverlay() {
@@ -401,7 +301,7 @@ export class Menu {
       $('crate-equip').disabled = !!res.account;
       if (res.account) this.setAccount(res.account);
     });
-    $('crate-more').addEventListener('click', () => { const gun = this.pending.result.charm ? '__charm' : this.pending.result.weapon; this.closeOpening(); this.openCrate(gun); });
+    $('crate-more').addEventListener('click', () => { this.closeOpening(); this.openCrate(); });
     $('crate-back').addEventListener('click', () => this.closeOpening());
   }
 
@@ -432,7 +332,7 @@ export class Menu {
     this.busy = true;
     const res = await this.claimGift(id);
     this.busy = false;
-    if (!res.result) { this.shopMessage = ''; $('home-error').textContent = res.error || 'Could not open the gift.'; return; }
+    if (!res.result) { $('home-error').textContent = res.error || 'Could not open the gift.'; return; }
     this.giftOpen = { id, ...res };
     document.getElementById('screen-home').classList.add('crate-mode');
     $('gift-overlay').classList.remove('hidden');

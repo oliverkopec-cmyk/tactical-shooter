@@ -9,8 +9,9 @@
 // opened twice or faked. Only the server decides what is inside; the client only names the gift.
 
 import crypto from 'node:crypto';
-import { SKINS, CRATE, rollCrate, isExclusive } from '../shared/skins.js';
-import { CHARMS, CHARM_CRATE, rollCharmCrate } from '../shared/charms.js';
+import { SKINS, CRATE, isExclusive } from '../shared/skins.js';
+import { CHARMS } from '../shared/charms.js';
+import { rollMystery } from '../shared/shop.js';
 import { WEAPONS } from '../shared/weapons.js';
 import { isAdmin, isStaff } from './roles.js';
 import { profileOf, ownsSkin, ownsCharm } from './profile.js';
@@ -21,7 +22,7 @@ const AUDIENCES = ['player', 'online', 'everyone'];
 
 const cleanText = (s, max) => String(s ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, max);
 
-/** What a gift may contain: Money, a skin, a charm and/or a crate (a gun's id or 'charm'). Null if empty or invalid. */
+/** What a gift may contain: Money, a skin, a charm and/or the crate ('mystery'; older gifts named a gun or 'charm', which now open the same crate). Null if empty or invalid. */
 export function cleanContents(raw) {
   const c = raw && typeof raw === 'object' ? raw : {};
   const out = {};
@@ -30,7 +31,7 @@ export function cleanContents(raw) {
   if (money > 0) out.money = money;
   if (c.skin) { if (!SKINS[c.skin]) return null; out.skin = c.skin; }
   if (c.charm) { if (!CHARMS[c.charm]) return null; out.charm = c.charm; }
-  if (c.crate) { if (c.crate !== 'charm' && !WEAPONS[c.crate]) return null; out.crate = c.crate; }
+  if (c.crate) { if (c.crate !== 'mystery' && c.crate !== 'charm' && !WEAPONS[c.crate]) return null; out.crate = 'mystery'; }
   return Object.keys(out).length ? out : null;
 }
 
@@ -181,16 +182,18 @@ export class Gifts {
         result.charm = { id: c.charm, rarity: CHARMS[c.charm].rarity, duplicate: owned };
         if (!owned) charms.push(c.charm);
       }
-      if (c.crate === 'charm') {
-        const { rarity, charm } = rollCharmCrate((n) => crypto.randomInt(n));
-        const dup = ownsCharm(row, charm) || charms.includes(charm);
-        result.crate = { kind: 'charm', charm, rarity, duplicate: dup, refund: dup ? CHARM_CRATE.refund : 0 };
-        if (dup) money += CHARM_CRATE.refund; else charms.push(charm);
-      } else if (c.crate && WEAPONS[c.crate]) {
-        const { rarity, skin } = rollCrate((n) => crypto.randomInt(n));
-        const dup = ownsSkin(row, c.crate, skin) || skins.includes(skin);
-        result.crate = { kind: 'gun', weapon: c.crate, skin, rarity, duplicate: dup, refund: dup ? CRATE.refund : 0 };
-        if (dup) money += CRATE.refund; else skins.push(`${c.crate}:${skin}`);
+      if (c.crate) {
+        // The crate (any crate named in an older gift opens this one): a skin on a gun, or a charm
+        const r = rollMystery((n) => crypto.randomInt(n));
+        if (r.kind === 'charm') {
+          const dup = ownsCharm(row, r.charm) || charms.includes(r.charm);
+          result.crate = { kind: 'charm', charm: r.charm, rarity: r.rarity, duplicate: dup, refund: dup ? CRATE.refund : 0 };
+          if (dup) money += CRATE.refund; else charms.push(r.charm);
+        } else {
+          const dup = ownsSkin(row, r.weapon, r.skin) || skins.includes(r.skin);
+          result.crate = { kind: 'gun', weapon: r.weapon, skin: r.skin, rarity: r.rarity, duplicate: dup, refund: dup ? CRATE.refund : 0 };
+          if (dup) money += CRATE.refund; else skins.push(`${r.weapon}:${r.skin}`);
+        }
       }
       // Claim and reward in one statement: the claim row can only be inserted once
       const { rows } = await this.db.query(`

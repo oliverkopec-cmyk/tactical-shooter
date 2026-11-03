@@ -44,8 +44,13 @@ export const devMoney = () => call('POST', 'dev/money');
 /** Buy an operator with Money. The server checks the price, your Money and ownership. */
 export const buyOperator = (operator) => call('POST', 'operators/buy', { operator });
 
-/** Open a gun's crate. The server charges the Money and picks the skin: { account, result } or { error }. */
-export const openCrate = (weapon) => call('POST', 'crates/open', { weapon });
+/** Open the crate. The server charges the Money and draws a skin on a gun or a charm: { account, result } or { error }. */
+export const openCrate = () => call('POST', 'crates/open');
+
+/** What the shop sells right now (daily items, Limited skins, the crate), with this account's prices. */
+export const getShop = () => call('GET', 'shop');
+/** Buy a daily item or a Limited skin by its id: { account, bought, shop } or { error }. */
+export const buyShopItem = (id) => call('POST', 'shop/buy', { id });
 
 // ---------------------------------------------------------------- friends
 export const getFriends = () => call('GET', 'friends');
@@ -56,5 +61,3 @@ export const removeFriend = (id) => call('POST', 'friends/remove', { id });
 
 /** Equip a charm on a gun (charm null = take it off). Returns { account } or { error }. */
 export const equipCharm = (weapon, charm) => call('PUT', 'equip/charm', { weapon, charm });
-/** Open the charm crate. The server charges the Money and picks the charm: { account, result } or { error }. */
-export const openCharmCrate = () => call('POST', 'crates/charm');
