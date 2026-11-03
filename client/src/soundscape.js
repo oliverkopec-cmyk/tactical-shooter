@@ -47,6 +47,7 @@ const SOUNDS = {
   sparkZap: { noise: true, filter: 'highpass', cutoff: 4200, q: 0.7, dur: 0.12, gain: 0.7 },
   sparkBuzz: { wave: 'sawtooth', freq: 1900, freq2: 240, filter: 'lowpass', cutoff: 5000, dur: 0.16, gain: 0.3 },
   wireRustle: { noise: true, filter: 'bandpass', cutoff: 3200, q: 2.2, dur: 0.1, gain: 0.35 },
+  placeStart: { noise: true, filter: 'bandpass', cutoff: 1400, q: 1.1, dur: 0.22, gain: 0.45 },   // Stage 27: kit coming out to be placed
   // Stage E operators
   shieldPing: { wave: 'triangle', freq: 2400, freq2: 1500, filter: 'lowpass', cutoff: 6000, dur: 0.14, gain: 0.45 },
   shieldDash: { noise: true, filter: 'lowpass', cutoff: 900, q: 0.7, dur: 0.3, gain: 0.8 },
@@ -155,6 +156,9 @@ export class Soundscape {
       if (r.reloading && !st.wasReloading) this.at('reloadOut', [p.x, p.y + 1.1, p.z], 16);
       if (!r.reloading && st.wasReloading) { this.at('reloadIn', [p.x, p.y + 1.1, p.z], 16); }
       st.wasReloading = r.reloading;
+      // Someone starts placing something: a short rustle and click nearby (Stage 27)
+      if (r.placing && !st.wasPlacing) this.at('placeStart', [p.x, p.y + 0.8, p.z], 18);
+      st.wasPlacing = r.placing;
     }
     for (const id of this.remote.keys()) if (!this.game.remotes.has(id)) this.remote.delete(id);
   }

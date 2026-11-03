@@ -158,6 +158,11 @@ io.on('connection', (socket) => {
     if (type === 'breach' || type === 'reinforce' || type === 'droneNext' || type === 'ping' || type === 'ability' || type === 'utility' || type === 'camView' || type === 'barricade' || type === 'melee') socket.data.room?.handleAction(socket.id, type);
   });
 
+  // A held key went up (placing takes time while the key is held: Stage 27)
+  socket.on('actionEnd', (type) => {
+    if (type === 'breach' || type === 'reinforce' || type === 'ability' || type === 'utility' || type === 'barricade') socket.data.room?.handleActionEnd(socket.id, type);
+  });
+
   socket.on('teamPing', (type) => socket.data.room?.game?.teamPing(socket.id, String(type)));
 
   socket.on('pickOperator', (opId) => socket.data.room?.game?.pickOperator(socket.id, String(opId)));

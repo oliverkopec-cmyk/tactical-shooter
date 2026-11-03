@@ -712,6 +712,20 @@ export class UI {
     $('prompt').classList.toggle('hidden', !text);
   }
 
+  /** The placing circle in the middle of the screen (Stage 27): frac 0..1 fills it clockwise, null hides it; bad: the spot isn't valid. */
+  setPlaceRing(frac, label, bad = false) {
+    const el = $('place-ring');
+    el.classList.toggle('hidden', frac === null);
+    if (frac === null) { this.lastRing = null; return; }
+    const sig = `${Math.round(frac * 200)}|${label}|${bad}`;
+    if (sig === this.lastRing) return;
+    this.lastRing = sig;
+    el.querySelector('.fill').style.strokeDashoffset = String(163.4 * (1 - frac));
+    el.classList.toggle('bad', bad);
+    el.classList.toggle('done', frac >= 1);
+    $('place-label').textContent = label;
+  }
+
   /** frac in 0..1, or null to hide */
   setProgress(frac, label) {
     $('progress').classList.toggle('hidden', frac === null);
