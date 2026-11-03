@@ -69,6 +69,11 @@ export class Network {
     this.socket.emit('pickUtility', id);
   }
 
+  /** A held key went up (it may have been placing something). */
+  sendActionEnd(type) {
+    this.socket.emit('actionEnd', type);
+  }
+
   /** Skins or charms were changed mid-match: the server re-reads them and tells everyone. */
   refreshLook() {
     this.socket.emit('refreshLook');

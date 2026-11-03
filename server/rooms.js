@@ -261,6 +261,10 @@ class Room {
     this.game.emitAll('memberLook', { id: m.id, skins, charms });
   }
 
+  handleActionEnd(socketId, type) {
+    if (this.game) this.game.handleActionEnd(socketId, type);
+  }
+
   handleAction(socketId, type) {
     if (this.game) this.game.handleAction(socketId, type);
   }

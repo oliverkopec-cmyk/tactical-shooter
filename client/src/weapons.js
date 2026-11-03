@@ -44,6 +44,26 @@ function emptyHands() {
   return g;
 }
 
+/** What your hands hold while placing something (Stage 27): a small dark case with a green light. */
+function makePlaceItem() {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.08, 0.11), new THREE.MeshStandardMaterial({ color: 0x2a2f36, roughness: 0.5, metalness: 0.5 }));
+  const lid = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.012, 0.12), new THREE.MeshStandardMaterial({ color: 0x4a5058, roughness: 0.4, metalness: 0.7 }));
+  lid.position.y = 0.046;
+  const led = new THREE.Mesh(new THREE.SphereGeometry(0.008, 8, 6), new THREE.MeshBasicMaterial({ color: 0x4dff88 }));
+  led.position.set(0.05, 0.03, -0.056);
+  const glove = new THREE.MeshStandardMaterial({ color: 0x1b1e22, roughness: 0.8 });
+  for (const sx of [-0.1, 0.1]) {
+    const hand = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.07, 0.1), glove);
+    hand.position.set(sx, -0.01, 0.03);
+    g.add(hand);
+  }
+  g.add(body, lid, led);
+  g.scale.setScalar(0.7);
+  g.visible = false;
+  return g;
+}
+
 export class ViewModel {
   constructor() {
     this.scene = new THREE.Scene();
@@ -59,6 +79,10 @@ export class ViewModel {
     this.flash = makeFlash();
     this.flashLight = new THREE.PointLight(0xffc060, 0, 2);
     this.scene.add(this.flashLight);
+
+    this.placeItem = makePlaceItem();
+    this.scene.add(this.placeItem);
+    this.placeAmt = 0;   // 0 = gun up ... 1 = gun lowered and the item in the hands (placing)
 
     this.weaponId = null;
     this.weaponKey = null;
@@ -152,7 +176,19 @@ export class ViewModel {
     const k = Math.min(1, dt * FEEL.swayReturn);
     this.sway.x += (tx - this.sway.x) * k; this.sway.y += (ty - this.sway.y) * k;
 
-    let dip = this.raise * this.raise * 0.3, tilt = this.raise * 0.5;
+    // Placing (Stage 27): the gun drops out of view and the hands lower the item into place
+    const place = ctx.place;
+    this.placeAmt += ((place ? 1 : 0) - this.placeAmt) * Math.min(1, dt * 10);
+    let dip = this.raise * this.raise * 0.3 + this.placeAmt * 0.45, tilt = this.raise * 0.5 + this.placeAmt * 0.4;
+    this.placeItem.visible = this.placeAmt > 0.05;
+    if (this.placeItem.visible) {
+      const f = place ? place.frac : 1, e = f * f * (3 - 2 * f), floor = place?.pose === 'floor';
+      // From the chest down to the floor (kneeling), or out and up against the wall
+      const end = floor ? [0, -0.42, -0.5] : [0, -0.06, -0.55];
+      const start = [0.06, -0.32 + (1 - this.placeAmt) * -0.3, -0.45];
+      this.placeItem.position.set(...start.map((v, i) => v + (end[i] - v) * e));
+      this.placeItem.rotation.set(floor ? 0.25 + e * 0.3 : -e * (Math.PI / 2 - 0.15), 0.12, 0);
+    }
     if (ctx.reloadFrac >= 0) {
       const s = Math.sin(Math.min(1, ctx.reloadFrac) * Math.PI);
       dip += s * 0.16; tilt += s * 0.7;

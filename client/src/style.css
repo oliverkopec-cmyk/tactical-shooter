@@ -1315,3 +1315,14 @@ button.primary:hover:not(:disabled) { background: linear-gradient(180deg, #ffd47
 @media (prefers-reduced-motion: reduce) {
   #pre-round, #pre-round * { animation: none !important; transition: none !important; }
 }
+
+/* ---------------------------------------------------------------- Stage 27: placing takes time */
+#place-ring { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 86px; display: flex; flex-direction: column; align-items: center; gap: 6px; pointer-events: none; margin-top: 34px; }
+#place-ring.hidden { display: none; }
+#place-ring svg { width: 64px; height: 64px; transform: rotate(-90deg); filter: drop-shadow(0 0 6px rgba(0, 0, 0, 0.6)); }
+#place-ring circle { fill: none; stroke-width: 4; }
+#place-ring .track { stroke: rgba(255, 255, 255, 0.22); }
+#place-ring .fill { stroke: #fff; stroke-linecap: round; stroke-dasharray: 163.4; stroke-dashoffset: 163.4; }
+#place-ring.bad .fill { stroke: #ff5a5a; }
+#place-ring.done .fill { stroke: #3bd16f; }
+#place-label { font-family: Rajdhani, Inter, sans-serif; font-weight: 700; font-size: 15px; letter-spacing: 0.08em; text-transform: uppercase; color: #fff; text-shadow: 0 1px 4px #000; white-space: nowrap; }

@@ -177,6 +177,13 @@ export class RemotePlayer {
     this.shieldMount.visible = false;
     this.lean.add(this.shieldMount);
     this.cover = 0;              // shieldCover(): 0 none or swung aside, 1 drawn in front, 2 held to the side
+    // Placing something (Stage 27): 1 kneeling at the floor, 2 reaching forward; the gun goes and a small case is in the hands
+    this.placing = 0;
+    this.placeAmt = 0; this.kneelAmt = 0;
+    this.placeItem = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.08, 0.11), new THREE.MeshStandardMaterial({ color: 0x2a2f36, roughness: 0.5, metalness: 0.5 }));
+    this.placeItem.position.set(-0.31, -0.64, 0);   // between the two hands (in the right arm's frame)
+    this.placeItem.visible = false;
+    this.arms[0].add(this.placeItem);
     this.weaponId = null;
     this.flash = new THREE.Mesh(
       new THREE.SphereGeometry(0.07, 8, 6),
@@ -254,6 +261,7 @@ export class RemotePlayer {
     if (s.w) this.setWeapon(s.w.id);
     if (s.o) this.setOperator(s.o);
     this.reloading = !!(s.w && s.w.reload > 0);
+    this.placing = s.pl || 0;
     // (the menu's stand-in poses carry no id and no shield state: a shield is shown raised there)
     this.cover = 'id' in s ? s.sh || 0 : WEAPONS[this.weaponId]?.shield ? 1 : 0;
     if (this.cover) this.ensureShield();
@@ -324,7 +332,10 @@ export class RemotePlayer {
       this.lean.position.y = flip * 1.8;
     }
     // Body pose height: crouch height upright, straightening out as the body lies down
-    const upright = bodyHeight(crouch);
+    // Placing: ease into kneeling (floor items) or reaching forward (wall items)
+    this.placeAmt += ((this.placing ? 1 : 0) - this.placeAmt) * Math.min(1, dt * 8);
+    this.kneelAmt += ((this.placing === 1 ? 1 : 0) - this.kneelAmt) * Math.min(1, dt * 8);
+    const upright = bodyHeight(Math.max(crouch, this.kneelAmt)) - 0.25 * this.kneelAmt;
     const h = upright + (STAND_HEIGHT - upright) * prone;
 
     // Pose the body from the snapshot: height from crouch, legs from speed, arms from aim
@@ -346,7 +357,7 @@ export class RemotePlayer {
     this.legs[1].shin.rotation.x = -2 * bend - Math.max(0, -swing) * 0.9;
 
     this.upper.position.y = hipY;
-    this.upper.rotation.x = sprinting ? -0.18 : 0;
+    this.upper.rotation.x = (sprinting ? -0.18 : 0) - 0.4 * this.kneelAmt;   // bent over the floor while kneeling
     this.head.position.y = h - 0.18;
 
     // Melee: both arms chop forward and up, then settle
@@ -358,11 +369,14 @@ export class RemotePlayer {
     // Lying down, "forward" for arms, gun and head is along the body (towards the head)
     const lie = Math.PI / 2 * prone;
     this.head.rotation.x = p.pitch + lie;
-    const armBase = sprinting ? 0.55 : Math.PI / 2 + p.pitch + lie;   // sprinting carries the gun low
+    let armBase = sprinting ? 0.55 : Math.PI / 2 + p.pitch + lie;   // sprinting carries the gun low
+    if (this.placeAmt > 0.01) armBase += ((this.placing === 1 || this.kneelAmt > 0.5 ? 0.75 : Math.PI / 2 - 0.1) - armBase) * this.placeAmt;   // down to the floor, or out to the wall
     this.arms[0].rotation.set(armBase + strike * 0.9, 0.25 - strike * 0.3, 0);
     this.arms[1].rotation.set(armBase + strike * 0.9, -0.5 + strike * 0.3, 0);
     this.gunMount.position.set(0.1, shoulderY - 0.1 - (sprinting ? 0.12 : 0) + 0.3 * prone, -0.3 - strike * 0.25 + 0.41 * prone);
     this.gunMount.rotation.x = sprinting ? -0.2 : p.pitch + lie + strike * 0.5;
+    this.gunMount.visible = this.placeAmt < 0.5;
+    this.placeItem.visible = this.placeAmt >= 0.5;
     if (this.shield) this.poseShield(dt, h, strike, prone);
     const top = bodyHeight(crouch, prone);   // real height above the floor, for the name tag and marker
     this.label.position.y = top + 0.35;
