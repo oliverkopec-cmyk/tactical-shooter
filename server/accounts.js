@@ -11,9 +11,9 @@ import express from 'express';
 import { usernameError, passwordError } from '../shared/account.js';
 import { sanitizeSettings } from '../shared/settings.js';
 import { profileOf, configureProfile, ownsSkin, equippedSkinsOf, equippedOperatorsOf, devToolsEnabled, ownsCharm, equippedCharmsOf } from './profile.js';
-import { CHARM_CRATE, rollCharmCrate } from '../shared/charms.js';
 import { OPERATORS as OPERATOR_DEFS } from '../shared/operators.js';
-import { SKINS, CRATE, rollCrate } from '../shared/skins.js';
+import { SKINS, CRATE } from '../shared/skins.js';
+import { shopState, purchase, openCrate } from './shop.js';
 import { WEAPONS } from '../shared/weapons.js';
 import { OPERATORS } from '../shared/operators.js';
 import { ownedOperatorIds } from '../shared/account.js';
@@ -245,61 +245,48 @@ export class Accounts {
     r.post('/friends/respond', authed(async (row, req, res) => answer(res, await this.social.respond(row.id, Number(req.body?.id), !!req.body?.accept))));
     r.post('/friends/remove', authed(async (row, req, res) => answer(res, await this.social.remove(row.id, Number(req.body?.id)))));
 
-    // ---------------------------------------------------------------- crates
+    // ---------------------------------------------------------------- the shop (server/shop.js)
 
-    // Open a gun's crate. The server takes the Money, draws the skin and records it; the client only
-    // names the gun. A skin you already own for that gun refunds half the price instead.
-    r.post('/crates/open', async (req, res) => {
-      const found = await this.fromCookie(req.headers.cookie);
-      if (!found) return res.status(401).json({ error: 'Not logged in.' });
-      const weapon = req.body?.weapon;
-      if (!WEAPONS[weapon]) return res.status(400).json({ error: 'Unknown gun.' });
-      const out = await this.progression.withLock(found.row.id, async () => {
-        const row = (await this.db.query('SELECT * FROM accounts WHERE id = $1', [found.row.id])).rows[0];
+    // What is on sale now (the same for everyone), with this account's prices and what it owns
+    r.get('/shop', authed(async (row, _req, res) => res.json(shopState(row))));
+
+    // Buy a daily item or a Limited skin. The server checks it is on sale now and what it costs; Money only.
+    r.post('/shop/buy', authed(async (account, req, res) => {
+      const out = await this.progression.withLock(account.id, async () => {
+        const row = (await this.db.query('SELECT * FROM accounts WHERE id = $1', [account.id])).rows[0];
         if (!row) return { status: 404, body: { error: 'Account not found.' } };
-        if (row.money < CRATE.price) {
-          return { status: 402, body: { error: `Not enough Money: a crate costs ${CRATE.price.toLocaleString()}.`, account: profileOf(row) } };
-        }
-        const { rarity, skin } = rollCrate((n) => crypto.randomInt(n));
-        const duplicate = ownsSkin(row, weapon, skin);
-        const refund = duplicate ? CRATE.refund : 0;
-        const owned = Array.isArray(row.owned_skins) ? row.owned_skins : [];
-        const next = duplicate ? owned : [...owned, `${weapon}:${skin}`];
+        const buy = purchase(row, req.body?.id);
+        if (buy.error) return { status: 400, body: { error: buy.error, account: profileOf(row) } };
+        if (row.money < buy.price) return { status: 402, body: { error: `Not enough Money: that costs ${buy.price.toLocaleString()}.`, account: profileOf(row) } };
         const { rows } = await this.db.query(
-          'UPDATE accounts SET money = money - $2 + $3, owned_skins = $4 WHERE id = $1 RETURNING *',
-          [row.id, CRATE.price, refund, JSON.stringify(next)],
+          'UPDATE accounts SET money = money - $2, owned_skins = owned_skins || $3::jsonb WHERE id = $1 AND money >= $2 RETURNING *',
+          [row.id, buy.price, JSON.stringify(buy.add)],
         );
-        return { status: 200, body: { account: profileOf(rows[0]), result: { weapon, skin, rarity, duplicate, refund, price: CRATE.price } } };
+        if (!rows.length) return { status: 402, body: { error: 'Not enough Money.', account: profileOf(row) } };
+        return { status: 200, body: { account: profileOf(rows[0]), bought: { skin: buy.skin, guns: buy.guns, price: buy.price }, shop: shopState(rows[0]) } };
       });
-      if (out.status === 200) this.refreshSocketLoadout(await this.progression.load(found.row.id));
+      if (out.status === 200) this.refreshSocketLoadout(await this.progression.load(account.id));
       res.status(out.status).json(out.body);
-    });
+    }));
 
-    // Open the charm crate: same price, odds and duplicate refund as a gun's skin crate. The server draws the charm.
-    r.post('/crates/charm', async (req, res) => {
-      const found = await this.fromCookie(req.headers.cookie);
-      if (!found) return res.status(401).json({ error: 'Not logged in.' });
-      const out = await this.progression.withLock(found.row.id, async () => {
-        const row = (await this.db.query('SELECT * FROM accounts WHERE id = $1', [found.row.id])).rows[0];
+    // Open the crate: the server takes the Money and draws a skin (on a gun) or a charm; anything already owned refunds half.
+    r.post('/crates/open', authed(async (account, _req, res) => {
+      const out = await this.progression.withLock(account.id, async () => {
+        const row = (await this.db.query('SELECT * FROM accounts WHERE id = $1', [account.id])).rows[0];
         if (!row) return { status: 404, body: { error: 'Account not found.' } };
-        if (row.money < CHARM_CRATE.price) {
-          return { status: 402, body: { error: `Not enough Money: a charm crate costs ${CHARM_CRATE.price.toLocaleString()}.`, account: profileOf(row) } };
-        }
-        const { rarity, charm } = rollCharmCrate((n) => crypto.randomInt(n));
-        const duplicate = ownsCharm(row, charm);
-        const refund = duplicate ? CHARM_CRATE.refund : 0;
-        const owned = Array.isArray(row.owned_charms) ? row.owned_charms : [];
-        const next = duplicate ? owned : [...owned, charm];
+        if (row.money < CRATE.price) return { status: 402, body: { error: `Not enough Money: the crate costs ${CRATE.price.toLocaleString()}.`, account: profileOf(row) } };
+        const { result, skins, charms } = openCrate(row);
         const { rows } = await this.db.query(
-          'UPDATE accounts SET money = money - $2 + $3, owned_charms = $4 WHERE id = $1 RETURNING *',
-          [row.id, CHARM_CRATE.price, refund, JSON.stringify(next)],
+          'UPDATE accounts SET money = money - $2 + $3, owned_skins = owned_skins || $4::jsonb, owned_charms = owned_charms || $5::jsonb WHERE id = $1 AND money >= $2 RETURNING *',
+          [row.id, CRATE.price, result.refund, JSON.stringify(skins), JSON.stringify(charms)],
         );
-        return { status: 200, body: { account: profileOf(rows[0]), result: { charm, rarity, duplicate, refund, price: CHARM_CRATE.price } } };
+        if (!rows.length) return { status: 402, body: { error: 'Not enough Money.', account: profileOf(row) } };
+        return { status: 200, body: { account: profileOf(rows[0]), result } };
       });
+      if (out.status === 200) this.refreshSocketLoadout(await this.progression.load(account.id));
       res.status(out.status).json(out.body);
-    });
+    }));
 
-    // Buy an operator. Same one-statement check as skins: price, Money and ownership together.
     r.post('/operators/buy', async (req, res) => {
       const found = await this.fromCookie(req.headers.cookie);
       if (!found) return res.status(401).json({ error: 'Not logged in.' });

@@ -500,6 +500,32 @@ function decorate(g, body, skin, rand) {
         mark(e * 2, hgt, bd * 0.07, side * (bw / 2 + e), -bh / 2 + hgt / 2, (-0.46 + i * 0.115) * bd);
       }
     }
+  } else if (skin.pattern === 'digital') {
+    // Pixel camo: square blocks scattered over both sides and the top
+    for (let i = 0; i < 16; i++) {
+      const s = bh * (0.14 + rand() * 0.12);
+      mark(e * 2, s, s * (1 + Math.floor(rand() * 2)), sides[i % 2] * (bw / 2 + e), (rand() - 0.5) * (bh - s), (rand() - 0.5) * (bd - s * 2));
+    }
+    for (let i = 0; i < 4; i++) { const s = bw * 0.3; mark(s, e * 2, s * 1.5, (rand() - 0.5) * (bw - s), bh / 2 + e, (rand() - 0.5) * bd * 0.8); }
+  } else if (skin.pattern === 'dots') {
+    // A neat grid of studs down both sides
+    for (const side of sides) for (let r = 0; r < 2; r++) for (let c = 0; c < 6; c++) {
+      mark(e * 2, bh * 0.1, bh * 0.1, side * (bw / 2 + e), (r - 0.5) * bh * 0.4, (-0.42 + c * 0.168) * bd);
+    }
+  } else if (skin.pattern === 'bands') {
+    // Racing stripes: one wide down the top, a thin one along each side
+    mark(bw * 0.32, e * 2, bd * 0.98, 0, bh / 2 + e, 0);
+    for (const side of sides) { mark(e * 2, bh * 0.12, bd * 0.98, side * (bw / 2 + e), bh * 0.08, 0); mark(e * 2, bh * 0.04, bd * 0.98, side * (bw / 2 + e), -bh * 0.12, 0); }
+  } else if (skin.pattern === 'split') {
+    // Two-tone: the front half of each part in the second colour, with a thin line where they meet
+    mark(bw + e * 2, bh + e * 2, bd * 0.5, 0, 0, -bd * 0.25);
+    mark(bw + e * 4, bh + e * 4, bd * 0.02, 0, 0, 0);
+  } else if (skin.pattern === 'tiger') {
+    // Stripes reaching in from the top and the bottom edges, in turn
+    for (const side of sides) for (let i = 0; i < 8; i++) {
+      const hgt = bh * (0.3 + rand() * 0.4), top = i % 2 === 0;
+      mark(e * 2, hgt, bd * 0.05, side * (bw / 2 + e), top ? bh / 2 - hgt / 2 : -bh / 2 + hgt / 2, (-0.44 + i * 0.125) * bd);
+    }
   } else if (skin.pattern === 'void') {
     for (let i = 0; i < 14; i++) mark(e * 2, bh * 0.07, bh * 0.07, sides[i % 2] * (bw / 2 + e), (rand() - 0.5) * bh * 0.7, (rand() - 0.5) * bd * 0.9);
     mark(bw * 0.08, e * 2, bd * 0.95, 0, bh / 2 + e, 0);

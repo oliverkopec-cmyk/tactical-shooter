@@ -6,6 +6,14 @@ the list from the menu.
 
 Format: `## <id> · <date> · <title>`, then one bullet per change. The id has to be unique and is what the game remembers.
 
+## 2K · 2026-11-04 · New shop
+- The shop has been rebuilt: big cards with each gun turning in 3D, rarity glows, price tags and OWNED labels.
+- A daily shop: 6 new skins every day at the same time, with a countdown. Some are skin packs that put one skin on 5 guns.
+- A Limited section with special skins that are only on sale for a few days, owned on every gun.
+- 50 brand-new skins for the daily shop and 3 Limited ones, with new patterns: pixel blocks, studs, racing stripes, two-tone and tiger stripes.
+- The separate crates for each gun and the charm crate are now one crate holding every crate skin (on any gun) and every charm. Its odds and contents are shown before you buy. Duplicates still give back half the price.
+- Skins you already own stay yours. Everything in the shop costs Money, never Polish Money.
+
 ## 2J · 2026-11-04 · Graphics settings and update notes
 - New graphics presets in Settings: Low, Medium, High, Ultra, or Auto (Low on weak computers, High otherwise).
 - You can also set shadows, resolution, effects, view distance and anti-aliasing one by one. Changing one switches the preset to Custom.

@@ -28,7 +28,7 @@ function describe(c = {}) {
   if (c.money) parts.push(`${Number(c.money).toLocaleString()} Money`);
   if (c.skin && SKINS[c.skin]) parts.push(`${SKINS[c.skin].name}${SKINS[c.skin].rarity === 'exclusive' ? ' (Exclusive)' : ''} skin`);
   if (c.charm && CHARMS[c.charm]) parts.push(`${CHARMS[c.charm].name} charm`);
-  if (c.crate) parts.push(c.crate === 'charm' ? 'charm crate' : `${WEAPONS[c.crate]?.name || c.crate} crate`);
+  if (c.crate) parts.push('a crate');
   return parts.join(' + ');
 }
 
@@ -73,7 +73,7 @@ export class AdminPanel {
         <div class="adm-skin-group${r === 'exclusive' ? ' excl-text' : ''}" style="color:${RARITIES[r].color}">${RARITIES[r].name}${r === 'exclusive' ? ' · gifts only' : ''}</div>
         ${skinList().filter((s) => s.rarity === r).map(tile).join('')}`).join('');
     const charmOptions = charmList().map((c) => `<option value="${c.id}">${esc(c.name)} (${RARITIES[c.rarity].name})</option>`).join('');
-    const crateOptions = `<option value="charm">Charm crate</option>${Object.values(WEAPONS).map((w) => `<option value="${w.id}">${esc(w.name)} crate</option>`).join('')}`;
+    const crateOptions = '<option value="mystery">The crate (a skin or a charm)</option>';
     $('admin-send').innerHTML = `
       <h2>Send to players</h2>
       <div class="adm-tabs">
