@@ -350,6 +350,8 @@ export class LocalPlayer {
     const s = this.state;
     for (const key of ['x', 'y', 'z', 'vx', 'vy', 'vz', 'crouch', 'prone', 'lean', 'onGround', 'slow']) s[key] = serverState[key];
     s.ads = serverState.ad || 0;
+    const dash = serverState.ds;   // Aegis's shield charge, started by the server
+    if (dash) { [s.dash, s.dashX, s.dashZ] = dash; } else s.dash = 0;
     s.fireDelay = serverState.fd || 0;
     s.jumpCd = serverState.jc || 0;
     s.sprinting = !!serverState.spr;

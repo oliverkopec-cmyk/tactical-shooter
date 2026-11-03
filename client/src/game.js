@@ -16,7 +16,7 @@ import { WEAPONS } from '../../shared/weapons.js';
 import { SKINS } from '../../shared/skins.js';
 import { CHARMS } from '../../shared/charms.js';
 import { DEFUSER } from '../../shared/modes.js';
-import { currentSpread, aimDirection } from '../../shared/weapons.js';
+import { currentSpread, aimDirection, shieldCover } from '../../shared/weapons.js';
 import { World } from '../../shared/world.js';
 import { raycastWorld, rayPlayer } from '../../shared/raycast.js';
 import { buildMap, setupLighting } from './map.js';
@@ -189,7 +189,7 @@ export class Game {
     });
     network.on('loadout', (l) => { this.loadout = l; this.abilityCdEnd = performance.now() + (l.ability?.cdLeft || 0); });
     network.on('stats', (s) => { this.stats = s; });
-    network.on('barricadeStart', ({ ms }) => { this.reinforcing = { section: null, start: performance.now(), ms, label: 'Barricading…' }; });
+    network.on('barricadeStart', ({ ms, label }) => { this.reinforcing = { section: null, start: performance.now(), ms, label: label || 'Barricading…' }; });
     network.on('runout', (r) => { this.runout = r; });
     network.on('killcam', (data) => this.startKillcam(data));
     network.on('teamPing', (p) => {
@@ -279,9 +279,9 @@ export class Game {
       this.effects.ring(pos, radius, 0x6fd0ff, 0.9);
       this.audio.beep(160, 0.5, 0.2, 'sine');
     });
-    network.on('empBurst', ({ pos }) => {
+    network.on('empBurst', ({ pos, radius }) => {
       if (!this.running) return;
-      this.effects.ring(pos, 10, 0xb06bff, 0.6);
+      this.effects.ring(pos, radius || 10, radius ? 0x4f7cff : 0xb06bff, 0.6);
       this.effects.flash(pos);
       this.audio.beep(900, 0.25, 0.2, 'sawtooth');
     });
@@ -301,6 +301,7 @@ export class Game {
       this.effects.explosion(pos);
       this.audio.explosion(pos, this.listener());
     });
+    this.bindStageE(network);
     network.on('camView', (msg) => this.onCamView(msg));
     network.on('actionError', ({ msg }) => this.ui.toast(msg));
   }
@@ -518,7 +519,8 @@ export class Game {
     const tail = `${k('scoreboard')} scoreboard · ${k('toggleHint')} hide`;
     if (!this.local.alive) return `Click to switch teammate · ${tail}`;
     if (watching) return `${k('camView')} next camera · mouse pans the feed · you can't move while watching`;
-    if (inDrone) return `Drone: ${move} drive · ${k('sprint')} fast · ${k('jump')} hop · ${k('fire')} ping enemy · ${k('droneNext')} switch · 1/2/3 spawn point · ${k('scoreboard')} scoreboard`;
+    const zap = OPERATORS[this.loadout.op]?.ability?.id === 'shockDrone' ? ` · ${k('ability')} taser` : '';   // Wasp
+    if (inDrone) return `Drone: ${move} drive · ${k('sprint')} fast · ${k('jump')} hop · ${k('fire')} ping enemy${zap} · ${k('droneNext')} switch · 1/2/3 spawn point · ${k('scoreboard')} scoreboard`;
     const base = `${move} move · ${k('sprint')} sprint · ${k('jump')} vault · ${k('crouch')} crouch · ${k('prone')} prone · ${k('leanLeft')}/${k('leanRight')} lean · ${k('aim')} aim · ${k('reload')} reload · ${k('primary')}/${k('secondary')} guns · ${k('utility')} utility · ${k('melee')} melee · ${k('rappel')} rappel`;
     const f = OPERATORS[this.loadout.op]?.ability ? ` · ${k('ability')} ability` : '';
     if (attack) return phase === PHASE.PREP ? 'Fly your drone to find the objective · 1/2/3 choose where you appear' : `${base}${f} · ${k('breach')} breach charge · ${tail}`;
@@ -660,6 +662,47 @@ export class Game {
     }
   }
 
+  // ---------------------------------------------------------------- Stage E operator events
+
+  bindStageE(network) {
+    const on = (ev, fn) => network.on(ev, (msg) => { if (this.running) fn(msg); });
+    // Aegis: bullets and swings sparking off a shield, the shield charge, being dazed
+    on('shieldHit', ({ pos }) => { this.effects.sparks(pos, 8); this.sound.at('shieldPing', pos, 30); });
+    on('shieldDash', ({ id, pos, breached }) => {
+      this.sound.at('shieldDash', pos, 30);
+      if (breached) { this.effects.debris(pos, 0x9a8f80, 10); this.effects.puff(pos, 0xb5aa98, 0.5); this.audio.explosion(pos, this.listener()); }
+      if (id === this.network.id) this.viewModel.melee(); else this.remotes.get(id)?.swing();
+    });
+    network.on('dazed', ({ ms }) => { this.dazedUntil = performance.now() + ms; this.dazedMs = ms; this.audio.beep(420, 0.4, 0.12, 'sine'); });
+    // Wasp: a shock drone's taser
+    on('zap', ({ from, to, hit }) => { this.effects.arc(from, to, 0xe8ff6a); if (hit) this.effects.sparks(to, 8); this.sound.at('sparkZap', to, 18); });
+    // Flint: pellets stick, blow, or are fried
+    on('pelletsStuck', (v) => { this.gadgets.addPellets(v); this.effects.arc(v.from, v.pos, 0xff7a5a, 0.12); this.sound.at('pelletThunk', v.pos, 30); });
+    on('pelletsRemoved', ({ id }) => this.gadgets.removePellets(id));
+    on('pelletsBlast', ({ pos }) => { this.effects.explosion(pos, 0.55); this.audio.explosion(pos, this.listener()); });
+    // Ram: the hammer
+    on('hammer', ({ id, pos }) => {
+      if (id === this.network.id) this.viewModel.melee(); else this.remotes.get(id)?.swing();
+      if (pos) { this.effects.debris(pos, 0xb5aa98, 8); this.effects.puff(pos, 0xc9c0b0, 0.35); this.sound.at('hammerSmash', pos, 45); this.sound.at('crackThud', pos, 45); }
+    });
+    // Current: an electrified wall going off
+    on('wireZap', ({ from, pos }) => { this.effects.arc(from, pos, 0x7ab8ff); this.effects.sparks(pos, 10); this.sound.at('sparkBuzz', pos, 22, 1.2); });
+    // Rampart: armour panels taking hits and breaking
+    on('armorHit', ({ id, pos, left }) => { this.gadgets.armorDamage(id, left); this.effects.sparks(pos, 4); this.sound.at('armorHit', pos, 30); });
+    on('armorBroken', ({ pos }) => { this.effects.debris(pos, 0x3a3d42, 14); this.effects.puff(pos, 0x8a8a8a, 0.6); this.sound.at('armorBreak', pos, 40); });
+    // Medic: the stim dart
+    on('stim', ({ id, from, to }) => {
+      if (to) this.effects.arc(from, to, 0xff8fa0, 0.15);
+      const who = id === this.network.id ? null : this.remotes.get(id);
+      const at = who ? [who.pose.x, who.pose.y + 1, who.pose.z] : from;
+      this.effects.puff(at, 0xff5d6c, 0.3);
+      this.sound.at('stim', at, 20);
+    });
+    network.on('healed', ({ health }) => { this.health = health; this.ui.flashHeal(); });
+    // Interceptor: a grenade shot down
+    on('intercepted', ({ from, pos }) => { this.effects.arc(from, pos, 0xffb070, 0.1); this.effects.puff(pos, 0xffd27a, 0.25); this.sound.at('intercept', pos, 30); });
+  }
+
   // ---------------------------------------------------------------- combat events
 
   /** Our own predicted shot: draw it immediately. The server decides what it hit. */
@@ -668,15 +711,16 @@ export class Game {
     for (const d of dirs) {
       const wall = raycastWorld(this.world, origin, d, MAX_SHOT_RANGE);
       let maxT = wall ? wall.t : MAX_SHOT_RANGE;
-      let hitPlayer = false;
+      let hitPlayer = false, hitShield = false;
       for (const r of this.remotes.values()) {
         if (!r.alive || r.team === this.myTeam) continue;
         const h = rayPlayer(origin, d, r.pose, maxT);
-        if (h) { maxT = h.t; hitPlayer = true; }
+        if (h) { maxT = h.t; hitPlayer = !h.shield; hitShield = !!h.shield; }
       }
       const end = [origin[0] + d[0] * maxT, origin[1] + d[1] * maxT, origin[2] + d[2] * maxT];
       this.effects.tracer([muzzle.x, muzzle.y, muzzle.z], end);
-      if (hitPlayer) this.effects.blood(end);
+      if (hitShield) this.effects.sparks(end, 6);
+      else if (hitPlayer) this.effects.blood(end);
       else if (wall) this.effects.bulletHole(wall.point, wall.normal, wall.box.kind === 'panel' ? wall.box.id : null);
     }
     this.viewModel.fire(weaponId);
@@ -1115,6 +1159,7 @@ export class Game {
       if (cfg.cooldown) {
         const cd = Math.ceil(Math.max(0, this.abilityCdEnd - performance.now()) / 1000);
         value = cd > 0 ? `recharging ${cd}s` : 'ready';
+        if (cfg.charges) value = `×${ab.charges} · ${value}`;   // Ram's swings, Aegis's charges
       } else {
         value = `×${ab.charges}`;
         if (ab.deployed) value += cfg.id === 'shield' ? ` · deployed, ${keyFor('ability')} picks up` : ` · planted, ${keyFor('ability')} detonates`;
@@ -1134,6 +1179,10 @@ export class Game {
     // Stun white-out
     const stunLeft = Math.max(0, (this.stunUntil - performance.now()) / 1000), total = this.stunMs / 1000;
     this.ui.setStun(stunLeft > total * 0.5 ? 1 : stunLeft / (total * 0.5 || 1));
+    // Dazed after smashing through a wall with the shield: the view blurs, clearing as it wears off
+    const daze = Math.max(0, ((this.dazedUntil || 0) - performance.now()) / (this.dazedMs || 1));
+    const blur = daze > 0 ? Math.round((1.5 + 4 * daze) * 2) / 2 : 0;
+    if (blur !== this.lastBlur) { this.lastBlur = blur; this.renderer.domElement.style.filter = blur ? `blur(${blur}px) saturate(0.7)` : ''; }
   }
 
   // ---------------------------------------------------------------- hidden cameras (defenders)
@@ -1290,14 +1339,15 @@ export class Game {
     local.adsZoom = sight.zoom;
     this.setZoom(1 + (sight.zoom - 1) * ads * ads * (3 - 2 * ads));
     this.ui.setSights(ads, sight.kind);
-    if (!replaying) this.viewModel.setWeapon(local.weapon.id, this.mySkins[local.weapon.id], this.myCharms?.[local.weapon.id]);
+    const otherId = local.weapon.other?.id, sideShield = WEAPONS[otherId]?.shield ? { id: otherId, skin: this.mySkins[otherId], charm: this.myCharms?.[otherId] } : null;
+    if (!replaying) this.viewModel.setWeapon(local.weapon.id, this.mySkins[local.weapon.id], this.myCharms?.[local.weapon.id], sideShield);
     if (!replaying) this.viewModel.update(dt, {
       speed: Math.hypot(s.vx, s.vz),
       sprinting: local.sprinting,
       crouch: Math.max(s.crouch, s.prone || 0),
       lean: s.lean,
       reloadFrac: local.weapon.reload > 0 ? 1 - local.weapon.reload / w.reloadTime : -1,
-      ads, hidden: scoped,
+      ads, hidden: scoped, cover: shieldCover(local.weapon, s),
       stepPhase: local.feel.phase, stepAmp: local.feel.amp || 0, ...this.turnRate(local, dt),
     });
     this.sound.update(dt);
@@ -1329,7 +1379,7 @@ export class Game {
 function gadgetPosition(rec, map) {
   if (rec.pos) return rec.pos;
   if (rec.kind === 'wire') return [rec.x, rec.y + 0.2, rec.z];
-  if (rec.kind === 'barricade') {
+  if (rec.kind === 'barricade' || rec.kind === 'armor') {
     const o = map.openings.find((x) => x.id === rec.openingId);
     if (o) return o.axis === 'x' ? [(o.from + o.to) / 2, (o.y0 + o.y1) / 2, o.fixed] : [o.fixed, (o.y0 + o.y1) / 2, (o.from + o.to) / 2];
   }

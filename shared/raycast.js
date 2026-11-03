@@ -89,5 +89,26 @@ export function rayPlayer(o, d, pose, maxT) {
     const t = -bq - Math.sqrt(disc);
     if (t > 0 && t < maxT && (!best || t < best.t)) best = { t, head: true };
   }
+
+  // A ballistic shield (pose.sh, from shieldCover() in shared/weapons.js) in the way stops the bullet
+  const sh = lying ? 0 : pose.sh || 0;
+  if (sh && best) {
+    const box = shieldBox(sh, h);
+    const hit = rayBox(lo, ld, box.min, box.max, best.t);
+    if (hit) best = { t: hit.t, head: false, shield: true };
+  }
   return best;
+}
+
+export const SHIELD_HEIGHT = 1.18;   // the model in client/src/gunModels.js is this tall
+
+/**
+ * The shield's box in the player's own frame (they face -z). Drawn (1), its top is level with the top
+ * of the head, so a standing player's shins show below it and a crouching one is covered. Held to the
+ * side while the pistol is out (2), it covers the left half of the body from the front.
+ */
+export function shieldBox(sh, h) {
+  const top = h + 0.06, bottom = Math.max(0.03, top - SHIELD_HEIGHT);
+  if (sh === 2) return { min: [-0.62, bottom, -0.5], max: [-0.04, top - 0.1, -0.36] };
+  return { min: [-0.4, bottom, -0.52], max: [0.36, top, -0.44] };
 }

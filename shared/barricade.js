@@ -54,3 +54,11 @@ export function sectionAt(o, point) {
 export function barricadeFront(o) {
   return o.fixed >= 0 ? 1 : -1;
 }
+
+/** Rampart's armour panel (Stage E): one solid bulletproof slab filling the whole opening. */
+export function armorBox(o) {
+  const t = 0.06;
+  return o.axis === 'x'
+    ? { min: [o.from, o.y0, o.fixed - t], max: [o.to, o.y1, o.fixed + t] }
+    : { min: [o.fixed - t, o.y0, o.from], max: [o.fixed + t, o.y1, o.to] };
+}

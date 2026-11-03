@@ -53,8 +53,9 @@ class Builder {
   material(role) {
     if (this.mats[role]) return this.mats[role];
     const w = this.w;
-    const base = { body: w.color, accent: w.accent, steel: STEEL, trim: TRIM, lens: LENS }[role];
+    const base = { body: w.color, accent: w.accent, steel: STEEL, trim: TRIM, lens: LENS, pad: 0x1c1f23, glass: 0x9fd8ff }[role];
     const m = new THREE.MeshStandardMaterial({ color: base, roughness: role === 'steel' ? 0.45 : 0.6, metalness: role === 'steel' ? 0.75 : 0.3 });
+    if (role === 'glass') { m.transparent = true; m.opacity = 0.14; m.depthWrite = false; m.metalness = 0.9; m.roughness = 0.05; }   // the shield's viewport: almost clear
     if (role === 'lens') { m.transparent = true; m.opacity = 0.75; m.emissive.setHex(0x1a5a8a); m.emissiveIntensity = 0.6; m.metalness = 0.9; m.roughness = 0.1; }
     this.mats[role] = m;
     return m;
@@ -359,7 +360,85 @@ function buildMachinePistol(b, v) {
   b.anchorAt = [-0.026, 0.03, -0.04];
 }
 
-const BUILDERS = { rifle: buildRifle, smg: buildSmg, shotgun: buildShotgun, lmg: buildLmg, dmr: buildDmr, pistol: buildPistol, revolver: buildRevolver, machinePistol: buildMachinePistol };
+/**
+ * Aegis's ballistic shield (Stage E), real size: 1.18 m tall and 0.7 m wide, its face towards -z and
+ * the handle at the origin. The plate is one piece with chamfered top corners, curved around the
+ * holder. The front gets a steel rim, a viewport in a raised frame, armour ribs, a chevron and a band
+ * in the accent colour; the back (what you see in first person) a handle, an arm strap, rubber
+ * padding and a steel frame.
+ */
+// port: the viewport [width, height, centre height]: a real hole with glass in it, which you look through in first person
+const SHIELD = { w: 0.7, h: 1.18, t: 0.036, bend: 0.55, chamfer: 0.12, port: [0.22, 0.08, 0.37] };
+const bendZ = (x) => SHIELD.bend * x * x;   // the face curves back towards the edges
+
+/**
+ * A box finely divided across its width, bent to the shield's curve, with the shield's top corners
+ * cut off. x, y: its centre; z0: the centre of its thickness at the middle of the shield.
+ */
+function bentBox(w, hgt, d, x, y, z0, segs = Math.max(2, Math.round(w / 0.025))) {
+  const geo = new THREE.BoxGeometry(w, hgt, d, segs, Math.max(1, Math.round(hgt / 0.1)), 1);
+  geo.translate(x, y, z0);
+  const pos = geo.attributes.position, { w: W, h: H, chamfer: c } = SHIELD;
+  for (let i = 0; i < pos.count; i++) {
+    const vx = pos.getX(i);
+    const cap = H / 2 - Math.max(0, Math.abs(vx) - (W / 2 - c));   // the chamfer line across each top corner
+    if (pos.getY(i) > cap) pos.setY(i, cap);
+    pos.setZ(i, pos.getZ(i) + bendZ(vx));
+  }
+  geo.computeVertexNormals();
+  return geo;
+}
+
+function buildShield(b) {
+  const { w, h, t } = SHIELD, front = -t / 2;
+  // The plate, in four pieces round the viewport hole
+  const [pw, ph, py] = SHIELD.port, below = py - ph / 2 + h / 2, above = h / 2 - py - ph / 2, side = (w - pw) / 2;
+  b.add('cover.plate', bentBox(w, below, t, 0, -h / 2 + below / 2, 0), 0, 0, 0);
+  b.add('cover.plate', bentBox(w, above, t, 0, h / 2 - above / 2, 0), 0, 0, 0);
+  for (const sgn of [-1, 1]) b.add('cover.plate', bentBox(side, ph, t, sgn * (pw / 2 + side / 2), py, 0), 0, 0, 0);
+  // Steel rim round the front edge: sides, bottom, top and the two chamfers
+  b.add('rail.rim', bentBox(0.026, h - 0.25, 0.014, -w / 2 + 0.013, -0.1, front - 0.006, 1), 0, 0, 0);
+  b.add('rail.rim', bentBox(0.026, h - 0.25, 0.014, w / 2 - 0.013, -0.1, front - 0.006, 1), 0, 0, 0);
+  b.add('rail.rim', bentBox(w, 0.026, 0.014, 0, -h / 2 + 0.013, front - 0.006), 0, 0, 0);
+  b.add('rail.rim', bentBox(w - 2 * SHIELD.chamfer + 0.02, 0.026, 0.014, 0, h / 2 - 0.013, front - 0.006), 0, 0, 0);
+  for (const sgn of [-1, 1]) {
+    const c = SHIELD.chamfer, len = Math.hypot(c, c) - 0.012;
+    const cx = sgn * (w / 2 - c / 2), cy = h / 2 - c / 2;
+    const m = b.add('rail.rim', box(len, 0.026, 0.014), cx - sgn * 0.009, cy - 0.009, front - 0.006 + bendZ(cx), { rot: [0, 0, -sgn * Math.PI / 4] });
+    m.rotation.y = sgn * 2 * SHIELD.bend * cx * -1;
+  }
+  // Viewport: clear tinted glass in the hole, in a frame raised on both faces
+  b.add('glass.port', box(pw, ph, 0.01), 0, py, 0, { role: 'glass' });
+  for (const z of [front - 0.008, -front + 0.008]) {
+    b.add('sight.portFrame', box(pw + 0.044, 0.022, 0.016), 0, py + ph / 2 + 0.011, z);
+    b.add('sight.portFrame', box(pw + 0.044, 0.022, 0.016), 0, py - ph / 2 - 0.011, z);
+    for (const sx of [-1, 1]) b.add('sight.portFrame', box(0.022, ph + 0.044, 0.016), sx * (pw / 2 + 0.011), py, z);
+  }
+  b.add('vent.led', box(0.12, 0.008, 0.006), 0, py - ph / 2 - 0.035, front - 0.003);
+  // Accent band with a thin pinstripe, and a chevron under it
+  b.add('stock.band', bentBox(w - 0.05, 0.055, 0.006, 0, 0.17, front - 0.003), 0, 0, 0);
+  b.add('stock.band', bentBox(w - 0.05, 0.012, 0.006, 0, 0.115, front - 0.003), 0, 0, 0);
+  const chev = new THREE.Shape();
+  chev.moveTo(-0.11, -0.02); chev.lineTo(0, 0.06); chev.lineTo(0.11, -0.02); chev.lineTo(0.11, -0.065); chev.lineTo(0, 0.015); chev.lineTo(-0.11, -0.065); chev.closePath();
+  const chevGeo = new THREE.ExtrudeGeometry(chev, { depth: 0.008, bevelEnabled: false });
+  b.add('stock.chevron', chevGeo, 0, 0.0, front - 0.009);
+  // Raised armour ribs across the lower half
+  for (const y of [-0.17, -0.29, -0.41]) b.add('vent.rib', bentBox(w - 0.09, 0.03, 0.012, 0, y, front - 0.006), 0, 0, 0);
+  // Back: handle on stand-offs, arm strap, rubber pads, a steel frame
+  const back = t / 2;
+  b.add('grip.handle', rbox(0.034, 0.17, 0.034, 0.012), 0, -0.02, 0.09);
+  for (const y of [-0.085, 0.045]) b.add('rail.mount', rbox(0.03, 0.026, 0.07, 0.006), 0, y, 0.05);
+  b.add('pad.strap', rbox(0.2, 0.04, 0.016, 0.006), 0, 0.2, back + 0.012, { role: 'pad' });
+  b.add('pad.rubber', bentBox(0.28, 0.3, 0.02, 0, -0.33, back + 0.01), 0, 0, 0, { role: 'pad' });
+  for (const sx of [-0.23, 0.23]) b.add('pad.rubber', bentBox(0.12, 0.62, 0.02, sx, -0.12, back + 0.01), 0, 0, 0, { role: 'pad' });
+  b.add('frame.brace', bentBox(w - 0.2, 0.03, 0.02, 0, 0.47, back + 0.012), 0, 0, 0, { role: 'steel' });
+  b.add('frame.brace', bentBox(w - 0.08, 0.03, 0.02, 0, 0.05, back + 0.012), 0, 0, 0, { role: 'steel' });
+  b.anim = {};
+  b.muzzleAt = [0, 0, -0.05];
+  b.anchorAt = [0.3, 0.46, 0.08];
+}
+
+const BUILDERS = { rifle: buildRifle, smg: buildSmg, shotgun: buildShotgun, lmg: buildLmg, dmr: buildDmr, pistol: buildPistol, revolver: buildRevolver, machinePistol: buildMachinePistol, shield: buildShield };
 
 // ---------------------------------------------------------------- skins
 
@@ -388,7 +467,7 @@ function applySkin(b, skin, skinId) {
 /** Draw a skin's pattern as thin marks on a body part (receiver, handguard, slide...). */
 function decorate(g, body, skin, rand) {
   const { width: bw, height: bh, depth: bd } = body.geometry.parameters;
-  if (bd < 0.06) return;
+  if (!(bd >= 0.06)) return;   // thin parts, and shapes that aren't boxes (the shield's plate), take the colours only
   const markMat = new THREE.MeshStandardMaterial({
     color: skin.mark, emissive: skin.mark, emissiveIntensity: 0.25 + skin.glow * 1.3, roughness: 0.5, metalness: 0.3,
   });
@@ -452,6 +531,7 @@ const SIGHT_ZOOM = { iron: 1.3, dot: 1.6, scope: 2.4, longScope: 3.2 };
 /** The sight on a gun: { kind: 'iron' | 'dot' | 'scope', zoom }. */
 export function sightOf(id) {
   const w = WEAPONS[id] || WEAPONS.rifle;
+  if (w.shield) return { kind: 'iron', zoom: 1 };   // nothing to aim down
   const k = opticKind(w.model, variantOf(w.id, w.model).optic);
   const kind = k === 0 ? 'dot' : k === 1 ? 'scope' : 'iron';
   return { kind, zoom: SIGHT_ZOOM[w.model === 'dmr' ? 'longScope' : kind] };
@@ -503,6 +583,7 @@ export function makeGunModel(id, skinId = null) {
   if (w.scale !== 1) b.g.scale.setScalar(w.scale);
   // Pistols are short: the view model moves them forward and up so they sit in view
   b.g.userData.hold = ['pistol', 'revolver', 'machinePistol'].includes(w.model) ? [0, 0.03, -0.1] : [0, 0, 0];
+  b.g.userData.display = w.shield ? 0.4 : 1;   // menus and crates show a shield smaller than a gun of its size would be
   return b.g;
 }
 

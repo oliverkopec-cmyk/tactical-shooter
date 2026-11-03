@@ -255,6 +255,10 @@ button.ghost { background: transparent; }
 #health-bar { height: 100%; width: 100%; background: #6fdc7a; transition: width 0.15s; }
 #health-box.low #health-value { color: #ff6b6b; }
 #health-box.low #health-bar { background: #ff6b6b; }
+#health-box.overheal #health-value { color: #ff8fa0; }
+#health-box.overheal #health-bar { background: linear-gradient(90deg, #6fdc7a, #ff8fa0); box-shadow: 0 0 8px #ff5d6c; }
+#health-box.healed { animation: heal-flash 0.6s ease-out; }
+@keyframes heal-flash { 0% { box-shadow: 0 0 0 2px #ff5d6c, 0 0 24px #ff5d6c; } 100% { box-shadow: none; } }
 #ammo-box { right: 16px; text-align: right; }
 #ammo-mag { font-size: 30px; font-weight: 800; }
 #ammo-reserve { font-size: 16px; color: var(--muted); }

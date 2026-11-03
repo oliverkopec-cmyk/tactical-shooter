@@ -28,7 +28,7 @@ export const STEP_HEIGHT = 0.42;          // max ledge the player walks up autom
 // Movement: speeds, acceleration, stances, lean and aiming are tuned in shared/movementConfig.js
 export {
   WALK_SPEED, SPRINT_SPEED, CROUCH_SPEED, PRONE_SPEED, MOVE, CROUCH_TRANSITION, PRONE_TRANSITION,
-  LEAN_SPEED, LEAN_OFFSET, LEAN_ROLL, ADS, SPEED_RATING, FEEL,
+  LEAN_SPEED, LEAN_OFFSET, LEAN_ROLL, ADS, SPEED_RATING, FEEL, DASH_SPEED,
 } from './movementConfig.js';
 
 // Input bit flags

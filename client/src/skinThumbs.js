@@ -30,6 +30,7 @@ export async function renderSkinThumbs(ids, onThumb, gun = 'rifle') {
     const model = makeGunModel(gun, id);
     model.rotation.y = Math.PI / 2;           // muzzle to the right
     model.position.x = 0.04;
+    if (model.userData.display !== 1) { model.scale.multiplyScalar(model.userData.display); model.rotation.y = Math.PI - 0.35; model.position.x = 0; }   // a shield: its face, turned a little
     scene.add(model);
     renderer.render(scene, camera);
     const url = canvas.toDataURL('image/png');

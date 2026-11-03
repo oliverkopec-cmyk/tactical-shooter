@@ -196,7 +196,7 @@ export class GiftOpening {
     const charmShown = result.charm?.id || (result.crate?.kind === 'charm' ? result.crate.charm : null);
     if (skinShown) {
       const gun = makeGunModel(gunShown, skinShown);
-      gun.scale.multiplyScalar(1.5);
+      gun.scale.multiplyScalar(1.5 * gun.userData.display);
       this.item.add(gun);
     } else if (charmShown) {
       const charm = makeCharmModel(charmShown);

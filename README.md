@@ -2,7 +2,29 @@
 
 A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite on the client, Node.js + Socket.IO on an authoritative server. One Node process serves both the game client and the realtime server, so the whole thing deploys as a single Render web service.
 
-## Status: Stage D (main menu remodel)
+## Status: Stage E (9 new operators)
+
+Nine operators to buy with Money, each built around how a real Rainbow Six Siege operator's gadget works (named in brackets) with original names, models and icons. Each has its own icon, two guns (shared with at most one other operator) and two utilities, and bots play them all.
+
+Attackers:
+
+- **Aegis** (Blackbeard, and how shield operators work), 3,500: the primary is the **Breakwater shield**, a full-height ballistic shield (curved, chamfered, with a viewport, a steel rim and armour ribs; skins and Exclusive skins work on it), and the secondary the **Anvil .45**. With the shield drawn you hold only the shield: it fills most of your view and you look out through its viewport. It can't shoot, but it stops every bullet and melee swing from the front (60° either side); a standing player's shins show below it, a crouching one is covered, and sprinting swings it aside. Draw the pistol to shoot: the shield moves to your left side, the pistol close beside it, and it still covers the left half of your body from the front. It works on a rope too. Ability: **shield charge** (3, 8 s apart, shield drawn): a short dash that smashes through soft walls and barricades in the way and leaves you dazed (slowed, blurred) for 1.5 s. Aegis bots fight with the pistol and raise the shield again 3 s after losing sight of you.
+- **Blackout** (Thatcher): 3 EMP grenades, a 2 s fuse, reaching through walls: every defender electronic within 5 m is destroyed (cameras, jammers, shock traps, alarm sensors, shock wires, interceptors).
+- **Wasp** (Twitch): both drones are shock drones. Driving one in prep, the ability key fires its taser (6 zaps per drone, 5 m, 1.2 s apart): it destroys the defender gadget it hits, or stings a defender for 8.
+- **Flint** (Hibana): 3 volleys of sticky pellets from 20 m. Fire one, then press again to set it off: a hole in a soft wall, a hatch opened, a barricade or armour panel broken, or one panel knocked out of a reinforced wall (three volleys make a hole you can see through). Jammers stop them and shock wires fry them.
+- **Ram** (Sledge): a breaching hammer, 20 swings, 1.1 s apart: a big hole in a soft wall, a barricade or the hatch under you gone, an armour panel in two. Reinforced walls make it bounce off; it never hurts people.
+
+Defenders:
+
+- **Rampart** (Castle; replaces the planned Trapper, whose floor trap overlapped Volt's): 3 armour panels. Aim at a doorway or window and hold still for 1.5 s: a bulletproof slab fills it (any wooden barricade there goes). Bullets, frags and impacts do nothing; it takes 12 melee hits, 2 hammer swings, a breach charge or a pellet volley. Nobody can swing in through it on a rope.
+- **Current** (Bandit): 4 shock wires for reinforced walls, hatches and armour panels. An electrified wall destroys breach charges (heavy ones too) and pellets stuck to it, and shocks attackers touching it (12 every half second). One bullet, an EMP or a shock drone destroys a battery.
+- **Medic** (Doc): 3 stim darts: +40 health to the teammate under the crosshair (30 m) or to yourself, up to 140; the extra drains back to 100 at 1 a second. The health panel turns pink while overhealed.
+- **Interceptor** (Jäger): 2 devices on walls or floors, each shooting down 2 enemy grenades (frags, impacts, flashes, smokes, stuns, fire canisters, EMPs) within 4.5 m in its sight. One bullet destroys one.
+
+- Bots: Aegis bots draw the pistol to fight and charge through walls in the way with the shield, Ram bots hammer open walls near the site, Flint bots set off their pellets, Wasp bots drive up to gadgets and zap them, Rampart bots armour the site entrances, Current bots electrify the walls they reinforce, Interceptor bots put devices by the site and Medic bots stim when hurt. Bots aim at the feet of a raised shield and the head of a lowered one.
+- Tuning numbers live in `ABILITY_STATS` in `shared/utilities.js` and the shield charge speed in `shared/movementConfig.js`.
+
+### Earlier: Stage D (main menu remodel)
 
 - **A rooftop at dusk** behind the operator (`client/src/menuBackdrop.js`, all built in code): a wet concrete roof with a parapet, air-conditioning units with turning fans, a stair hut with a lamp over its door, a water tower, crates, vent pipes and a mast with a blinking red light. Across the gap the target building rises with its windows lit and red warning lights on top. A city of towers spreads to the horizon (one draw call; the windows are worked out in a shader from the world position, so they are the same size on every tower, and a few flicker). A dusk sky fades from the last orange of the sun on the left to deep blue with twinkling stars. A searchlight sweeps slowly through the haze, banks of fog drift past, light rain falls, and every so often an aircraft light crosses the sky.
 - **Cinematic camera drift:** the camera sways slowly around its spot (a few combined slow waves, so it never repeats quickly) and keeps the operator framed; the scene is never fully still.
@@ -302,23 +324,6 @@ Written down so they aren't forgotten (see Status for what is built). They are b
 - A short placing sound that others nearby can hear.
 - The server times the placement, so it can't be skipped by cheating.
 
-### Stage E - 8 new operators
-
-Bought with Money like the other new ones, each with its own icon, primary and secondary gun and 2 utility options. Bots can play them.
-
-- **Volt (A):** 2 EMP grenades that disable and destroy enemy electronics in a radius (cameras, jammers, shock wires, interceptors) and stop reinforcement shocks for 10 seconds.
-- **Wasp (A):** one drone is a shock drone that zaps (short cooldown), destroying defender gadgets it touches and dealing small damage to players.
-- **Ember (A):** a launcher with 3 breaching pellets that open small holes in soft walls, barricades and hatches from a distance.
-- **Ram (A):** a breaching hammer (melee key, limited uses) that smashes big holes in soft walls, floors and hatches in one hit; slow and loud.
-- **Current (D):** 3 shock wires on reinforced walls or hatches; they destroy breach charges planted on that wall and damage anyone touching it. Volt's EMP disables them.
-- **Trapper (D):** 3 hidden floor traps; an attacker who steps on one is stuck for 4 seconds and takes small damage, and can shoot it to escape early.
-- **Medic (D):** a healing pistol, 40 health per shot to teammates or themselves, 3 shots per round.
-- **Interceptor (D):** 2 devices that each shoot down 2 thrown grenades or launched pellets within 4 m before they explode.
-- Balanced against the existing operators.
-- One of the defenders is a **Castle-style** operator: bulletproof armour panels placed over doorways and windows instead of wooden barricades, which take many melee hits to break and are broken by explosives and breaching tools (which of the four it replaces is decided when Stage E starts).
-- A gun may be shared by at most 2 operators, so new operators can reuse an existing gun where that helps.
-- Some names clash with what's in the game (a defender called Volt, Spark's Ember AR, Surge's EMP, Tonic's healing); to be settled when Stage E starts.
-
 ## Run locally
 
 ```bash
@@ -508,6 +513,7 @@ Other players' sounds are derived on each client from the snapshots (speed, stan
 1. Add one entry to `shared/operators.js` (name, team, colour, `weapons: { primary, secondary }`, two `utilities`, speed/armor, and an `ability` with `id`, `name`, `desc` and either `charges` or `cooldown`).
 2. If it has a new ability, add a handler with the same `id` to `ABILITIES` in `server/abilities.js`. It receives the gadget manager, the player's socket id, the player, and the ability config, and can use `p.ability.charges` / `p.ability.cdUntil`.
 3. If the gadget is visible in the world, add a visual to `client/src/gadgets.js` and send it with `gadgetAdd`.
+4. Draw its icon in `client/src/operatorIcons.js`. A gun may be shared by at most 2 operators.
 
 The select screen, HUD panel, loadout and ratings come from the config automatically.
 

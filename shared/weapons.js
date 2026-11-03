@@ -4,7 +4,7 @@
 
 import { KEY, WALK_SPEED, ADS } from './constants.js';
 
-// Every operator has a unique primary and a unique secondary (see operators.js).
+// A gun is used by at most 2 operators (see operators.js).
 // Fields:
 //   kind        shown in menus and the kill feed       model   which first-person model to draw
 //   auto        hold to keep firing (false = one shot per click)
@@ -256,6 +256,14 @@ export const WEAPONS = {
   }),
 };
 
+// Aegis's ballistic shield (Stage E): held up in front, it can't shoot (switch to the secondary pistol
+// for that) and it is heavy. shieldCover() below says what it covers.
+WEAPONS.breakwater = gun({
+  id: 'breakwater', name: 'Breakwater shield', kind: 'Ballistic shield', model: 'shield', shield: true,
+  color: 0x3a434d, accent: 0x2fd6b0, damage: 0, rpm: 60, magSize: 0, reserve: 0, reloadTime: 1, falloffStart: 1, falloffEnd: 2, mobility: 0.9,
+  desc: 'A full-height ballistic shield that stops every bullet and melee hit from the front; you look out through its viewport. It can\'t shoot: switch to your pistol to fire, and the shield moves to your side.',
+});
+
 export const SWAP_TIME = 0.4;   // seconds before a newly drawn weapon can fire
 
 /** A weapon state holds the drawn gun plus the stowed one in `other` (slot 0 = primary, 1 = secondary). */
@@ -290,6 +298,7 @@ export function stepWeapon(ws, input, dt) {
   const w = WEAPONS[ws.id];
   const keys = input.keys | 0;
   const firing = (keys & KEY.FIRE) !== 0;
+  if (w.shield) { ws.cooldown = Math.max(0, ws.cooldown - dt); ws.reload = 0; ws.trigger = firing; return false; }   // a shield never fires
 
   ws.bloom = Math.max(0, ws.bloom - w.bloomRecover * dt);
   ws.cooldown -= dt;
@@ -320,6 +329,20 @@ export function stepWeapon(ws, input, dt) {
   return fired;
 }
 
+/**
+ * What a ballistic shield covers right now: 0 nothing (sprinting swings it out of the way; lying
+ * down or vaulting, it isn't held up), 1 the whole front up to the top of the head (the shield is
+ * drawn), 2 the left half of the front (the pistol is drawn and the shield is held to the side).
+ * shieldBox() in shared/raycast.js gives the boxes.
+ */
+export function shieldCover(ws, s) {
+  if (!ws) return 0;
+  const drawn = WEAPONS[ws.id]?.shield, side = !drawn && ws.other && WEAPONS[ws.other.id]?.shield;
+  if (!drawn && !side) return 0;
+  if ((s.prone || 0) > 0.5 || s.sprinting || s.vaultT > 0) return 0;
+  return drawn ? 1 : 2;
+}
+
 /** Walking speed multiplier for the gun that is drawn. */
 export const gunMobility = (ws) => WEAPONS[ws?.id]?.mobility ?? 1;
 
@@ -331,6 +354,14 @@ const clamp01 = (v) => Math.max(0, Math.min(1, v));
 
 /** Rows for a gun's hover card: [{ label, text, frac }]. */
 export function weaponStats(w) {
+  if (w.shield) {
+    const [mLo, mHi] = STAT_SCALE.mobility;
+    return [
+      { label: 'Protection', text: 'Head to knees, from the front', frac: 1 },
+      { label: 'Firing', text: 'None: use your pistol', frac: 0 },
+      { label: 'Mobility', text: `${Math.round(w.mobility * 100)}%`, frac: clamp01((w.mobility - mLo) / (mHi - mLo)) },
+    ];
+  }
   const dmg = w.damage * w.pellets;
   const [rLo, rHi] = STAT_SCALE.reload, [mLo, mHi] = STAT_SCALE.mobility;
   return [

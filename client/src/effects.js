@@ -111,15 +111,43 @@ export class Effects {
     this.live.push({ mesh: light, life: 0.12, maxLife: 0.12, kind: 'light' });
   }
 
-  explosion(pos) {
+  /**
+   * A jagged electric arc (or a thin dart trail, with a small `jag`) from one point to another:
+   * a few short glowing segments that flicker out (shock drones, shock wires, stims, interceptors).
+   */
+  arc(from, to, color = 0x9fd8ff, jag = 0.35) {
+    const a = new THREE.Vector3(...from), b = new THREE.Vector3(...to);
+    const len = a.distanceTo(b);
+    if (len < 0.05) return;
+    const n = Math.max(2, Math.min(10, Math.round(len / 0.5)));
+    const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.95, depthWrite: false });
+    let prev = a.clone();
+    for (let i = 1; i <= n; i++) {
+      const p = a.clone().lerp(b, i / n);
+      if (i < n) p.add(new THREE.Vector3((Math.random() - 0.5) * jag, (Math.random() - 0.5) * jag, (Math.random() - 0.5) * jag));
+      const seg = new THREE.Mesh(unitBox, mat.clone());
+      seg.scale.set(0.02, 0.02, prev.distanceTo(p));
+      seg.position.copy(prev).add(p).multiplyScalar(0.5);
+      seg.lookAt(p);
+      this.add(seg, 0.12 + Math.random() * 0.06, 'tracer');
+      prev = p;
+    }
+    mat.dispose();
+    const light = new THREE.PointLight(color, 30, 4, 1.5);
+    light.position.copy(b);
+    this.scene.add(light);
+    this.live.push({ mesh: light, life: 0.1, maxLife: 0.1, kind: 'light' });
+  }
+
+  explosion(pos, scale = 1) {
     const fire = new THREE.Mesh(puffGeo, new THREE.MeshBasicMaterial({ color: 0xffb347, transparent: true, opacity: 0.9, depthWrite: false }));
     fire.position.set(...pos);
-    fire.scale.setScalar(0.6);
-    fire.userData.size = 0.9;
+    fire.scale.setScalar(0.6 * scale);
+    fire.userData.size = 0.9 * scale;
     this.add(fire, 0.35, 'puff');
     const smoke = new THREE.Mesh(puffGeo, new THREE.MeshBasicMaterial({ color: 0x8a8a8a, transparent: true, opacity: 0.8, depthWrite: false }));
     smoke.position.set(...pos);
-    smoke.userData.size = 1.2;
+    smoke.userData.size = 1.2 * scale;
     this.add(smoke, 1.1, 'puff');
     const light = new THREE.PointLight(0xffa040, 30, 12, 1.5);
     light.position.set(...pos);

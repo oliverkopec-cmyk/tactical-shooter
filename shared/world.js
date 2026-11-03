@@ -114,6 +114,8 @@ export class World {
     for (const p of panels) if (this.alive[p.id]) boxes.push(p);
     for (const b of this.extra.values()) boxes.push(b);
     this.boxes = boxes;
+    // Openings covered by Rampart's armour panels (nobody swings in through those)
+    this.armored = new Set([...this.extra.values()].filter((b) => b.kind === 'armor').map((b) => b.openingId));
     // What defenders collide with during prep: the map plus plugs in every exterior opening.
     this.barrierView = { boxes: boxes.concat(this.map.barriers) };
     // Drones can't fall into an open hatch: for them its hole is still floor

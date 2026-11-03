@@ -69,7 +69,7 @@ export class Destruction {
     const origin = [eye.x, eye.y, eye.z];
     const dir = aimDirection(p.state.yaw, p.state.pitch);
     const hit = raycastWorld(this.world, origin, dir, reach);
-    if (!hit || (hit.box.kind !== 'panel' && !(allowBarricade && hit.box.kind === 'barricade'))) return null;
+    if (!hit || (hit.box.kind !== 'panel' && !(allowBarricade && (hit.box.kind === 'barricade' || hit.box.kind === 'armor')))) return null;
     return { hit, panel: hit.box };
   }
 
@@ -101,6 +101,9 @@ export class Destruction {
       id: this.nextChargeId++, owner: id, type,
       pos: [point[0] + normal[0] * 0.04, point[1] + normal[1] * 0.04, point[2] + normal[2] * 0.04],
       normal,
+      // what it is stuck to, so Current's shock wires can find it
+      panelId: aim.panel.kind === 'panel' ? aim.panel.id : null,
+      armorId: aim.panel.kind === 'armor' ? aim.panel.armorId : null,
     };
     this.charges.set(charge.id, charge);
     if (type === 'heavy') p.ability.charges--; else p.charges--;
@@ -123,6 +126,7 @@ export class Destruction {
       .filter((pid) => cfg.breaksReinforced || !this.world.isReinforcedPanel(pid));
     const removed = this.world.destroyPanels(targets);
     this.game.gadgets.blastBarricades(charge.pos, cfg.radius + BARRICADE.blastExtra);
+    this.game.gadgets.blastArmors(charge.pos, cfg.radius);
     this.emitAll('chargeExploded', { id: charge.id, pos: charge.pos, normal: charge.normal, panels: removed });
 
     // Blast damage to the owner and enemies nearby (walls don't shield; it's a breach charge)
@@ -138,6 +142,12 @@ export class Destruction {
       });
     }
     if (owner) this.game.sendLoadout(charge.owner, owner);
+  }
+
+  /** One charge gone without going off (fried by a shock wire). */
+  removeCharge(chargeId) {
+    if (!this.charges.delete(chargeId)) return;
+    this.emitAll('chargeRemoved', { id: chargeId });
   }
 
   removeChargesOf(playerId) {

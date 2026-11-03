@@ -21,6 +21,9 @@ export const MOVE = {
   gravity: 22,         // m/s²
 };
 
+// Aegis's shield charge (Stage E): this fast, for ABILITY_STATS.dash.time seconds (shared/utilities.js)
+export const DASH_SPEED = 10;
+
 // Stance changes: amount per second (0..1). The eye height eases in and out of them, so they never snap.
 export const CROUCH_TRANSITION = 4.5;    // about 0.22 s down or up
 export const PRONE_TRANSITION = 2.4;     // about 0.4 s
