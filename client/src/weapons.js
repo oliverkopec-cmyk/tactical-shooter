@@ -154,6 +154,7 @@ export class ViewModel {
     // The gun's recoil spring: back (m), up, side and roll (rad), each with a velocity. Settings per gun in shared/gunConfig.js
     this.spring = { back: 0, up: 0, side: 0, roll: 0, vBack: 0, vUp: 0, vSide: 0, vRoll: 0, k: 160, c: 15 };
     this.casings = [];                    // shell casings flying out of the gun
+    this.casingsOn = true;                // off on Low graphics
     this.ads = 0;
     this.raise = 0;
     this.swingT = 0;
@@ -232,7 +233,7 @@ export class ViewModel {
 
   /** Throw a casing out of the right side of the gun; it flies up and right, tumbling, and drops out of view. */
   eject(kind) {
-    if (!this.gun || kind === 'none' || this.casings.length > 16) return;
+    if (!this.gun || !this.casingsOn || kind === 'none' || this.casings.length > 16) return;
     const m = this.gun.userData.muzzle.position;
     const at = new THREE.Vector3(0.02, (this.gun.userData.sightY || 0.04) * 0.35, Math.min(-0.04, m.z * 0.3));
     this.gun.localToWorld(at);                      // view model scene space (it doesn't move when you turn)

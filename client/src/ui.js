@@ -5,6 +5,7 @@ import { WEAPONS, weaponStats } from '../../shared/weapons.js';
 import { UTILITIES } from '../../shared/utilities.js';
 import { OPERATORS } from '../../shared/operators.js';
 import { settings, setSetting, setKeybinds, onSettingsChange } from './settings.js';
+import { quality, choosePreset, chooseOption } from './graphics.js';
 import { rankIcon } from './rankIcon.js';
 import { operatorIcon } from './operatorIcons.js';
 import { mapChoices } from '../../shared/map.js';
@@ -62,24 +63,43 @@ export class UI {
         $(`val-${name}`).textContent = fmt[name](settings[name]);
       });
     }
-    const choices = ['leanMode', 'aimMode', 'graphics'];
+    const choices = ['leanMode', 'aimMode', 'graphics', 'gShadows', 'gResolution', 'gEffects', 'gDistance', 'gAA', 'showFps'];
+    const GRAPHICS_OPTIONS = new Set(['gShadows', 'gResolution', 'gEffects', 'gDistance', 'gAA']);
     for (const name of choices) {
       const select = $(`set-${name}`);
       select.value = settings[name];
-      select.addEventListener('change', () => setSetting(name, select.value));
+      select.addEventListener('change', () => {
+        if (name === 'graphics') choosePreset(select.value);          // a preset sets the separate options too
+        else if (GRAPHICS_OPTIONS.has(name)) chooseOption(name, select.value);   // changing one makes the preset Custom
+        else setSetting(name, select.value);
+        this.updateGraphicsHint();
+      });
     }
+    $('aa-reload-btn').addEventListener('click', () => location.reload());
+    this.startAA = quality().aa;
     // Settings can also change from outside (loaded from the account after login).
     onSettingsChange((name, value) => {
       if (name === 'keybinds') return this.renderKeybinds();
-      if (choices.includes(name)) { $(`set-${name}`).value = value; return; }
+      if (choices.includes(name)) { $(`set-${name}`).value = value; this.updateGraphicsHint(); return; }
       if (!fmt[name]) return;
       $(`set-${name}`).value = value;
       $(`val-${name}`).textContent = fmt[name](value);
     });
+    this.updateGraphicsHint();
     this.bindKeybinds();
     for (const btn of document.querySelectorAll('.settings-open')) btn.addEventListener('click', () => this.openSettings(false));
     $('settings-close').addEventListener('click', () => { this.closeSettings(); this.onSettingsClosed?.(); });
   }
+
+  /** The options below the preset show what is in use (Auto shows what it picked); anti-aliasing needs a reload to change. */
+  updateGraphicsHint() {
+    const q = quality(), map = { gShadows: q.shadows, gResolution: q.resolution, gEffects: q.effects, gDistance: q.distance, gAA: q.aa };
+    for (const [name, v] of Object.entries(map)) $(`set-${name}`).value = v;
+    $('aa-reload').classList.toggle('hidden', q.aa === this.startAA);
+  }
+
+  /** The FPS / ping chip in the corner. */
+  setFpsVisible(on) { $('net-stats').classList.toggle('hidden', !on); }
 
   /** inGame: opened by Esc during a match (shows the resume hint). */
   openSettings(inGame) {

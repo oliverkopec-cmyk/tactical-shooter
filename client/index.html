@@ -59,6 +59,7 @@
         <div class="stat"><span>Money</span><b id="profile-money">0</b></div>
         <div class="stat"><span>Polish Money</span><b id="profile-polish">0</b></div>
       </div>
+      <button id="whatsnew-btn" class="ghost small" title="What changed in the latest updates">What's new</button>
       <button id="logout-btn" class="ghost small">Log out</button>
     </header>
     <nav class="tabs" id="menu-tabs">
@@ -316,7 +317,24 @@
       <div class="setting-choices">
         <label>Lean <select id="set-leanMode"><option value="toggle">Toggle</option><option value="hold">Hold</option></select></label>
         <label>Aim down sights <select id="set-aimMode"><option value="hold">Hold</option><option value="toggle">Toggle</option></select></label>
-        <label>Graphics <select id="set-graphics"><option value="auto">Auto</option><option value="high">High</option><option value="low">Low (faster)</option></select></label>
+      </div>
+      <div class="graphics-box">
+        <label>Graphics
+          <select id="set-graphics">
+            <option value="auto">Auto (Low on weak computers)</option><option value="low">Low (fastest)</option><option value="medium">Medium</option>
+            <option value="high">High</option><option value="ultra">Ultra</option><option value="custom">Custom</option>
+          </select>
+        </label>
+        <div class="setting-choices graphics-options">
+          <label>Shadows <select id="set-gShadows"><option value="off">Off</option><option value="low">Low</option><option value="high">High</option></select></label>
+          <label>Resolution <select id="set-gResolution"><option value="0.75">75%</option><option value="1">100%</option><option value="1.5">150%</option><option value="2">200%</option></select></label>
+          <label>Effects <select id="set-gEffects"><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label>
+          <label>View distance <select id="set-gDistance"><option value="short">Short</option><option value="medium">Medium</option><option value="long">Long</option></select></label>
+          <label>Anti-aliasing <select id="set-gAA"><option value="off">Off</option><option value="on">On</option></select></label>
+          <label>FPS counter <select id="set-showFps"><option value="on">Show</option><option value="off">Hide</option></select></label>
+        </div>
+        <p id="aa-reload" class="muted small-note hidden">Anti-aliasing changes when the page is reloaded. <button type="button" id="aa-reload-btn" class="small">Reload now</button></p>
+        <p class="muted small-note">Low runs smoothly on weak laptops: no shadows, 75% resolution, fewer effects and a shorter view distance.</p>
       </div>
       <label>Volume <span id="val-volume" class="muted"></span>
         <input id="set-volume" type="range" min="0" max="1" step="0.05" />
@@ -351,6 +369,15 @@
       <div id="summary-score" class="muted center"></div>
       <div id="summary-body"></div>
       <button id="summary-close" class="primary">Continue</button>
+    </div>
+  </div>
+
+  <!-- What's new: the changelog, shown once after an update and from the menu -->
+  <div id="whatsnew" class="hidden">
+    <div class="summary-card">
+      <h2 id="whatsnew-title">What's new</h2>
+      <div id="whatsnew-body"></div>
+      <button type="button" id="whatsnew-ok" class="primary">Got it</button>
     </div>
   </div>
 

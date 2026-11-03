@@ -12,7 +12,7 @@ import { attachCharm } from './charmModels.js';
 import { CrateSequence } from './crateScene.js';
 import { GiftPile, GiftOpening } from './giftScene.js';
 import { MenuBackdrop } from './menuBackdrop.js';
-import { lowGraphics } from './graphics.js';
+import { lowGraphics, quality, pixelRatioFor } from './graphics.js';
 import { onSettingsChange } from './settings.js';
 
 const CAMERA = { y: 1.6, z: 6.8, lookY: 1.15 };
@@ -35,7 +35,7 @@ export class MenuScene {
   constructor(canvas) {
     this.canvas = canvas;
     this.low = lowGraphics();
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: !this.low });
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: quality().aa === 'on' });
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.scene = new THREE.Scene();
     this.scene.fog = new THREE.FogExp2(0x2c2536, 0.0085);
@@ -80,7 +80,11 @@ export class MenuScene {
     this.scene.add(pad, ring, inner, glow, this.padLight);
 
     this.applyQuality();
-    this.offSettings = onSettingsChange((name) => { if (name === 'graphics') this.applyQuality(); });
+    this.offSettings = onSettingsChange((name) => {
+      if (name !== 'graphics' && !/^g[A-Z]/.test(name)) return;
+      clearTimeout(this.qualityTimer);                       // a preset sets several options at once: rebuild once
+      this.qualityTimer = setTimeout(() => this.applyQuality(), 0);
+    });
 
     this.avatar = null;
     this.avatarTeam = null;
@@ -124,8 +128,8 @@ export class MenuScene {
   /** Build (or rebuild) the rooftop for the graphics setting: Low has fewer effects, no shadows, no extra lights. */
   applyQuality() {
     this.low = lowGraphics();
-    this.renderer.setPixelRatio(this.low ? 1 : Math.min(window.devicePixelRatio || 1, 2));
-    this.renderer.shadowMap.enabled = !this.low;
+    this.renderer.setPixelRatio(Math.min(pixelRatioFor(quality().resolution), 1.5));   // the menu never needs more than 1.5x
+    this.renderer.shadowMap.enabled = quality().shadows !== 'off';
     this.renderer.shadowMap.needsUpdate = true;
     this.padLight.visible = !this.low;
     this.backdrop?.dispose();
