@@ -13,7 +13,7 @@
 // Movement uses the shared walking grid in server/nav.js. Difficulty sets reaction time, aim settling,
 // head aim, turn speed and hearing; Normal and Hard share the same movement and tactics.
 
-import { PHASE, KEY, MAX_INPUT_DT, INTRO_STEP } from '../shared/constants.js';
+import { PHASE, KEY, MAX_INPUT_DT, INTRO_STEP, ACTION_MS } from '../shared/constants.js';
 import { ABILITY_STATS } from '../shared/utilities.js';
 import { OPERATORS, operatorsFor } from '../shared/operators.js';
 import { WEAPONS, aimDirection, shieldCover } from '../shared/weapons.js';
@@ -33,6 +33,9 @@ export const BOT_DIFFICULTIES = {
 
 const THINK_MS = 100;
 const SIGHT = 75;
+const STUCK_MS = 5000;              // no real progress for this long -> choose a new plan
+const DITHER_MS = 14000;            // attackers whose way to the site isn't getting shorter for this long -> force the push
+const PUSH_AFTER_S = 30;            // attackers stop staging this long into the action phase
 const CONTACT_MS = 7000;            // how long the team remembers where an enemy was
 const DRONE_CONTACT_MS = 45000;     // ...and what a drone saw in prep
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -171,6 +174,7 @@ export class BotBrains {
       droneSite: null, alert: null, lastSeen: 0, lastSeenPos: null, cover: null, relocate: 0, hurtAt: 0,
       staged: false, flashed: false, threw: 0, breach: null, strafeUntil: 0, strafeKey: 0, crouchUntil: 0, wallbangUntil: 0,
       direct: null, look: null, goal: null, way: null, hold: false, smoked: false,
+      prog: null, bestDist: Infinity, bestAt: 0, bestKey: '', detour: null, rpBad: null, pushing: false,
     });
     b.yaw = p.state.yaw; b.pitch = 0; b.yawVel = 0; b.pitchVel = 0;
   }
@@ -295,8 +299,10 @@ export class BotBrains {
     // ---- health, ammo and cover
     const w = WEAPONS[p.weapon.id];
     const lowAmmo = p.weapon.ammo === 0 || (p.weapon.ammo < Math.max(2, w.magSize * 0.25) && !b.target);
-    const hurt = p.health < 35 || now - b.hurtAt < 600;
-    if (b.diff.tactics && phase === PHASE.ACTION && !b.hold && !p.state.rap && (lowAmmo || (hurt && !b.target) || b.relocate > now - 300)) {
+    // Attackers who are pushing the site don't duck back out for a scratch or after a kill: they keep moving in
+    const pushing = team === 'attack' && b.pushing;
+    const hurt = p.health < 35 || (!pushing && now - b.hurtAt < 600);
+    if (b.diff.tactics && phase === PHASE.ACTION && !b.hold && !p.state.rap && (lowAmmo || (hurt && !b.target) || (!pushing && b.relocate > now - 300))) {
       if (!b.cover || now > b.cover.until) {
         const threat = b.lastSeenPos || b.alert?.pos || this.contactsFor(team, origin)[0]?.pos;
         const spot = threat ? this.findCover(p, threat, b.relocate > now - 300 ? 5 : 4) : null;
@@ -329,6 +335,8 @@ export class BotBrains {
     const first = b.trail[0];
     b.stuckT = b.wantMove && now - first[0] > 1000 && Math.hypot(pos[0] - first[1], pos[1] - first[2]) < 0.5 ? b.stuckT + THINK_MS / 1000 : 0;
 
+    if (phase === PHASE.ACTION) this.watchProgress(b, id, p, now);
+
     // ---- what to do this phase
     b.hold = false; b.direct = b.rp?.stage === 'roof' ? b.direct : null;
     if (phase === PHASE.PREP) {
@@ -339,7 +347,47 @@ export class BotBrains {
       else if (team === 'attack') this.actionAttacker(b, id, p, now);
       else this.actionDefender(b, id, p, now);
     } else b.goal = null;
+    // A detour after being stuck: walk to a nearby spot first, then carry on with the plan
+    if (b.detour) {
+      if (now > b.detour.until || phase !== PHASE.ACTION || b.target || p.state.rap || dist2([p.state.x, 0, p.state.z], b.detour.pos) < 1) b.detour = null;
+      else if (!b.cover) this.goPoint(b, b.detour.pos, 0.8);
+    }
     this.route(b, p);
+  }
+
+  /**
+   * Stuck check, once a think: a bot that is trying to move but has gone nowhere for 5 s drops its plan and
+   * chooses a new one. Attackers also get a second check: the way to the site must keep getting shorter, or
+   * the whole team is told to push (so nobody sits at an outside angle).
+   */
+  watchProgress(b, id, p, now) {
+    const s = p.state;
+    const trying = b.wantMove || (s.rap && b.ropeKeys);
+    if (!b.prog || !trying || b.target || b.hold || Math.hypot(s.x - b.prog.x, (s.y - b.prog.y) * 2, s.z - b.prog.z) > 1.2) b.prog = { x: s.x, y: s.y, z: s.z, t: now };
+    else if (now - b.prog.t > STUCK_MS) { b.prog = null; this.replan(b, p, now); return; }
+    if (p.member.team !== 'attack' || !b.goal?.key.startsWith('site') || b.wayDist < 0) { b.bestKey = ''; return; }
+    if (b.bestKey !== b.goal.key || b.wayDist < b.bestDist - 2) { b.bestKey = b.goal.key; b.bestDist = b.wayDist; b.bestAt = now; return; }
+    if (now - b.bestAt > DITHER_MS && this.timeLeft() < ACTION_MS / 1000 - 20) {
+      b.bestAt = now;
+      this.intel.attack.push = true;
+      this.replan(b, p, now);
+    }
+  }
+
+  /** Choose a new plan: let go of any rope, try the other way in (walk <-> rappel), and step somewhere else first. */
+  replan(b, p, now) {
+    const s = p.state, team = p.member.team;
+    if (s.rap) b.keysOnce |= KEY.RAPPEL;
+    if (b.rp) (b.rpBad ||= new Set()).add(b.rp.rope);
+    const ropes = (this.game.map.ropes || []).some((r, i) => r.kind === 'wall' && !b.rpBad?.has(i));
+    b.rp = null; b.breach = null; b.cover = null; b.direct = null; b.spot = null; b.look = null; b.explore = null;
+    b.spotShift = (b.spotShift || 0) + 1;
+    if (team === 'attack') b.plan = b.plan !== 'rappel' && ropes && Math.random() < 0.5 ? 'rappel' : 'walk';
+    if (!s.rap) {
+      const nav = this.nav, near = nav.ready ? nav.around(s.x, s.y, s.z, 9) : [];
+      if (near.length) { const k = near[Math.floor(Math.random() * near.length)]; b.detour = { pos: [nav.x[k], nav.y[k], nav.z[k]], until: now + 4000 }; }
+      b.unstuck = now + 600; b.side = Math.random() < 0.5 ? KEY.LEFT : KEY.RIGHT;
+    }
   }
 
   /** Where to aim on a target: the head for good bots (most of the time), else the chest. */
@@ -656,7 +704,8 @@ export class BotBrains {
 
     // Help: a teammate is fighting nearby and we have nothing to do -> go there
     const contacts = this.contactsFor('attack', b.eye);
-    const late = this.timeLeft() < (g.mode === 'defuser' && !g.defuser.planted ? 70 : 50);
+    const late = this.timeLeft() < (g.mode === 'defuser' && !g.defuser.planted ? 100 : 80);
+    const elapsed = ACTION_MS / 1000 - this.timeLeft();
 
     if (g.mode === 'defuser') {
       const d = g.defuser;
@@ -671,7 +720,7 @@ export class BotBrains {
     const site = this.siteGoal(b, p);
 
     // Stage short of the site and push together (unless time is running out)
-    if (b.diff.tactics && !late && !intel.push && g.siteFound) {
+    if (b.diff.tactics && !late && !intel.push && g.siteFound && elapsed < PUSH_AFTER_S) {
       this.goSite(b, site, 1.2);
       if (b.wayDist >= 0 && b.wayDist <= 24) {
         b.staged = true;
@@ -682,15 +731,15 @@ export class BotBrains {
         b.crouchPost = true;
         this.tryBreach(b, id, p, now, site);
         const alive = [...g.players.values()].filter((q) => q.member.team === 'attack' && q.alive).length;
-        if (intel.staged.size >= Math.min(3, alive) || now - intel.firstStaged > 9000) intel.push = true;
+        if (intel.staged.size >= Math.min(3, alive) || now - intel.firstStaged > 6000) intel.push = true;
         return;
       }
     }
-    if (intel.push || late) b.pushing = true;
+    if (intel.push || late || elapsed >= PUSH_AFTER_S) b.pushing = true;
     if (b.breach && b.breach.stage !== 'done') { this.tryBreach(b, id, p, now, site); if (b.breach.stage !== 'done') return; }
     // A teammate's fight close by: go and help
     const fight = contacts.find((c) => c.seen && now - c.t < 1500 && c.d > 3 && c.d < 22);
-    if (fight && !b.target && !late && Math.random() < 0.6) { this.goPoint(b, fight.pos, 2); b.watch = [fight.pos[0], fight.pos[1] + 1.4, fight.pos[2]]; return; }
+    if (fight && !b.target && !late && !b.pushing && Math.random() < 0.6) { this.goPoint(b, fight.pos, 2); b.watch = [fight.pos[0], fight.pos[1] + 1.4, fight.pos[2]]; return; }
     this.goSite(b, site, 1.2);
     b.watch = contacts[0] && contacts[0].d < 25 ? [contacts[0].pos[0], contacts[0].pos[1] + 1.4, contacts[0].pos[2]] : null;
     // On the site in the standard mode: don't stand still in the open
@@ -744,6 +793,15 @@ export class BotBrains {
 
   // ---------------------------------------------------------------- rappelling (and roof hatches)
 
+  /** The upstairs windows on the wall a rope hangs against, within reach of it. */
+  ropeWindows(r) {
+    return this.game.map.openings.filter((o) => o.window && o.exterior && o.axis === r.wallAxis && Math.abs(o.fixed - r.wallFixed) < 0.01 && o.y0 > 2
+      && Math.abs((o.from + o.to) / 2 - (r.wallAxis === 'x' ? r.x : r.z)) <= r.range + 0.5);
+  }
+
+  /** Can't swing in here: an armour panel covers the window (a barricade is fine, the swing breaks it). */
+  winBlocked(o) { return !!this.game.world.armored?.has(o.id); }
+
   /** Climb an outside wall to a window near the site and swing in; or up to the roof and in through a hatch. */
   rappelPlan(b, id, p, now) {
     const g = this.game, map = g.map;
@@ -751,10 +809,10 @@ export class BotBrains {
       const site = map.sites[this.siteGoal(b, p)];
       const ropes = (map.ropes || []).map((r, i) => ({ r, i })).filter(({ r }) => r.kind === 'wall');
       if (!ropes.length) { b.plan = 'walk'; return false; }
-      const wins = (r) => map.openings.filter((o) => o.window && o.exterior && o.axis === r.wallAxis && Math.abs(o.fixed - r.wallFixed) < 0.01 && o.y0 > 2
-        && Math.abs((o.from + o.to) / 2 - (r.wallAxis === 'x' ? r.x : r.z)) <= r.range + 0.5);
-      const scored = ropes.map(({ r, i }) => ({ r, i, w: wins(r)[0] || null, d: Math.hypot(r.x - site.x, r.z - site.z) })).sort((a, b2) => (a.w ? 0 : 20) + a.d - ((b2.w ? 0 : 20) + b2.d));
+      const wins = (r) => this.ropeWindows(r).filter((o) => !this.winBlocked(o));
+      const scored = ropes.filter(({ i }) => !b.rpBad?.has(i)).map(({ r, i }) => ({ r, i, w: wins(r)[0] || null, d: Math.hypot(r.x - site.x, r.z - site.z) })).sort((a, b2) => (a.w ? 0 : 20) + a.d - ((b2.w ? 0 : 20) + b2.d));
       const c = scored[0];
+      if (!c) { b.plan = 'walk'; return false; }
       b.rp = { stage: 'goto', rope: c.i, win: c.w, until: now + 40000 };
     }
     const rp = b.rp, r = map.ropes[rp.rope];
@@ -778,12 +836,22 @@ export class BotBrains {
       b.faceYaw = Math.atan2(r.nx, r.nz);
       b.ropeKeys = 0;
       if (rp.win) {
+        // A window that is blocked (an armour panel went on it) or won't let us in: pick another on this rope, else go for the roof
+        const o0 = rp.win;
+        if (this.winBlocked(o0) || (rp.atSince && now - rp.atSince > 3500)) {
+          (rp.bad ||= new Set()).add(o0.id);
+          rp.win = this.ropeWindows(r).find((w) => !rp.bad.has(w.id) && !this.winBlocked(w)) || null;
+          rp.atSince = 0;
+        }
+      }
+      if (rp.win) {
         const o = rp.win, along = r.wallAxis === 'x' ? s.x : s.z, mid = (o.from + o.to) / 2, wantY = (o.y0 + o.y1) / 2 - 0.9;
         const [rx, rz] = [Math.cos(b.yaw), -Math.sin(b.yaw)];
         const rightIsPlus = rx * r.tx + rz * r.tz >= 0;
         if (Math.abs(along - mid) > 0.3) b.ropeKeys |= (along < mid) === rightIsPlus ? KEY.RIGHT : KEY.LEFT;
         if (s.y < wantY - 0.15) b.ropeKeys |= KEY.FORWARD; else if (s.y > wantY + 0.15) b.ropeKeys |= KEY.BACK;
-        if (Math.abs(along - mid) <= 0.5 && Math.abs(s.y - wantY) <= 0.3) b.ropeKeys |= KEY.JUMP;    // swing in (breaks a barricade)
+        if (Math.abs(along - mid) <= 0.5 && Math.abs(s.y - wantY) <= 0.3) { b.ropeKeys |= KEY.JUMP; rp.atSince ||= now; }    // swing in (breaks a barricade)
+        else rp.atSince = 0;
       } else b.ropeKeys |= KEY.FORWARD;                                                             // up to the roof
       return true;
     }
@@ -927,7 +995,8 @@ export class BotBrains {
         if (now > b.strafeUntil) { b.strafeUntil = now + rand(250, 700); b.strafeKey = Math.random() < 0.5 ? KEY.LEFT : KEY.RIGHT; }
         if (b.diff.tactics || Math.random() < 0.3) keys |= b.strafeKey;
       }
-      if ((b.lastDist ?? 10) < 9 || b.cover) move = !!b.cover;
+      if (b.pushing && p.member.team === 'attack' && !b.cover) move = move && (b.lastDist ?? 10) > 3.5;      // pushing the site: keep walking in while shooting
+      else if ((b.lastDist ?? 10) < 9 || b.cover) move = !!b.cover;
     }
     if (move) {
       const rel = wrap(moveYaw - b.yaw);

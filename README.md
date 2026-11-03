@@ -2,7 +2,18 @@
 
 A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite on the client, Node.js + Socket.IO on an authoritative server. One Node process serves both the game client and the realtime server, so the whole thing deploys as a single Render web service.
 
-## Status: Stage 27 (placing gadgets takes time)
+## Status: Stage 2F (bug fixes and quick changes)
+
+- **Bots on rappel:** if the window a bot is heading for gets blocked (an armour panel goes on it) or it hangs at the window for 3.5 s without getting in, it picks another window on the same rope, else goes up and in through a roof hatch. If a rope has nothing usable it tries another rope or walks.
+- **Stuck check (all bots):** a bot that is trying to move but makes no progress (under 1.2 m) for 5 s drops its plan and chooses a new one: lets go of a rope, switches between walking and rappelling, picks another angle to hold, and walks to a nearby spot first (`watchProgress` / `replan` in `server/bots.js`).
+- **Attackers push the objective:** they stage for at most 6 s once the first bots are ready, and never after 30 s of the action phase; from then on (or in the last 80 s, 100 s in Defuser mode before the plant) they push: no ducking into cover after a kill or a scratch, no walking over to help a fight, and they keep walking in while shooting (stopping only within 3.5 m of a target). If an attacker's route to the site doesn't get shorter for 14 s the whole team is told to push and that bot replans.
+- **Rappel crosshair:** hanging still or creeping on a rope uses the normal crosshair and spread; it only widens while moving fast on the rope (`rapSpeed` in the player state, `currentSpread` in `shared/weapons.js`).
+- **Aegis shield:** bulletproof from the whole front, not just the shield's box. Any bullet fired from within 60° of where the operator faces is stopped (with the shield held to the side, only the left half of that). Bullets from behind and the sides still hit.
+- **Top bar:** under each teammate's operator icon a thin health bar (green, then yellow, then red as it drops, empty when dead). Enemies don't show health.
+
+Stage names: the original numbered stages ran 1-27 and the first lettered batch A-F, so this next batch is called 2F-2L to avoid clashing with Stage F below.
+
+### Earlier: Stage 27 (placing gadgets takes time)
 
 Everything that is put down now takes time: hold its key while a circle in the middle of the screen fills clockwise, with the item's name under it; when it's full the item is placed. Letting go, getting hit, sprinting or switching weapons stops it and nothing is used up; you can walk slowly meanwhile but can't shoot. The server times every placement (`server/placing.js`), so it can't be skipped.
 
@@ -329,7 +340,46 @@ Six new operators, bought with Money in the Operators tab (the original eight an
 
 ## Planned: later stages
 
-Written down so they aren't forgotten (see Status for what is built). Nothing is planned right now. They are built one at a time, one PR each, and the next one starts once the previous is confirmed. Server memory must stay low enough for Render's 512 MB plan.
+Written down so they aren't forgotten (see Status for what is built). They are built one at a time, one PR each, and the next one starts once the previous is confirmed. Server memory must stay low enough for Render's 512 MB plan.
+
+### Stage 2G - Gun feel, recoil and sound
+- Every gun gets its own recoil pattern: vertical climb, horizontal kick and randomness that suit its type (LMG climbs steadily, SMG jitters fast, shotgun one big kick, pistol snaps up and resets). Overall recoil noticeably stronger than now and controllable by pulling the mouse down.
+- Recoil moves the gun model and the camera, then recovers smoothly.
+- Muzzle flash, shell casings, small camera shake, gun kick-back, impact effects on different surfaces (wood, metal, concrete, glass).
+- Better sounds: each gun type sounds different, a sharp close sound and an echoey distant one; indoors more muffled than outdoors; reload, empty-click and bolt sounds. Generated in code or layered synthesised samples, no copied audio.
+- All recoil and sound settings per gun in the gun config file.
+
+### Stage 2H - First-person hands
+- The player's arms and gloved hands holding the gun in first person: one hand on the grip with a finger by the trigger, the other on the front of the gun. Pistols are held with both hands.
+- Hands use the operator's outfit colours (sleeves and gloves).
+- Hands animate: reloading (magazine out and in), switching weapons, throwing utilities, placing gadgets, melee, and holding a grenade before the throw.
+- Built in code, original design, no external assets.
+
+### Stage 2I - Tester role, chat, reports and admin inbox
+- Tester role set by the `TESTER_USERNAMES` environment variable on Render (comma-separated; the account "max" is a tester). Testers get a black and white "TESTER" badge wherever names show, like OWNER.
+- Testers can open the admin tab but STRICTLY only: see everyone online, see all active matches and join or spectate them, and send announcements. Reports, chat logs, gifts, Money, warn/suspend/ban are hidden and refused by the server for testers.
+- In-match chat: Y for all, U for team (rebindable); messages bottom left for a few seconds with name, badge and [TEAM] or [ALL]; max length and a short cooldown.
+- Report player from the scoreboard or end-of-match screen: reason (cheating, abusive chat, offensive name, griefing, other) and optional comment.
+- Owner-only inboxes: Reports (who, why, when, match and its chat log; mark resolved, warn, suspend for a chosen time (1 minute, 1 hour, 1 day, 3 days, 7 days, 30 days or custom), ban, lift early), Chat (all messages from all matches, newest first, searchable by username, kept 14 days), and a list of everyone currently suspended or banned. Suspended players can't log in and see how long is left.
+
+### Stage 2J - Settings and update notes
+- Graphics settings: presets (Low, Medium, High, Ultra) plus separate shadows, render resolution, effects/particles, view distance and anti-aliasing, and an FPS counter option. Low runs smoothly on weak laptops.
+- "What's new": a `CHANGELOG` file in the repo with a plain-English entry for every merged PR; the first login after an update shows a popup with that update's changes, reopenable from the menu.
+
+### Stage 2K - Shop redesign
+- Per-gun skin crates removed (owned skins stay owned). One combined crate with every crate skin and charm for every gun, odds and contents shown before buying, duplicate refund stays.
+- Daily shop: a pool of 50 new original skins; every day at the same time 6 are picked at random for 24 hours with a countdown. Roughly Rare 3000, Epic 5000, Legendary 8000 Money. Some daily items are skin packs: one skin applied to 5 randomly chosen guns each time the pack appears.
+- A "Limited" section with a few special skins available for a set number of days, then gone.
+- Money only, never Polish Money; the server handles every purchase.
+- Much better looking: large item cards with the gun in slowly turning 3D, rarity colour borders and glows, price tags, "OWNED" labels, a featured banner for the best daily item and smooth hover animations.
+
+### Stage 2L - Two new detailed maps
+- Two new, much more detailed maps; the original maps are not changed, and all future maps use this level of detail.
+- Furniture built from many shapes (couches with cushions and armrests, beds, tables with legs, shelves with items, kitchen counters, lamps, rugs) with textures drawn in code (fabric, wood grain, tiles, carpet).
+- A mix of soft (destructible) and hard (indestructible) walls that clearly look different; paintings, posters, clocks, light switches, shelves, windows with frames and curtains.
+- Outside terrain that isn't flat: hills, slopes, paths, steps, low walls, fences, bushes and trees, with at least one attacker spawn at the bottom of a path leading up to the building.
+- Detailed vehicles (wheels, windows, lights, doors, no real brands) as cover.
+- Each map: 3 objective sites, hatches, rappel points, barricade spots, attacker spawns and a building boundary for run-out detection; both get top-down minimaps for the location select screen. Light enough for the Low graphics setting.
 
 ## Run locally
 
