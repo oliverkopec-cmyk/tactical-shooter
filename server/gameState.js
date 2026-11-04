@@ -369,7 +369,7 @@ export class GameState {
       if (panel?.hatch) return this.world.isReinforcedPanel(panel.id) ? 'Reinforced hatch' : 'Hatch';
       return this.world.isReinforcedPanel(wall.box.id) ? 'Reinforced wall' : 'Soft wall';
     }
-    if (kind === 'exterior') return 'Wall';
+    if (kind === 'exterior' || kind === 'hardwall') return 'Wall';
     return 'Here';
   }
 

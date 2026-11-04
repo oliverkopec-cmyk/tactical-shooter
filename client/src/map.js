@@ -2,6 +2,7 @@
 
 import * as THREE from 'three';
 import { getWallLayout } from '../../shared/world.js';
+import { buildDetailedMap } from './mapDetail.js';
 
 const KIND_STYLE = {
   ground: { color: 0x56704a, roughness: 1 },
@@ -45,6 +46,7 @@ export function buildMap(scene, map) {
     batches.get(key).boxes.push(b);
   }
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion();
+  if (map.detailed) { batches.clear(); buildDetailedMap(group, map); }   // detailed maps are drawn their own way (mapDetail.js)
   for (const { kind, color, boxes } of batches.values()) {
     const mesh = new THREE.InstancedMesh(unitBox, material(kind, color), boxes.length);
     boxes.forEach((b, i) => {

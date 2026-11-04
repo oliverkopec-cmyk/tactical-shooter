@@ -5,6 +5,9 @@
 
 import { HATCH } from './constants.js';
 
+// Visual-only parts are only kept where something draws them: the server never renders, so it doesn't store them.
+const DRAWS = typeof document !== 'undefined';
+
 export function createMapKit({ T = 0.3 } = {}) {
   const boxes = [];
   const openings = [];   // every door and window gap in a wall (barricades go here)
@@ -12,6 +15,7 @@ export function createMapKit({ T = 0.3 } = {}) {
   const ropes = [];      // rope anchors: where players can rappel (see shared/movement.js)
   const barriers = [];   // invisible plugs in exterior openings; only defenders in prep collide with them
   const details = [];    // visual only (rugs, pictures, monitors, plants, car windows)
+  const parts = [];      // visual only, for detailed maps (client/src/mapDetail.js merges them into a few draw calls)
   let nextId = 1;
 
   function box(x0, y0, z0, x1, y1, z1, kind, extra = {}) {
@@ -96,6 +100,15 @@ export function createMapKit({ T = 0.3 } = {}) {
     details.push({ min: [cx - w / 2, cy - h / 2, cz - d / 2], max: [cx + w / 2, cy + h / 2, cz + d / 2], color, emissive });
   }
 
+  /**
+   * A visual-only shape of a detailed map. c: centre, d: size [w, h, d].
+   * opts: { color, tex (a texture from client/src/mapTextures.js), shape: 'box' | 'cyl' | 'sph' | 'cone',
+   * axis ('x' | 'y' | 'z', for cyl and cone), rot ([x, y, z] radians), glow (emissive), glass, fine (dropped on Low graphics) }.
+   */
+  function part(c, d, opts = {}) {
+    if (DRAWS) parts.push({ c, d, ...opts });
+  }
+
   /** A floor or roof slab with rectangular holes ([x0, z0, x1, z1]) cut out of it. */
   function slab(y0, y1, x0, z0, x1, z1, holes = [], kind = 'floor') {
     let rects = [[x0, z0, x1, z1]];
@@ -142,7 +155,7 @@ export function createMapKit({ T = 0.3 } = {}) {
     ropes.push({ kind: 'hatch', hatchBox: hatchBox.id, x, z, nx: 0, nz: 0, tx: 0, tz: 0, range: 0, top, bottom, exit });
   }
 
-  return { T, box, wall, door, win, stairs, prop, detail, slab, hatch, hatchHole, wallRope, hatchRope, boxes, openings, barriers, details, hatches, ropes };
+  return { T, box, wall, door, win, stairs, prop, detail, part, slab, hatch, hatchHole, wallRope, hatchRope, boxes, openings, barriers, details, parts, hatches, ropes };
 }
 
 /**

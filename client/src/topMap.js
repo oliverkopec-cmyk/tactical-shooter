@@ -90,10 +90,10 @@ export function drawTopMap(canvas, map, { level = 0, markers = [], names = {}, h
   }
   for (const b of map.boxes) {
     if (!inBand(b)) continue;
-    if (['furniture', 'crate', 'container', 'car', 'barrel', 'planter', 'pallet'].includes(b.kind)) rect(b, COLORS.prop);
+    if (['furniture', 'crate', 'container', 'car', 'barrel', 'planter', 'pallet', 'appliance', 'lowwall', 'fence', 'tree'].includes(b.kind)) rect(b, COLORS.prop);
   }
   for (const b of map.boxes) if (inBand(b) && (b.kind === 'interior' || b.kind === 'rail')) rect(b, COLORS.interior);
-  for (const b of map.boxes) if (inBand(b) && b.kind === 'exterior') rect(b, COLORS.wall);
+  for (const b of map.boxes) if (inBand(b) && (b.kind === 'exterior' || b.kind === 'hardwall')) rect(b, COLORS.wall);
 
   // Doors (orange) and windows (blue) on this level, drawn across the wall gap
   for (const o of map.openings) {

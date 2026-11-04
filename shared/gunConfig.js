@@ -167,5 +167,6 @@ const SURFACES = {
   panel: 'wood', barricade: 'wood', furniture: 'wood', crate: 'wood', pallet: 'wood', hatch: 'wood', stairs: 'wood',
   armor: 'metal', car: 'metal', barrel: 'metal', rail: 'metal', barrier: 'metal', shield: 'metal',
   glass: 'glass', window: 'glass',
+  fence: 'wood', tree: 'wood', planter: 'wood', appliance: 'metal',
 };
 export const surfaceOf = (kind) => SURFACES[kind] || 'concrete';
