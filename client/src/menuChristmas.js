@@ -1,47 +1,19 @@
-// The Christmas decorations in the main menu (Stage M), built in code on top of the rooftop: a decorated tree with
-// glowing lights and a star, wrapped presents around it, warm string lights behind the operator, snow on the roof,
-// the platform and everything on the roof, and falling snow. Instanced and merged, so it costs about a dozen draw
-// calls; `low` (the Low graphics setting) has less snow, no extra lights and no shadows.
+// The rooftop at Christmas (Stage M): snow on the roof, the platform and everything on the roof, falling snow and warm
+// string lights behind the operator. The tree and the presents are in the Christmas room (christmasRoom.js). Instanced
+// and merged, so it costs only a few draw calls; `low` (the Low graphics setting) has less snow and no extra light.
 
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
-/** Where the tree stands, and where unopened presents wait around it (giftScene.js). */
-export const TREE = { x: 2.35, z: -0.95 };
-export const PRESENT_SPOTS = [[2.0, 0.2], [2.5, 0.5], [1.8, -0.55], [2.9, -0.05], [2.05, 0.8], [2.8, 0.75], [2.45, -0.2], [1.72, 0.72]];
+/** Small repeatable random numbers. */
+export const seededRandom = (seed) => { let a = seed >>> 0; return () => { a = (a * 1103515245 + 12345) >>> 0; return a / 4294967296; }; };
+const rnd = seededRandom(2512);
 
-const TREE_SCALE = 0.8;
-const TREE_HEIGHT = 2.6;   // to the star, as drawn
-const rnd = (() => { let a = 2512; return () => { a = (a * 1103515245 + 12345) >>> 0; return a / 4294967296; }; })();
-
-function canvasTexture(w, h, fn) {
+export function canvasTexture(w, h, fn) {
   const c = document.createElement('canvas');
   c.width = w; c.height = h;
   fn(c.getContext('2d'), w, h);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
-  return t;
-}
-
-/** Green needles with a dusting of snow that gets heavier towards the top of each layer. */
-function needleTexture() {
-  const t = canvasTexture(256, 256, (g, w, h) => {
-    g.fillStyle = '#123a22';
-    g.fillRect(0, 0, w, h);
-    for (let i = 0; i < 2600; i++) {
-      const x = rnd() * w, y = rnd() * h, len = 6 + rnd() * 12, a = Math.PI / 2 + (rnd() - 0.5) * 0.9;
-      g.strokeStyle = `hsl(${135 + rnd() * 22}, ${42 + rnd() * 25}%, ${13 + rnd() * 20}%)`;
-      g.lineWidth = 1 + rnd();
-      g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * len, y + Math.sin(a) * len); g.stroke();
-    }
-    for (let i = 0; i < 330; i++) {
-      const y = h * rnd() ** 1.9, r = 1 + rnd() * 3.6;     // canvas y 0 is the top of the texture, which is the tip of the cone
-      g.fillStyle = `rgba(240,247,255,${0.45 + rnd() * 0.5})`;
-      g.beginPath(); g.arc(rnd() * w, y, r, 0, Math.PI * 2); g.fill();
-    }
-  });
-  t.wrapS = THREE.RepeatWrapping;
-  t.repeat.set(2, 1);
   return t;
 }
 
@@ -63,7 +35,7 @@ function snowTexture(w, h, blobs, keepMiddleClear) {
   });
 }
 
-function haloTexture() {
+export function haloTexture() {
   return canvasTexture(64, 64, (g) => {
     const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
     grad.addColorStop(0, 'rgba(255,255,255,1)');
@@ -72,6 +44,67 @@ function haloTexture() {
     g.fillStyle = grad;
     g.fillRect(0, 0, 64, 64);
   });
+}
+
+/** Lots of little lights: a bright bead and a soft halo each, which twinkle. Add them all, then build() once. */
+export class TwinklingBulbs {
+  constructor({ low = false } = {}) {
+    this.low = low;
+    this.list = [];
+    this.time = 0;
+    this.tick = 0;
+  }
+
+  /** depth: how much it twinkles (0 steady, 1 goes right down). */
+  add(pos, hex, depth = 0.3) {
+    this.list.push({ pos: pos.clone(), color: new THREE.Color(hex), phase: rnd() * 6.28, speed: 0.6 + rnd() * 2.4, depth });
+  }
+
+  build() {
+    const n = this.list.length, group = new THREE.Group();
+    this.beads = new THREE.InstancedMesh(new THREE.SphereGeometry(0.021, 6, 5), new THREE.MeshBasicMaterial({ color: 0xffffff }), n);
+    this.haloColors = new Float32Array(n * 3);
+    const pos = new Float32Array(n * 3), m = new THREE.Matrix4();
+    this.list.forEach((b, i) => {
+      this.beads.setMatrixAt(i, m.makeTranslation(b.pos.x, b.pos.y, b.pos.z));
+      this.beads.setColorAt(i, b.color);
+      pos.set([b.pos.x, b.pos.y, b.pos.z], i * 3);
+    });
+    this.beads.frustumCulled = false;
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(this.haloColors, 3));
+    this.map = haloTexture();
+    this.halos = new THREE.Points(geo, new THREE.PointsMaterial({ size: 0.34, map: this.map, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: true }));
+    this.halos.frustumCulled = false;
+    group.add(this.beads, this.halos);
+    this.twinkle();
+    return group;
+  }
+
+  twinkle() {
+    const col = new THREE.Color();
+    this.list.forEach((b, i) => {
+      const k = 1 - b.depth + b.depth * (0.5 + 0.5 * Math.sin(this.time * b.speed + b.phase));
+      col.copy(b.color).multiplyScalar(k);
+      this.haloColors.set([col.r * 0.8, col.g * 0.8, col.b * 0.8], i * 3);
+      this.beads.setColorAt(i, col.copy(b.color).multiplyScalar(0.55 + 0.75 * k));
+    });
+    this.halos.geometry.attributes.color.needsUpdate = true;
+    this.beads.instanceColor.needsUpdate = true;
+  }
+
+  /** They change slowly: no need to touch them every frame. */
+  update(dt) {
+    this.time += dt;
+    this.tick += dt;
+    if (this.tick > (this.low ? 0.12 : 0.05)) { this.tick = 0; this.twinkle(); }
+  }
+
+  dispose() {
+    this.beads?.geometry.dispose(); this.beads?.material.dispose(); this.beads?.dispose();
+    this.halos?.geometry.dispose(); this.halos?.material.dispose(); this.map?.dispose();
+  }
 }
 
 const SNOW_VERT = /* glsl */ `
@@ -103,15 +136,13 @@ export class ChristmasDecor {
     this.group = new THREE.Group();
     this.disposables = [];
     this.time = 0;
-    this.lightTick = 0;
-    this.bulbs = [];         // { pos, color, phase, tree }: every little light, on the tree and on the strings
+    this.bulbs = new TwinklingBulbs({ low });
     scene.add(this.group);
     this.buildGroundSnow();
     this.buildSnowOnThings();
-    this.buildTree();
-    this.buildPresents();
     this.buildStrings();
-    this.buildBulbs();
+    this.group.add(this.bulbs.build());
+    this.disposables.push(this.bulbs);
     this.buildSnowfall();
   }
 
@@ -162,128 +193,6 @@ export class ChristmasDecor {
     this.add(drifts);
   }
 
-  buildTree() {
-    const g = new THREE.Group();
-    g.position.set(TREE.x, -0.1, TREE.z);
-    g.scale.setScalar(TREE_SCALE);
-    this.add(g);
-    const layers = 6, parts = [];
-    const coneAt = (k) => ({ bottom: 0.42 + k * 0.42, top: 0.42 + k * 0.42 + 1.05 - k * 0.09, r: 1.08 - k * 0.165 });
-    for (let k = 0; k < layers; k++) {
-      const { bottom, top, r } = coneAt(k);
-      const c = new THREE.ConeGeometry(r, top - bottom, 18, 2, true);
-      // Jagged hem: every other point of the bottom edge is pulled in and up, so it reads as branches
-      const pos = c.attributes.position;
-      for (let i = 0; i < pos.count; i++) {
-        if (pos.getY(i) < -(top - bottom) / 2 + 0.001) {
-          const a = Math.atan2(pos.getZ(i), pos.getX(i)), jag = Math.round((a / (Math.PI * 2)) * 18) % 2 === 0 ? 1 : 0.8;
-          pos.setXYZ(i, pos.getX(i) * jag, pos.getY(i) + (1 - jag) * 0.5, pos.getZ(i) * jag);
-        }
-      }
-      c.computeVertexNormals();
-      c.rotateY(k * 0.7);
-      c.translate(0, (bottom + top) / 2, 0);
-      parts.push(c);
-    }
-    const body = new THREE.Mesh(mergeGeometries(parts), new THREE.MeshStandardMaterial({ map: needleTexture(), roughness: 0.92, side: THREE.DoubleSide }));
-    for (const c of parts) c.dispose();
-    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.15, 0.55, 10), new THREE.MeshStandardMaterial({ color: 0x4a2e1c, roughness: 0.95 }));
-    trunk.position.y = 0.27;
-    const mound = new THREE.Mesh(new THREE.SphereGeometry(1.15, 18, 8), new THREE.MeshStandardMaterial({ color: 0xf0f5fb, roughness: 0.95 }));
-    mound.scale.y = 0.13;
-    mound.position.y = 0.01;
-    const add = (o, opts) => { this.add(o, opts); g.add(o); };
-    add(body, { shadow: true });
-    add(trunk, { shadow: true });
-    add(mound);
-
-    // A point on the tree's surface at a height, on the side facing the angle
-    const surface = (k, f, a, push = 0.02) => {
-      const { bottom, top, r } = coneAt(k);
-      const y = bottom + (top - bottom) * f, rad = r * (1 - f) + push;
-      return new THREE.Vector3(Math.cos(a) * rad, y, Math.sin(a) * rad);
-    };
-
-    // Baubles
-    const colors = [0xc8141e, 0xe8b22a, 0xe8eef6, 0x1f5fc8, 0xc8141e, 0xe8b22a];
-    const count = this.low ? 26 : 44;
-    const baubles = new THREE.InstancedMesh(new THREE.SphereGeometry(1, this.low ? 8 : 14, this.low ? 6 : 10), new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 0.45, roughness: 0.22 }), count);
-    const m = new THREE.Matrix4(), col = new THREE.Color();
-    for (let i = 0; i < count; i++) {
-      const k = i % layers, a = i * 2.399, f = 0.12 + rnd() * 0.28;
-      const at = surface(k, f, a, 0.045), s = (0.07 - k * 0.005) * (0.85 + rnd() * 0.4);
-      baubles.setMatrixAt(i, m.makeScale(s, s, s).setPosition(at));
-      baubles.setColorAt(i, col.setHex(colors[i % colors.length]));
-    }
-    add(baubles);
-
-    // Garland lights winding round the tree
-    const palette = [0xffd890, 0xffd890, 0xff4a3a, 0x4ac8ff, 0x5aff8a, 0xffd890];
-    const lights = this.low ? 44 : 78;
-    for (let i = 0; i < lights; i++) {
-      const u = i / lights, k = Math.min(layers - 1, Math.floor(u * layers)), a = u * Math.PI * 2 * 7.3;
-      const at = surface(k, 0.08 + ((u * layers) % 1) * 0.5, a, 0.05);
-      at.multiplyScalar(TREE_SCALE).add(g.position);
-      this.bulbs.push({ pos: at, color: new THREE.Color(palette[i % palette.length]), phase: rnd() * 6.28, speed: 1.4 + rnd() * 2.2, depth: 0.55 });
-    }
-
-    // The star on top, with a soft halo
-    const shape = new THREE.Shape();
-    for (let i = 0; i < 10; i++) {
-      const a = (i / 10) * Math.PI * 2 + Math.PI / 2, r = i % 2 ? 0.075 : 0.19;
-      if (i) shape.lineTo(Math.cos(a) * r, Math.sin(a) * r); else shape.moveTo(Math.cos(a) * r, Math.sin(a) * r);
-    }
-    const starGeo = new THREE.ExtrudeGeometry(shape, { depth: 0.05, bevelEnabled: true, bevelSize: 0.012, bevelThickness: 0.012, bevelSegments: 1 });
-    starGeo.translate(0, 0, -0.025);
-    this.starMat = new THREE.MeshStandardMaterial({ color: 0xffd860, emissive: 0xffb820, emissiveIntensity: 1.6, metalness: 0.4, roughness: 0.35 });
-    this.star = new THREE.Mesh(starGeo, this.starMat);
-    const tipY = coneAt(layers - 1).top;
-    this.star.position.y = tipY + 0.1;
-    add(this.star);
-    this.starHalo = new THREE.Sprite(new THREE.SpriteMaterial({ map: haloTexture(), color: 0xffd070, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.8 }));
-    this.starHalo.scale.setScalar(1.1);
-    this.starHalo.position.y = tipY + 0.1;
-    add(this.starHalo);
-    if (!this.low) {
-      this.treeLight = new THREE.PointLight(0xffc070, 3.2, 5, 1.7);
-      this.treeLight.position.set(0.5, 1.5, 1.1);
-      g.add(this.treeLight);
-    }
-  }
-
-  /** Wrapped presents around the tree, just for show (the ones you can open come from giftScene.js). */
-  buildPresents() {
-    const list = [
-      // x and z from the tree, size, height, colour, ribbon colour
-      [0.95, -0.6, 0.42, 0.34, 0x1f6a3a, 0xf2d46a], [-0.15, -1.0, 0.5, 0.3, 0xc8141e, 0xffffff], [0.35, -0.95, 0.3, 0.42, 0x2a56b8, 0xf2d46a],
-      [-1.0, -0.65, 0.34, 0.26, 0xe8b22a, 0xc8141e], [1.2, 0.05, 0.26, 0.22, 0xf0ece4, 0xc8141e], [-0.6, -1.0, 0.26, 0.2, 0x7a2ab0, 0xffffff],
-    ];
-    const boxes = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.45 }), list.length);
-    const straps = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.35, metalness: 0.3 }), list.length * 2);
-    const bows = new THREE.InstancedMesh(new THREE.TorusGeometry(1, 0.28, 6, 12), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.35, metalness: 0.3 }), list.length * 2);
-    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), s = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0), col = new THREE.Color();
-    list.forEach(([dx, dz, size, h, paper, ribbon], i) => {
-      const turn = i * 0.7, x = TREE.x + dx, z = TREE.z + dz, y = h / 2 - 0.09;
-      q.setFromAxisAngle(up, turn);
-      boxes.setMatrixAt(i, m.compose(p.set(x, y, z), q, s.set(size, h, size)));
-      boxes.setColorAt(i, col.setHex(paper));
-      straps.setMatrixAt(i * 2, m.compose(p.set(x, y, z), q, s.set(size * 0.16, h + 0.012, size + 0.012)));
-      straps.setMatrixAt(i * 2 + 1, m.compose(p.set(x, y, z), q, s.set(size + 0.012, h + 0.012, size * 0.16)));
-      straps.setColorAt(i * 2, col.setHex(ribbon));
-      straps.setColorAt(i * 2 + 1, col);
-      for (const side of [-1, 1]) {
-        const k = i * 2 + (side + 1) / 2, loop = size * 0.15;
-        const qq = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, turn + Math.PI / 2, side * 0.6));
-        const off = new THREE.Vector3(side * loop, 0, 0).applyQuaternion(q);
-        bows.setMatrixAt(k, m.compose(p.set(x + off.x, h - 0.09 + loop * 0.5, z + off.z), qq, s.setScalar(loop)));
-        bows.setColorAt(k, col.setHex(ribbon));
-      }
-    });
-    this.add(boxes, { shadow: true });
-    this.add(straps);
-    this.add(bows);
-  }
-
   /** Warm string lights hung between the stair hut, two thin poles and the mast, and clipped along the parapet. */
   buildStrings() {
     const dark = new THREE.MeshStandardMaterial({ color: 0x1c1f24, roughness: 0.7 });
@@ -298,7 +207,6 @@ export class ChristmasDecor {
       [[-6.5, 2.4, -1.55], [-1.6, 2.86, -6.55], 0.5],
       [[-1.6, 2.86, -6.55], [3.0, 2.86, -6.55], 0.5],
       [[3.0, 2.86, -6.55], [6.6, 3.2, -6.4], 0.4],
-      [[3.0, 2.86, -6.55], [TREE.x + 0.05, TREE_HEIGHT - 0.2, TREE.z - 0.1], 0.35],
       [[-13, 1.1, -6.8], [-6.5, 1.1, -6.8], 0.12], [[-6.5, 1.1, -6.8], [0, 1.1, -6.8], 0.12], [[0, 1.1, -6.8], [6.5, 1.1, -6.8], 0.12], [[6.5, 1.1, -6.8], [13, 1.1, -6.8], 0.12],
     ];
     const warm = [0xffc878, 0xffd898, 0xffb860];
@@ -313,7 +221,7 @@ export class ChristmasDecor {
       }
       for (let i = 1; i < dots; i++) {
         point(i / dots, here);
-        this.bulbs.push({ pos: here.clone().setY(here.y - 0.035), color: new THREE.Color(warm[i % warm.length]), phase: rnd() * 6.28, speed: 0.5 + rnd() * 0.8, depth: 0.22 });
+        this.bulbs.add(here.clone().setY(here.y - 0.035), warm[i % warm.length], 0.22);
       }
     }
     const geo = new THREE.BufferGeometry();
@@ -324,40 +232,6 @@ export class ChristmasDecor {
       glow.position.set(0.6, 2.4, -4.4);
       this.group.add(glow);
     }
-  }
-
-  /** Every bulb: a small bright bead and a soft halo around it, which twinkle. */
-  buildBulbs() {
-    const n = this.bulbs.length;
-    this.beads = new THREE.InstancedMesh(new THREE.SphereGeometry(0.021, 6, 5), new THREE.MeshBasicMaterial({ color: 0xffffff }), n);
-    this.haloColors = new Float32Array(n * 3);
-    const pos = new Float32Array(n * 3), m = new THREE.Matrix4();
-    this.bulbs.forEach((b, i) => {
-      this.beads.setMatrixAt(i, m.makeTranslation(b.pos.x, b.pos.y, b.pos.z));
-      this.beads.setColorAt(i, b.color);
-      pos.set([b.pos.x, b.pos.y, b.pos.z], i * 3);
-    });
-    this.beads.frustumCulled = false;
-    this.add(this.beads, { receive: false });
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    geo.setAttribute('color', new THREE.BufferAttribute(this.haloColors, 3));
-    this.halos = new THREE.Points(geo, new THREE.PointsMaterial({ size: 0.34, map: haloTexture(), vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: true }));
-    this.halos.frustumCulled = false;
-    this.add(this.halos);
-    this.twinkle();
-  }
-
-  twinkle() {
-    const col = new THREE.Color();
-    this.bulbs.forEach((b, i) => {
-      const k = 1 - b.depth + b.depth * (0.5 + 0.5 * Math.sin(this.time * b.speed + b.phase));
-      col.copy(b.color).multiplyScalar(k);
-      this.haloColors.set([col.r * 0.8, col.g * 0.8, col.b * 0.8], i * 3);
-      this.beads.setColorAt(i, col.copy(b.color).multiplyScalar(0.55 + 0.75 * k));
-    });
-    this.halos.geometry.attributes.color.needsUpdate = true;
-    this.beads.instanceColor.needsUpdate = true;
   }
 
   /** Falling snow in a box around the operator and the camera. */
@@ -384,14 +258,7 @@ export class ChristmasDecor {
     const t = (this.time += dt);
     this.snowMat.uniforms.uTime.value = t;
     this.snowMat.uniforms.uHeight.value = height;
-    this.star.rotation.y = Math.sin(t * 0.5) * 0.35;
-    const pulse = 0.5 + 0.5 * Math.sin(t * 1.7);
-    this.starMat.emissiveIntensity = 1.3 + pulse * 0.9;
-    this.starHalo.material.opacity = 0.6 + pulse * 0.35;
-    if (this.treeLight) this.treeLight.intensity = 2.8 + pulse * 0.7;
-    // The bulbs change slowly: no need to touch them every frame
-    this.lightTick += dt;
-    if (this.lightTick > (this.low ? 0.12 : 0.05)) { this.lightTick = 0; this.twinkle(); }
+    this.bulbs.update(dt);
   }
 
   dispose() {

@@ -8,17 +8,20 @@ A Christmas event that turns itself on and off by date (`shared/christmas.js`, `
 
 | When (Sydney) | What happens |
 |---|---|
-| 20 November 00:00 | Menu theme, countdown, Christmas crate and the first present begin |
-| 20 November to 17 December | One present a day: 50% Money (1,000-1,250), 30% a Christmas charm you don't have, 20% a Christmas crate |
+| 20 November 00:00 | Christmas tab and room, snowy rooftop, countdown, Christmas crate and the first present begin |
+| 20 November to 17 December | One present a day: 50% Money (1,000-1,250), 30% a Christmas charm you don't have, 20% a Christmas crate (sent to the inventory) |
 | 18 to 24 December | One present a day: 1,500 Money and that day's limited skin, a different one each day |
 | 25 December 00:00 | The countdown says "Merry Christmas!" and stays that way until the end |
-| 3 January 00:00 | Theme, countdown, crate and unclaimed presents disappear. Everything players got stays owned |
+| 3 January 00:00 | Theme, room, countdown, buying crates and unclaimed presents disappear. Everything players got stays owned |
 
-- **Menu theme** (`client/src/menuChristmas.js`, about 20 extra draw calls): a decorated tree with glowing lights and a star, wrapped presents, warm string lights, snow on the roof, platform and rooftop objects, and falling snow instead of the rain. Low graphics has less snow and no extra lights or shadows.
+- **Christmas tab and room** (`client/src/christmasRoom.js`): a colourful tab, shown during the event, opens a cozy fireplace room at night: a stone fireplace with an animated fire, a mantel with garland, stockings and candles, a wreath, a decorated tree with the presents under it, snowy windows with curtains, an armchair, a bookshelf, lamps, a rug and a sleeping cat. Everything static is merged into one mesh per texture, and the Low graphics setting drops the small details, the shadows and all but the fire's light. The room is only built the first time the tab is opened.
+- **Rooftop at Christmas** (`client/src/menuChristmas.js`): snow on the roof, the platform and the rooftop objects, falling snow instead of the rain, and warm string lights. The tree isn't here, only in the room.
 - **Countdown:** under the top bar, like "Christmas in 12d 04h 33m 10s", ticking on the server's time.
-- **Presents:** they wait under the tree (up to 8 shown at a time, more appear as those are opened) and open with the same unwrapping as admin gifts. Missed days can be claimed until the end of 2 January. `christmas_claims` has one row per account and day, and the claim and the reward are written in one statement, so a day can't be opened twice. Presents don't count towards the daily Money cap, like admin gifts.
-- **Limited skins** (`CHRISTMAS_LIMITED_SKINS` in `shared/christmasSkins.js`, effects in `client/src/exclusiveSkins.js`): Candy Cane, Wrapping Paper, Gingerbread, Frosted Ice, Red and Gold Ornament, Snowy Pine and Festive Lights, animated like Exclusive skins and owned on every gun. They only come from the last 7 presents: never sold, never in a crate, and an admin can't gift them.
-- **Christmas crate** (shop, Money only): 1,200 Money, with 600 back for anything you already own. It holds 10 Christmas skins (`CHRISTMAS_CRATE_SKINS`, on a random gun like the normal crate) and 10 Christmas charms, with odds of 55% Common, 28% Rare, 14% Epic and 3% Legendary. Nothing Christmas is in the normal crate or the daily shop.
+- **Presents:** they wait under the tree in the room (up to 8 shown at a time, more appear as those are opened) and open with the same unwrapping as admin gifts. The tab shows how many are waiting. Missed days can be claimed until the end of 2 January. `christmas_claims` has one row per account and day, and the claim and the reward are written in one statement, so a day can't be opened twice. Presents don't count towards the daily Money cap, like admin gifts.
+- **Christmas inventory:** the panel at the side of the Christmas tab. A crate from a present or the shop is never opened by itself: it goes here (`accounts.christmas_crates`), and "Open x3" opens one at a time in the room. Crates still held after the event can be opened until they run out, and the tab stays for those accounts.
+- **Skins** (`shared/christmasSkins.js`): all 17 are drawn by their own effect in `client/src/exclusiveSkins.js`, with raised detail (a height that bends the surface) that catches the light, and their own colours for the metal and small parts.
+- **Limited skins** (`CHRISTMAS_LIMITED_SKINS`): Candy Cane, Wrapping Paper, Gingerbread, Frosted Ice, Red and Gold Ornament, Snowy Pine and Festive Lights, animated like Exclusive skins and owned on every gun. They only come from the last 7 presents: never sold, never in a crate, and an admin can't gift them.
+- **Christmas crate** (bought in the shop during the event, Money only): 1,200 Money, with 600 back for anything you already own. It holds 10 Christmas skins (`CHRISTMAS_CRATE_SKINS`, on a random gun like the normal crate: Winter Wool, Holly Leaf, Candle Wax, Sleigh Bells, Mulled Wine, Fresh Snowfall, Silver Tinsel, Northern Star, Yule Fire, Silent Night) and 10 Christmas charms, with odds of 55% Common, 28% Rare, 14% Epic and 3% Legendary. Nothing Christmas is in the normal crate or the daily shop.
 - **To run it another year:** change the three dates at the top of `shared/christmas.js` (and the UTC offset, if the dates leave daylight time).
 - **Testing on localhost:** on a local test database the Play tab has a box to pretend it is another date and to forget your presents (`christmasDevDate` and `christmasDevReset`). It doesn't exist on Render.
 
@@ -610,7 +613,8 @@ client/
   src/skinThumbs.js  pictures of skins (each on a rifle) for the admin gift gallery
   src/drones.js    drone models for everyone, smoothing, destroyed effect
   src/destruction.js  instanced wall panels, charges, explosions
-  src/menuChristmas.js the Christmas decorations in the menu scene
+  src/christmasRoom.js the Christmas room behind the Christmas tab
+  src/menuChristmas.js snow and lights on the rooftop at Christmas
   src/map.js       renders the shared map, lighting
   src/mapDetail.js draws detailed maps, merged into one mesh per texture
   src/mapTextures.js textures drawn in code for detailed maps

@@ -68,6 +68,7 @@
       <button type="button" class="tab active" data-tab="play">Play</button>
       <button type="button" class="tab" data-tab="operators">Operators</button>
       <button type="button" class="tab" data-tab="shop">Shop</button>
+      <button type="button" class="tab tab-christmas hidden" data-tab="christmas">Christmas</button>
       <button type="button" class="tab" data-tab="friends">Friends</button>
       <button type="button" class="tab hidden" data-tab="admin">Admin</button>
       <button type="button" class="tab" data-tab="settings">Settings</button>
@@ -95,6 +96,20 @@
         </div>
       </div>
       <div class="menu-hint muted">Drag to turn your operator. Change who stands here in the Operators tab.</div>
+    </section>
+
+    <section id="tab-christmas" class="tab-panel hidden">
+      <div class="side-col left xmas-col">
+        <div class="card xmas-inv">
+          <h2>Christmas inventory</h2>
+          <div class="xmas-crate" data-card="xmas-inv"><canvas id="xmas-crate-view"></canvas><span id="xmas-crate-count" class="xmas-count"></span></div>
+          <div class="xmas-crate-name">Christmas Crate</div>
+          <button type="button" id="xmas-open" class="primary"></button>
+          <p id="xmas-inv-note" class="muted small-note"></p>
+          <p id="xmas-error" class="error"></p>
+        </div>
+        <div id="xmas-presents" class="card xmas-presents"></div>
+      </div>
     </section>
 
     <section id="tab-operators" class="tab-panel hidden">

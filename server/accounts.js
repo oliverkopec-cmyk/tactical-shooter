@@ -271,26 +271,53 @@ export class Accounts {
       res.status(out.status).json(out.body);
     }));
 
-    // Open a crate: the server takes the Money and draws a skin (on a gun) or a charm; anything already owned refunds half.
-    const crateRoute = (crate, open) => authed(async (account, _req, res) => {
+    // Open the crate: the server takes the Money and draws a skin (on a gun) or a charm; anything already owned refunds half.
+    r.post('/crates/open', authed(async (account, _req, res) => {
       const out = await this.progression.withLock(account.id, async () => {
         const row = (await this.db.query('SELECT * FROM accounts WHERE id = $1', [account.id])).rows[0];
         if (!row) return { status: 404, body: { error: 'Account not found.' } };
-        if (crate === CHRISTMAS.crate && !christmasOn(christmasNow())) return { status: 410, body: { error: 'The Christmas crate has gone.', account: profileOf(row) } };
-        if (row.money < crate.price) return { status: 402, body: { error: `Not enough Money: the crate costs ${crate.price.toLocaleString()}.`, account: profileOf(row) } };
-        const { result, skins, charms } = open(row);
+        if (row.money < CRATE.price) return { status: 402, body: { error: `Not enough Money: the crate costs ${CRATE.price.toLocaleString()}.`, account: profileOf(row) } };
+        const { result, skins, charms } = openCrate(row);
         const { rows } = await this.db.query(
           'UPDATE accounts SET money = money - $2 + $3, owned_skins = owned_skins || $4::jsonb, owned_charms = owned_charms || $5::jsonb WHERE id = $1 AND money >= $2 RETURNING *',
-          [row.id, crate.price, result.refund, JSON.stringify(skins), JSON.stringify(charms)],
+          [row.id, CRATE.price, result.refund, JSON.stringify(skins), JSON.stringify(charms)],
         );
         if (!rows.length) return { status: 402, body: { error: 'Not enough Money.', account: profileOf(row) } };
         return { status: 200, body: { account: profileOf(rows[0]), result } };
       });
       if (out.status === 200) this.refreshSocketLoadout(await this.progression.load(account.id));
       res.status(out.status).json(out.body);
-    });
-    r.post('/crates/open', crateRoute(CRATE, openCrate));
-    r.post('/crates/christmas/open', crateRoute(CHRISTMAS.crate, rollChristmasCrate));
+    }));
+
+    // Buy a Christmas crate (only during the event): it goes to the Christmas inventory, unopened.
+    r.post('/crates/christmas/buy', authed(async (account, _req, res) => {
+      if (!christmasOn(christmasNow())) return res.status(410).json({ error: 'The Christmas crate has gone.' });
+      const { rows } = await this.db.query(
+        'UPDATE accounts SET money = money - $2, christmas_crates = christmas_crates + 1 WHERE id = $1 AND money >= $2 RETURNING *',
+        [account.id, CHRISTMAS.crate.price],
+      );
+      if (rows.length) return res.json({ account: profileOf(rows[0]) });
+      const row = (await this.db.query('SELECT * FROM accounts WHERE id = $1', [account.id])).rows[0];
+      res.status(402).json({ error: `Not enough Money: the crate costs ${CHRISTMAS.crate.price.toLocaleString()}.`, account: row ? profileOf(row) : undefined });
+    }));
+
+    // Open one Christmas crate from the inventory. Crates you already have can be opened after the event too.
+    r.post('/crates/christmas/open', authed(async (account, _req, res) => {
+      const out = await this.progression.withLock(account.id, async () => {
+        const row = (await this.db.query('SELECT * FROM accounts WHERE id = $1', [account.id])).rows[0];
+        if (!row) return { status: 404, body: { error: 'Account not found.' } };
+        if (!(row.christmas_crates > 0)) return { status: 400, body: { error: 'You have no Christmas crates.', account: profileOf(row) } };
+        const { result, skins, charms } = rollChristmasCrate(row);
+        const { rows } = await this.db.query(
+          'UPDATE accounts SET money = money + $2, owned_skins = owned_skins || $3::jsonb, owned_charms = owned_charms || $4::jsonb, christmas_crates = christmas_crates - 1 WHERE id = $1 AND christmas_crates > 0 RETURNING *',
+          [row.id, result.refund, JSON.stringify(skins), JSON.stringify(charms)],
+        );
+        if (!rows.length) return { status: 400, body: { error: 'You have no Christmas crates.', account: profileOf(row) } };
+        return { status: 200, body: { account: profileOf(rows[0]), result } };
+      });
+      if (out.status === 200) this.refreshSocketLoadout(await this.progression.load(account.id));
+      res.status(out.status).json(out.body);
+    }));
 
     r.post('/operators/buy', async (req, res) => {
       const found = await this.fromCookie(req.headers.cookie);

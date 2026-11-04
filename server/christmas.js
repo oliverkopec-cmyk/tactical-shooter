@@ -9,7 +9,6 @@ import { CHARMS } from '../shared/charms.js';
 import { SKINS } from '../shared/skins.js';
 import { CHRISTMAS, CHRISTMAS_CHARM_IDS, christmasState, presentsOpen, presentSkin, presentDate } from '../shared/christmas.js';
 import { profileOf, ownsCharm, devToolsEnabled } from './profile.js';
-import { rollChristmasCrate } from './shop.js';
 
 const MONEY_CEILING = 2000000000;   // the money column is a 32-bit integer
 const randInt = (n) => crypto.randomInt(n);
@@ -24,12 +23,12 @@ const someMoney = (rand) => {
 };
 
 /**
- * What a present holds, for an account row: { result, money, skins, charms } with `skins` and `charms` to add.
+ * What a present holds, for an account row: { result, money, skins, charms, crates } with what to add.
  * The last 7 days: 1500 Money and that day's limited skin, owned on every gun. Before that: Money, a Christmas charm
- * you don't have yet (Money if you have them all) or a Christmas crate, opened on the spot.
+ * you don't have yet (Money if you have them all) or a Christmas crate, which goes to the Christmas inventory unopened.
  */
 export function rollPresent(row, day, rand = randInt) {
-  const out = { result: {}, money: 0, skins: [], charms: [] };
+  const out = { result: {}, money: 0, skins: [], charms: [], crates: 0 };
   const skin = presentSkin(day);
   if (skin) {
     out.money = CHRISTMAS.skinMoney;
@@ -41,11 +40,8 @@ export function rollPresent(row, day, rand = randInt) {
     const roll = rand(10000) / 10000;
     const missing = CHRISTMAS_CHARM_IDS.filter((id) => !ownsCharm(row, id));
     if (roll >= money + charm) {
-      const { result, skins, charms } = rollChristmasCrate(row, rand);
-      out.result.crate = { ...result, label: 'Christmas crate' };
-      out.money = result.refund;
-      out.skins = skins;
-      out.charms = charms;
+      out.crates = 1;
+      out.result.christmasCrate = true;
     } else if (roll >= money && missing.length) {
       const id = missing[rand(missing.length)];
       out.result.charm = { id, rarity: CHARMS[id].rarity, duplicate: false };
@@ -54,7 +50,7 @@ export function rollPresent(row, day, rand = randInt) {
       out.money = someMoney(rand);
     }
   }
-  if (out.money && !out.result.crate?.duplicate) out.result.money = out.money;
+  if (out.money) out.result.money = out.money;
   return out;
 }
 
@@ -84,12 +80,12 @@ export class Christmas {
       const { rows: seen } = await this.db.query('SELECT 1 FROM christmas_claims WHERE account_id = $1 AND day = $2', [accountId, day]);
       if (seen.length) return { error: 'You have already opened that present.' };
       const row = await this.progression.load(accountId);
-      const { result, money, skins, charms } = rollPresent(row, day);
+      const { result, money, skins, charms, crates } = rollPresent(row, day);
       const { rows } = await this.db.query(`
         WITH claim AS (INSERT INTO christmas_claims (account_id, day) VALUES ($1, $2) ON CONFLICT DO NOTHING RETURNING day)
-        UPDATE accounts SET money = LEAST($6, money + $3), owned_skins = owned_skins || $4::jsonb, owned_charms = owned_charms || $5::jsonb
+        UPDATE accounts SET money = LEAST($6, money + $3), owned_skins = owned_skins || $4::jsonb, owned_charms = owned_charms || $5::jsonb, christmas_crates = christmas_crates + $7
         WHERE id = $1 AND EXISTS (SELECT 1 FROM claim) RETURNING *`,
-      [accountId, day, money, JSON.stringify(skins), JSON.stringify(charms), MONEY_CEILING]);
+      [accountId, day, money, JSON.stringify(skins), JSON.stringify(charms), MONEY_CEILING, crates]);
       if (!rows.length) return { error: 'You have already opened that present.' };
       return { ok: true, result: { title: `Christmas present · ${presentDate(day)}`, ...result }, row: rows[0] };
     });

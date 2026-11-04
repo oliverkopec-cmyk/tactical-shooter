@@ -1466,4 +1466,19 @@ button.primary:hover:not(:disabled) { background: linear-gradient(180deg, #ffd47
 .xmas-star { color: #ffd24a; text-shadow: 0 0 10px rgba(255, 210, 74, 0.9); }
 #screen-home.crate-mode .xmas-bar { visibility: hidden; }
 .shop-crate.christmas .crate-card-big { background: linear-gradient(160deg, rgba(120, 18, 26, 0.5), rgba(18, 74, 42, 0.5)); }
+.tab.tab-christmas { color: #fff !important; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7); margin: 4px 6px; padding: 8px 20px; border-radius: 9px; background: linear-gradient(100deg, #c8141e, #e8a020 30%, #1f8a4a 55%, #2a7ae2 78%, #c8141e); background-size: 260% 100%; box-shadow: 0 0 14px rgba(255, 190, 70, 0.55), inset 0 0 0 1px rgba(255, 255, 255, 0.35); animation: xmas-tab 7s linear infinite; }
+.tab.tab-christmas.hidden { display: none; }
+.tab.tab-christmas:hover:not(:disabled) { background: linear-gradient(100deg, #c8141e, #e8a020 30%, #1f8a4a 55%, #2a7ae2 78%, #c8141e); background-size: 260% 100%; box-shadow: 0 0 22px rgba(255, 210, 110, 0.9), inset 0 0 0 1px rgba(255, 255, 255, 0.6); }
+.tab.tab-christmas.active { box-shadow: 0 0 22px rgba(255, 210, 110, 0.95), inset 0 0 0 2px #fff; }
+@keyframes xmas-tab { to { background-position: -260% 0; } }
+@media (prefers-reduced-motion: reduce) { .tab.tab-christmas { animation: none; } }
+.xmas-col { width: 260px; }
+.xmas-inv { display: flex; flex-direction: column; gap: 8px; background: linear-gradient(170deg, rgba(92, 18, 24, 0.86), rgba(14, 44, 28, 0.88)); border-color: rgba(255, 210, 110, 0.5); }
+.xmas-inv h2 { margin: 0; font-size: 20px; }
+.xmas-crate { position: relative; height: 130px; border-radius: 8px; background: radial-gradient(circle at 50% 55%, rgba(255, 200, 110, 0.28), rgba(0, 0, 0, 0.25) 72%); }
+.xmas-crate canvas { width: 100%; height: 100%; display: block; }
+.xmas-count { position: absolute; right: 8px; top: 6px; padding: 2px 10px; border-radius: 12px; font-weight: 800; font-size: 16px; color: #2a1404; background: #ffd24a; box-shadow: 0 0 10px rgba(255, 210, 74, 0.7); }
+.xmas-count.none { color: #d8d8d8; background: rgba(0, 0, 0, 0.55); box-shadow: none; }
+.xmas-crate-name { font-weight: 700; text-align: center; }
+.xmas-presents b { color: #ffd24a; }
 #xmas-dev select { width: 100%; }

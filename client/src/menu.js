@@ -10,6 +10,7 @@ import { operatorIcon, sideSymbol } from './operatorIcons.js';
 import { equipSkin, equipOperator, openCrate as openCrateRequest, buyOperator, equipCharm } from './account.js';
 import { CHARMS, charmList, charmUnlockLevel } from '../../shared/charms.js';
 import { PRESENT_BASE, countdownText } from '../../shared/christmas.js';
+import { ShopCards } from './shopCards.js';
 import { ShopView } from './shopView.js';
 import { fillKeys } from './controls.js';
 import { MenuScene } from './menuScene.js';
@@ -45,7 +46,7 @@ export class Menu {
     this.error = '';
     this.opening = false;      // a crate opening is playing
     this.busy = false;
-    this.shop = new ShopView({ getAccount, setAccount, onOpenCrate: (kind) => this.openCrate(kind) });
+    this.shop = new ShopView({ getAccount, setAccount, onOpenCrate: () => this.openCrate() });
     this.scene = null;        // created the first time the menu is shown (needs WebGL)
     this.active = false;
 
@@ -81,10 +82,11 @@ export class Menu {
     $('menu-canvas').classList.toggle('hidden', !on);
     this.onTab(on ? this.tab : null);
     this.shop.setVisible(on && this.tab === 'shop' && !this.opening);
+    this.xmasCards?.setActive(on && this.tab === 'christmas');
     if (!on) { this.scene?.stop(); return; }
     if (!this.scene) {
       try { this.scene = new MenuScene($('menu-canvas')); } catch { this.scene = null; $('menu-canvas').classList.add('hidden'); }
-      if (this.scene) { this.scene.onGiftClick = (id) => this.openGift(id); this.scene.setChristmas(this.christmas?.theme); this.scene.setGifts(this.giftList); }
+      if (this.scene) { this.scene.onGiftClick = (id) => this.openGift(id); this.scene.setChristmas(this.christmas?.theme); this.scene.setGifts(this.adminGifts); this.scene.setPresents(this.presentList || []); }
     }
     this.scene?.start();
     this.refresh();
@@ -105,6 +107,7 @@ export class Menu {
     for (const btn of document.querySelectorAll('#menu-tabs .tab')) btn.classList.toggle('active', btn.dataset.tab === tab);
     for (const panel of document.querySelectorAll('.tab-panel')) panel.classList.toggle('hidden', panel.id !== `tab-${tab}`);
     this.shop.setVisible(tab === 'shop');   // its 3D cards only turn while it shows
+    this.xmasCards?.setActive(tab === 'christmas');
     this.moveIndicator();
     this.refresh();
   }
@@ -112,7 +115,8 @@ export class Menu {
   /** The account changed (login, equip, match payout): redraw whatever is showing. */
   refresh() {
     if (!this.active || !this.getAccount() || this.opening || this.giftOpen) return;
-    this.scene?.setMode(this.tab === 'operators' ? 'operators' : 'play');
+    this.updateChristmasTab();
+    this.scene?.setMode(this.tab === 'operators' ? 'operators' : this.tab === 'christmas' ? 'christmas' : 'play');
     if (this.tab === 'operators') this.renderOperators();
     else if (this.tab === 'shop') { this.shop.accountChanged(); this.showEquipped(); }
     else this.showEquipped();
@@ -253,7 +257,12 @@ export class Menu {
     this.crateKind = kind;
     const res = await openCrateRequest(kind);
     this.busy = false;
-    if (!res.result) { if (res.account) this.setAccount(res.account); this.shop.say(res.error || 'Could not open the crate.', true); return; }
+    if (!res.result) {
+      if (res.account) this.setAccount(res.account);
+      if (kind === 'christmas') $('xmas-error').textContent = res.error || 'Could not open the crate.';
+      else this.shop.say(res.error || 'Could not open the crate.', true);
+      return;
+    }
 
     this.opening = true;
     this.shop.setVisible(false);
@@ -262,7 +271,7 @@ export class Menu {
     $('crate-overlay').classList.remove('hidden');
     $('crate-result').classList.add('hidden');
     $('crate-hint').classList.remove('hidden');
-    this.scene?.playCrate(res.result, () => this.showCrateResult());
+    this.scene?.playCrate(res.result, () => this.showCrateResult(), { christmas: kind === 'christmas' });
     if (!this.scene) this.showCrateResult();   // no 3D (no WebGL): go straight to the result
   }
 
@@ -281,9 +290,14 @@ export class Menu {
     $('crate-note').className = result.duplicate ? 'crate-note dup' : 'crate-note new';
     $('crate-equip').textContent = charm ? `Equip on ${w.name}` : 'Equip';
     $('crate-equip').disabled = false;
-    const price = result.price ?? CRATE.price;
-    $('crate-more').disabled = account.money < price;
-    $('crate-more').textContent = account.money < price ? 'Not enough Money' : 'Open another';
+    if (this.crateKind === 'christmas') {
+      const left = account.christmasCrates || 0;
+      $('crate-more').disabled = left === 0;
+      $('crate-more').textContent = left ? `Open x${left}` : 'No crates left';
+    } else {
+      $('crate-more').disabled = account.money < CRATE.price;
+      $('crate-more').textContent = account.money < CRATE.price ? 'Not enough Money' : 'Open another';
+    }
     this.setAccount(account);   // updates the Money in the top bar (menu.refresh does nothing while opening)
   }
 
@@ -331,14 +345,24 @@ export class Menu {
 
   showGifts() {
     const presents = (this.christmas?.presents || []).map((p) => ({ id: PRESENT_BASE + p.day, title: `Christmas present · ${p.date}`, exclusive: p.special, christmas: true }));
-    this.giftList = [...this.adminGifts, ...presents];
-    this.scene?.setGifts(this.giftList);
-    const n = this.giftList.length, el = $('gift-notice');
-    const where = presents.length && !this.adminGifts.length ? 'under the tree' : 'in front of your operator';
+    this.presentList = presents;
+    this.giftList = this.adminGifts;
+    this.scene?.setGifts(this.adminGifts);
+    this.scene?.setPresents(presents);
+    const admin = this.adminGifts.length, n = admin || presents.length, el = $('gift-notice');
+    const what = admin ? (admin === 1 ? 'You have a gift!' : `You have ${admin} gifts!`) : (n === 1 ? 'A Christmas present is waiting!' : `${n} Christmas presents are waiting!`);
+    const how = admin ? (this.scene ? 'Click a present in front of your operator to open it.' : 'Click here to open it.') : 'Click here to go to the Christmas room.';
     el.classList.toggle('hidden', n === 0);
-    el.classList.toggle('exclusive', this.giftList.some((g) => g.exclusive));
-    el.innerHTML = `<span class="gift-icon">🎁</span><span><b>${n === 1 ? 'You have a gift!' : `You have ${n} gifts!`}</b><br><span class="muted">${this.scene ? `Click a present ${where} to open it.` : 'Click here to open it.'}</span></span>`;
+    el.classList.toggle('exclusive', this.adminGifts.some((g) => g.exclusive));
+    el.innerHTML = `<span class="gift-icon">🎁</span><span><b>${what}</b><br><span class="muted">${how}</span></span>`;
+    document.querySelector('[data-tab="christmas"]').dataset.badge = presents.length ? String(presents.length) : '';
     if (!this.giftOpen) $('gift-next').classList.toggle('hidden', true);
+    this.renderChristmasPanel();
+  }
+
+  /** The next gift to open from where you are: a present in the Christmas room, an admin gift on the rooftop. */
+  nextGift() {
+    return (this.tab === 'christmas' ? this.presentList : this.adminGifts)?.[0] || null;
   }
 
   // ---------------------------------------------------------------- Christmas
@@ -353,7 +377,41 @@ export class Menu {
     this.showGifts();
     this.tickChristmas();
     this.renderChristmasDev();
+    this.updateChristmasTab();
     if (wasOn !== !!state?.theme) this.shop.christmasChanged();
+  }
+
+  /** The colourful tab shows during the event, and afterwards for anyone who still has crates to open. */
+  updateChristmasTab() {
+    const a = this.getAccount(), btn = document.querySelector('[data-tab="christmas"]');
+    const show = !!a && (!!this.christmas?.theme || a.christmasCrates > 0);
+    if (btn.classList.contains('hidden') === show) {
+      btn.classList.toggle('hidden', !show);
+      requestAnimationFrame(() => this.moveIndicator());
+    }
+    if (!show && this.tab === 'christmas' && a) this.setTab('play');
+    this.renderChristmasPanel();
+  }
+
+  /** The side panel in the Christmas tab: the crates you have and the presents waiting. */
+  renderChristmasPanel() {
+    const a = this.getAccount();
+    if (!a) return;
+    const n = a.christmasCrates || 0, on = !!this.christmas?.theme, presents = this.presentList?.length || 0;
+    $('xmas-crate-count').textContent = `x${n}`;
+    $('xmas-crate-count').classList.toggle('none', n === 0);
+    $('xmas-open').textContent = n ? `Open x${n}` : 'No crates to open';
+    $('xmas-open').disabled = n === 0;
+    $('xmas-inv-note').textContent = on ? 'Crates from presents and the Shop land here. Open them whenever you like.' : 'The event is over, but these crates are still yours to open.';
+    $('xmas-presents').classList.toggle('hidden', !on);
+    $('xmas-presents').innerHTML = presents
+      ? `<b>${presents} ${presents === 1 ? 'present' : 'presents'}</b> under the tree. Click one to unwrap it. You get a new one every day until Christmas Eve.`
+      : 'No presents waiting. A new one arrives under the tree every day until Christmas Eve.';
+    if (this.tab === 'christmas' && !this.xmasCards) {
+      this.xmasCards = new ShopCards();
+      this.xmasCards.setCards([{ canvas: $('xmas-crate-view'), crate: 'christmas', guns: [] }]);
+      this.xmasCards.setActive(this.active);
+    }
   }
 
   /** Once a second: the countdown; and at each midnight in Sydney ask the server what has changed. */
@@ -429,17 +487,20 @@ export class Menu {
       items.push(`<div class="gift-item">${c.label ? `A ${esc(c.label)}` : `A ${c.kind === 'charm' ? 'charm' : esc(WEAPONS[c.weapon].name)} crate`}: ${rarityTag(c.rarity)} <b>${what}</b>${c.duplicate ? ` <span class="muted">(duplicate: +${c.refund.toLocaleString()} Money)</span>` : ''}</div>`);
     }
     if (result.charm) items.push(`<div class="gift-item">${rarityTag(result.charm.rarity)} <b>${esc(CHARMS[result.charm.id].name)}</b> charm${result.charm.duplicate ? ' <span class="muted">(you already had it)</span>' : ''}</div>`);
+    if (result.christmasCrate) items.push('<div class="gift-item"><b>A Christmas crate</b> · sent to your Christmas inventory</div>');
     if (result.money) items.push(`<div class="gift-item money"><b>+${result.money.toLocaleString()} Money</b></div>`);
     $('gift-items').innerHTML = items.join('');
     const skinId = result.skin?.id;
     $('gift-equip').classList.toggle('hidden', !skinId);
     $('gift-equip').disabled = false;
     $('gift-equip').textContent = skinId ? `Equip on ${WEAPONS[this.giftGun()].name}` : 'Equip';
-    $('gift-next').classList.toggle('hidden', this.giftList.length === 0);
+    $('gift-next').classList.toggle('hidden', !this.nextGift());
+    $('gift-next').textContent = this.tab === 'christmas' ? 'Open the next present' : 'Open the next gift';
     this.setAccount(account);
   }
 
   closeGift() {
+    if (this.giftOpen?.account) this.setAccount(this.giftOpen.account);   // in case it closes before the reveal has shown it
     this.giftOpen = null;
     document.getElementById('screen-home').classList.remove('crate-mode');
     $('gift-overlay').classList.add('hidden');
@@ -448,11 +509,12 @@ export class Menu {
   }
 
   bindGifts() {
-    $('gift-notice').addEventListener('click', () => { if (this.giftList[0]) this.openGift(this.giftList[0].id); });
+    $('gift-notice').addEventListener('click', () => { if (this.adminGifts[0]) this.openGift(this.adminGifts[0].id); else if (this.presentList?.length) this.setTab('christmas'); });
+    $('xmas-open').addEventListener('click', () => { $('xmas-error').textContent = ''; this.openCrate('christmas'); });
     $('gift-overlay').addEventListener('click', (e) => { if (!e.target.closest('button')) this.scene?.opening?.skip(); });
     $('menu-canvas').addEventListener('pointerdown', () => { if (this.giftOpen) this.scene?.opening?.skip(); });
     $('gift-close').addEventListener('click', () => this.closeGift());
-    $('gift-next').addEventListener('click', () => { const next = this.giftList[0]; this.closeGift(); if (next) this.openGift(next.id); });
+    $('gift-next').addEventListener('click', () => { const next = this.nextGift(); this.closeGift(); if (next) this.openGift(next.id); });
     $('gift-equip').addEventListener('click', async () => {
       const skin = this.giftOpen?.result.skin?.id;
       if (!skin) return;

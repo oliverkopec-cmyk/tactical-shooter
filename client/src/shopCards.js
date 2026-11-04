@@ -9,7 +9,7 @@ const W = 480, H = 300;      // the render size; cards are drawn from it at thei
 const FRAME_MS = 33;
 
 /** A stylised crate for the crate card: a dark box with glowing trim. */
-function makeCrateModel(christmas = false) {
+export function makeCrateModel(christmas = false) {
   const g = new THREE.Group();
   const body = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.42, 0.42), new THREE.MeshStandardMaterial({ color: christmas ? 0x8a141c : 0x1c2026, roughness: 0.5, metalness: christmas ? 0.25 : 0.6 }));
   g.add(body);

@@ -6,7 +6,7 @@
 import { SKINS, RARITIES, CRATE_RARITIES } from '../../shared/skins.js';
 import { CHARMS } from '../../shared/charms.js';
 import { WEAPONS } from '../../shared/weapons.js';
-import { getShop, buyShopItem, devMoney } from './account.js';
+import { getShop, buyShopItem, buyChristmasCrate, devMoney } from './account.js';
 import { ShopCards } from './shopCards.js';
 
 const $ = (id) => document.getElementById(id);
@@ -87,7 +87,7 @@ export class ShopView {
       ${d.limited.length ? `<div class="shop-section"><h3>Limited</h3><span class="muted">Only for a few days, then gone for good. Owned on every gun.</span></div>
       <div class="shop-cards">${d.limited.map((it) => this.cardHtml(it, true)).join('')}</div>` : ''}
       ${d.christmasCrate ? `<div class="shop-section"><h3>Christmas crate</h3><span class="shop-timer">Gone in <b data-until="${d.christmasCrate.until}">${countdown(d.christmasCrate.until - Date.now() - this.clockOffset)}</b></span></div>
-      ${this.crateHtml('christmas', d.christmasCrate, 'Christmas Crate', '10 Christmas skins and 10 Christmas charms')}` : ''}
+      ${this.crateHtml('christmas', d.christmasCrate, 'Christmas Crate', 'Goes to your Christmas inventory, ready to open in the Christmas tab')}` : ''}
       <div class="shop-section"><h3>Crate</h3><span class="muted">Every crate skin on any gun, and every charm</span></div>
       ${this.crateHtml('crate', d.crate, 'The Crate', 'A skin on a random gun, or a charm')}
       <p id="shop-msg" class="${this.messageError ? 'error' : 'shop-ok'}">${esc(this.message)}</p>
@@ -185,7 +185,8 @@ export class ShopView {
       const key = open.dataset.openCrate, price = key === 'christmas' ? d.christmasCrate?.price ?? 0 : d.crate.price;
       open.classList.toggle('short', a.money < price);
       open.classList.toggle('confirm', this.confirming === key);
-      open.innerHTML = this.confirming === key ? `Open for 💰 ${money(price)}?` : `Open · 💰 ${money(price)}`;
+      const verb = key === 'christmas' ? 'Buy' : 'Open';
+      open.innerHTML = this.confirming === key ? `${verb} for 💰 ${money(price)}?` : `${verb} · 💰 ${money(price)}`;
     }
   }
 
@@ -240,7 +241,11 @@ export class ShopView {
       if (this.confirming !== key) { this.confirming = key; return this.updateButtons(); }
       this.confirming = null;
       this.updateButtons();
-      return this.onOpenCrate(key);
+      if (key !== 'christmas') return this.onOpenCrate();
+      const res = await buyChristmasCrate();
+      if (res.account) this.setAccount(res.account);
+      this.say(res.error || `Added to your Christmas inventory (you have ${res.account.christmasCrates}). Open it in the Christmas tab.`, !!res.error);
+      return this.updateButtons();
     }
     const buy = e.target.closest('[data-buy]');
     if (!buy || buy.disabled || this.busy) return;
