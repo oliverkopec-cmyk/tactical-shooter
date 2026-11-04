@@ -14,7 +14,7 @@ const X = (name, rarity, source, fx, c1, c2, c3, { scale = 9, speed = 1, glow = 
   name, rarity, source, fx, c1, c2, c3, sc, tc, scale, speed, glow, variant: 0, metal, particles,
   pattern: 'solid', body: c1, accent: c2, mark: c3, steel: sc, trim: tc,
 });
-const L = (...args) => X(args[0], 'exclusive', 'christmas', ...args.slice(1));
+const L = (...args) => X(args[0], 'limited', 'christmas', ...args.slice(1));
 const C = (name, rarity, ...rest) => X(name, rarity, 'christmas_crate', ...rest);
 
 export const CHRISTMAS_LIMITED_SKINS = {

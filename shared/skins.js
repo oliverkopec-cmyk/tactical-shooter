@@ -23,10 +23,11 @@ export const RARITIES = {
   rare: { id: 'rare', name: 'Rare', color: '#4a90e2', order: 1 },
   epic: { id: 'epic', name: 'Epic', color: '#b04ae8', order: 2 },
   legendary: { id: 'legendary', name: 'Legendary', color: '#f0a020', order: 3 },
-  exclusive: { id: 'exclusive', name: 'Exclusive', color: '#ffe7a0', order: 4, giftOnly: true },   // shown with a shifting white-gold shimmer
+  limited: { id: 'limited', name: 'Limited', color: '#ff5a78', order: 4, notInCrate: true },   // only for a short time: sold in the Limited section, or the last Christmas presents
+  exclusive: { id: 'exclusive', name: 'Exclusive', color: '#ffe7a0', order: 5, giftOnly: true },   // shown with a shifting white-gold shimmer
 };
-/** The rarities crates can give (everything but Exclusive). */
-export const CRATE_RARITIES = Object.values(RARITIES).filter((r) => !r.giftOnly);
+/** The rarities crates can give (everything but Limited and Exclusive). */
+export const CRATE_RARITIES = Object.values(RARITIES).filter((r) => !r.giftOnly && !r.notInCrate);
 
 export const SKINS = {
   // ---------------------------------------------------------------- common (every account owns these)

@@ -2,7 +2,26 @@
 
 A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite on the client, Node.js + Socket.IO on an authoritative server. One Node process serves both the game client and the realtime server, so the whole thing deploys as a single Render web service.
 
-## Status: Stage M (Christmas event)
+## Status: Stage N (money and ranks)
+
+- **Win bonus:** winning a match pays an extra **800 Money**, shown as its own "Win bonus" line on the end-of-match screen. Not in matches with bots, or if an admin or the owner played in the match at any point (`withAdmins` in `settleMatch`). It's Money only: XP still comes from the normal match rewards, so levelling speed hasn't changed.
+- **No daily Money cap:** the cap (it was 3,500 a day) is gone from the server, the profile and the end-of-match screen. Accounts' old `stats.daily` counters are dropped the next time they finish a match.
+- **Ranks without tiers:** Bronze, Silver, Gold, Platinum, Diamond and Champion (`RANKS` in `shared/progression.js`). Each climb takes 200 points, and the last one, from Diamond to Champion, takes 500:
+
+| Rank | From | Points to the next rank |
+|---|---|---|
+| Bronze | 0 | 200 |
+| Silver | 200 | 200 |
+| Gold | 400 | 200 |
+| Platinum | 600 | 200 |
+| Diamond | 800 | 500 |
+| Champion | 1,300 | top rank |
+
+- **Converting accounts:** `migrateRanks` in `server/db.js` runs at server start. Each account keeps exactly its rank and how far through it was (`convertRankPoints`: 750 points, halfway through old Gold, becomes 500, halfway through new Gold), and points above Champion's start carry over. `accounts.rank_version` makes it happen once per account, and new accounts start on the new ladder.
+- **Rank icons** (`client/src/rankIcon.js`): each rank has its own emblem on the shield: a chevron, two chevrons, a star, a cut gem, a diamond and a crown.
+- **Limited rarity:** a new rarity, between Legendary and Exclusive (`RARITIES.limited`), for skins only available for a short time: the 3 skins in the shop's Limited section and the 7 from the last Christmas presents. Exclusive is now only for admin gift skins. Limited skins aren't in crates.
+
+### Earlier: Stage M (Christmas event)
 
 A Christmas event that turns itself on and off by date (`shared/christmas.js`, `server/christmas.js`). **All dates are Sydney time** and the server's clock decides everything; a player's own clock changes nothing.
 
@@ -17,10 +36,10 @@ A Christmas event that turns itself on and off by date (`shared/christmas.js`, `
 - **Christmas tab and room** (`client/src/christmasRoom.js`): a colourful tab, shown during the event, opens a cozy fireplace room at night: a stone fireplace with an animated fire, a mantel with garland, stockings and candles, a wreath, a decorated tree with the presents under it, snowy windows with curtains, an armchair, a bookshelf, lamps, a rug and a sleeping cat. Everything static is merged into one mesh per texture, and the Low graphics setting drops the small details, the shadows and all but the fire's light. The room is only built the first time the tab is opened.
 - **Rooftop at Christmas** (`client/src/menuChristmas.js`): snow on the roof, the platform and the rooftop objects, falling snow instead of the rain, and warm string lights. The tree isn't here, only in the room.
 - **Countdown:** under the top bar, like "Christmas in 12d 04h 33m 10s", ticking on the server's time.
-- **Presents:** they wait under the tree in the room (up to 8 shown at a time, more appear as those are opened) and open with the same unwrapping as admin gifts. The tab shows how many are waiting. Missed days can be claimed until the end of 2 January. `christmas_claims` has one row per account and day, and the claim and the reward are written in one statement, so a day can't be opened twice. Presents don't count towards the daily Money cap, like admin gifts.
+- **Presents:** they wait under the tree in the room (up to 8 shown at a time, more appear as those are opened) and open with the same unwrapping as admin gifts. The tab shows how many are waiting. Missed days can be claimed until the end of 2 January. `christmas_claims` has one row per account and day, and the claim and the reward are written in one statement, so a day can't be opened twice.
 - **Christmas inventory:** the panel at the side of the Christmas tab. A crate from a present or the shop is never opened by itself: it goes here (`accounts.christmas_crates`), and "Open x3" opens one at a time in the room. Crates still held after the event can be opened until they run out, and the tab stays for those accounts.
 - **Skins** (`shared/christmasSkins.js`): all 17 are drawn by their own effect in `client/src/exclusiveSkins.js`, with raised detail (a height that bends the surface) that catches the light, and their own colours for the metal and small parts.
-- **Limited skins** (`CHRISTMAS_LIMITED_SKINS`): Candy Cane, Wrapping Paper, Gingerbread, Frosted Ice, Red and Gold Ornament, Snowy Pine and Festive Lights, animated like Exclusive skins and owned on every gun. They only come from the last 7 presents: never sold, never in a crate, and an admin can't gift them.
+- **Limited skins** (`CHRISTMAS_LIMITED_SKINS`, rarity Limited since Stage N): Candy Cane, Wrapping Paper, Gingerbread, Frosted Ice, Red and Gold Ornament, Snowy Pine and Festive Lights, animated like Exclusive skins and owned on every gun. They only come from the last 7 presents: never sold, never in a crate, and an admin can't gift them.
 - **Christmas crate** (bought in the shop during the event, Money only): 1,200 Money, with 600 back for anything you already own. It holds 10 Christmas skins (`CHRISTMAS_CRATE_SKINS`, on a random gun like the normal crate: Winter Wool, Holly Leaf, Candle Wax, Sleigh Bells, Mulled Wine, Fresh Snowfall, Silver Tinsel, Northern Star, Yule Fire, Silent Night) and 10 Christmas charms, with odds of 55% Common, 28% Rare, 14% Epic and 3% Legendary. Nothing Christmas is in the normal crate or the daily shop.
 - **To run it another year:** change the three dates at the top of `shared/christmas.js` (and the UTC offset, if the dates leave daylight time).
 - **Testing on localhost:** on a local test database the Play tab has a box to pretend it is another date and to forget your presents (`christmasDevDate` and `christmasDevReset`). It doesn't exist on Render.
@@ -463,12 +482,6 @@ Six new operators, bought with Money in the Operators tab (the original eight an
 ## Planned: later stages
 
 Written down so they aren't forgotten (see Status for what is built). They are built one at a time, one PR each, and the next one starts once the previous is confirmed. Server memory must stay low enough for Render's 512 MB plan.
-
-### Stage N - Money and ranks
-- Before starting: say what the daily Money cap is.
-- Winning a match gives an extra 800 Money on top of the current rewards, shown as its own line ("Win bonus +800") on the end-of-match screen. Not in matches with bots or admin players.
-- Raise the daily Money cap so the win bonus fits within it.
-- Simplify ranks: no tiers or numbers. Bronze, Silver, Gold, Platinum, Diamond, then Champion, 200 points each, so Champion is at 500 [as written in the request: to be confirmed]. Convert everyone's current points so nobody drops a rank. Update the rank icons and all screens.
 
 ### Stage O - More detailed characters
 - Rebuild the player models with much more detail, built from many shapes in code (no external assets), all original designs: proper body proportions, helmet or cap, face area with goggles, mask or visor, tactical vest with pouches, knee and elbow pads, boots, gloves, a backpack or radio.

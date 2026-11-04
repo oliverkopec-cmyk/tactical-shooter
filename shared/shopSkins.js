@@ -67,7 +67,7 @@ export const DAILY_SKINS = {
   d_aurora: D('Northern Lights', 'legendary', 'bands', 0x020a14, 0x3aff9a, 0xa04aff, { metal: 0.8, glow: 0.7 }),
 };
 
-const L = (name, pattern, body, accent, mark, opts = {}) => ({ ...D(name, 'legendary', pattern, body, accent, mark, opts), source: 'limited' });
+const L = (name, pattern, body, accent, mark, opts = {}) => ({ ...D(name, 'limited', pattern, body, accent, mark, opts), source: 'limited' });
 
 export const LIMITED_SKINS = {
   l_firstfrost: L('First Frost', 'circuit', 0xeaf6ff, 0x6aa8d8, 0x2a8aff, { metal: 1, glow: 0.7 }),

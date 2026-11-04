@@ -882,6 +882,7 @@ export class GameState {
         score: { yours: scores[squad], theirs: scores[other] },
         operators: [...(p.opsPlayed || [])],
         withBots: this.room.hasBots,          // bots in the match: half Money, no rank points
+        withAdmins: [...this.room.matchPlayers.values()].some((m) => m.admin),   // an admin played in it: no win bonus
       };
       progression.settle(accountId, match)
         .then((summary) => { if (summary) this.io.to(id).emit('matchSummary', summary); })

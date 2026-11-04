@@ -6,6 +6,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { RANKS } from '../shared/progression.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -40,6 +41,8 @@ const SCHEMA = `
   ALTER TABLE accounts ADD COLUMN IF NOT EXISTS owned_charms JSONB NOT NULL DEFAULT '[]';
   ALTER TABLE accounts ADD COLUMN IF NOT EXISTS equipped_charms JSONB NOT NULL DEFAULT '{}';
   ALTER TABLE accounts ADD COLUMN IF NOT EXISTS christmas_crates INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE accounts ADD COLUMN IF NOT EXISTS rank_version INTEGER NOT NULL DEFAULT 1;
+  ALTER TABLE accounts ALTER COLUMN rank_version SET DEFAULT 2;
   CREATE TABLE IF NOT EXISTS friendships (
     id         BIGSERIAL PRIMARY KEY,
     requester  BIGINT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
@@ -149,6 +152,24 @@ export async function migrateEquippedCommons(query, commonIds) {
   }
 }
 
+/**
+ * Rank points on the old ladder (five ranks of 300 points, then Champion at 1500) to the new one (shared/progression.js).
+ * You keep your rank and how far through it you were, so nobody drops a rank. Points above Champion's start carry over.
+ */
+export function convertRankPoints(oldPoints) {
+  const p = Math.max(0, Math.floor(oldPoints || 0));
+  if (p >= 1500) return RANKS.at(-1).floor + (p - 1500);
+  const i = Math.floor(p / 300), floor = RANKS[i].floor, width = RANKS[i + 1].floor - floor;
+  return floor + Math.floor(((p - i * 300) / 300) * width);
+}
+
+/** Move every account still on the old ladder to the new one. rank_version makes it happen once per account, so it's safe to run every start. */
+export async function migrateRanks(query) {
+  const { rows } = await query('SELECT id, rank_points FROM accounts WHERE rank_version < 2');
+  for (const r of rows) await query('UPDATE accounts SET rank_points = $2, rank_version = 2 WHERE id = $1 AND rank_version < 2', [r.id, convertRankPoints(r.rank_points)]);
+  return rows.length;
+}
+
 /** Returns { query(sql, params) -> { rows }, kind: 'postgres' | 'local' }. */
 export async function openDatabase() {
   let db;
@@ -172,5 +193,7 @@ export async function openDatabase() {
   await applySchema((sql) => db.query(sql));
   const { SKIN_IDS, SKINS } = await import('../shared/skins.js');
   await migrateEquippedCommons((sql, params) => db.query(sql, params), SKIN_IDS.filter((id) => SKINS[id].rarity === 'common'));
+  const converted = await migrateRanks((sql, params) => db.query(sql, params));
+  if (converted) console.log(`Moved ${converted} accounts to the new rank ladder.`);
   return db;
 }

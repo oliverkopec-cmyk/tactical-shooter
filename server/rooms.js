@@ -4,7 +4,7 @@ import { TEAMS, MAX_PER_TEAM, ROOM_CODE_LENGTH, MAX_NAME_LENGTH } from '../share
 import { GameState } from './gameState.js';
 import { DEFAULT_MAP_ID, MAP_IDS } from '../shared/map.js';
 import { MODE_IDS, DEFAULT_MODE_ID } from '../shared/modes.js';
-import { badgeFlags } from './roles.js';
+import { badgeFlags, isAdmin } from './roles.js';
 import { OPERATORS } from '../shared/operators.js';
 import { BOT_DIFFICULTIES } from './bots.js';
 import { navFor } from './nav.js';
@@ -72,7 +72,7 @@ class Room {
     this.phase = 'lobby';     // 'lobby' | 'match'
     this.game = null;
     this.matchId = null;      // names the running match (chat and reports point at it)
-    this.matchPlayers = new Map();   // socket id -> { accountId, name }: who was in it (for reporting people after it ends)
+    this.matchPlayers = new Map();   // socket id -> { accountId, name, admin }: who was in it (for reporting people after it ends, and the win bonus)
   }
 
   teamCount(team) {
@@ -108,7 +108,7 @@ class Room {
 
   /** Remember someone as part of this match, and let every human player report them (also after the match). */
   noteMatchPlayer(socket, member) {
-    this.matchPlayers.set(member.id, { accountId: member.accountId, name: member.name });
+    this.matchPlayers.set(member.id, { accountId: member.accountId, name: member.name, admin: isAdmin(socket.data.account.username) });
     socket.data.recent = { matchId: this.matchId, roomCode: this.code, players: this.matchPlayers };
   }
 
