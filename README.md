@@ -2,7 +2,21 @@
 
 A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite on the client, Node.js + Socket.IO on an authoritative server. One Node process serves both the game client and the realtime server, so the whole thing deploys as a single Render web service.
 
-## Status: Stage 2K (shop redesign)
+## Status: Stage 2L (two detailed maps)
+
+Two new maps, **Hillside Villa** (`shared/maps/villa.js`) and **Pinecrest Lodge** (`shared/maps/lodge.js`), at a much higher level of detail. Dockside House and Meridian Hotel are unchanged and still use the old drawing path. **All future maps use this level of detail:** set `detailed: true` on the map and build it with `furnish.js` and `terrain.js`.
+
+- **Furniture and decoration** (`shared/maps/furnish.js`): couches with cushions and armrests, beds, tables with legs, shelves with items, kitchen runs, lamps, rugs, baths, a pool table and more, each made of many shapes. Paintings, posters, clocks, light switches, wall shelves, and windows with frames, sills and curtains. Each object has **one simple collision box**; the extra shapes (`kit.part` in `shared/mapkit.js`) are only stored where `document` exists, so the server never holds them.
+- **Textures drawn in code** (`client/src/mapTextures.js`): wood, fabric, carpet, tiles, brick, stone, plaster, drywall, concrete, grass, dirt, asphalt, metal, paint, glass, bark, leaves and shingles. Nothing is downloaded.
+- **Soft and hard walls:** pale panels with visible seams can be destroyed (kind `interior`); brick and stone can't (kinds `exterior` and `hardwall`). Wall decorations only go on hard walls, so nothing floats in the air when a soft wall breaks.
+- **Terrain** (`shared/terrain.js`): one smooth surface on a 2 m grid, not boxes. People, drones, bots, bullets and grenades all use the same triangles the client draws (`world.ground`, used by `sweepDown`, `isSpaceFree`, `raycastWorld` and `server/nav.js`), so you stand on exactly what you see and a slope never blocks anyone. The steepest slope is about 26 degrees. Building floors stay at y = 0; the land runs from about -3.4 to +3. Each map has at least one attacker spawn at the bottom of a path up to the building (the Villa's Lower Gate, the Lodge's Valley Road).
+- **Vehicles:** sedan, SUV, van and pickup with wheels, windows, lights and doors, no real brands, parked as cover.
+- **Each map has** 3 objective sites, hatches, rappel points, barricade spots, 3 attacker spawns, a building boundary for run-out detection and a top-down map on the location screen (`client/src/topMap.js`).
+- **Drawing** (`client/src/mapDetail.js`): all static geometry is merged into one mesh per texture, about 26 meshes for a whole map. Low graphics drops the shapes marked `fine`, draws round shapes with fewer sides and uses 128 px textures.
+- **Server cost:** about 1,800-2,050 collision boxes per map, fewer than the Hotel's 3,645. The server used about 171 MB after bot matches on both new maps. Most of that is the bots' navigation grids, about 40-50 MB per map played, the same kind of cost as the Hotel's.
+- **Checking a map:** `node tools/check-map.mjs villa lodge` confirms every spawn, site and doorway can be reached and reports any ground out of reach. On terrain maps it also walks and drives every path uphill with the real movement code, checks that a drone can roll to a door from every attacker spawn, and fails on slopes over 35 degrees. It takes a few minutes per map.
+
+### Earlier: Stage 2K (shop redesign)
 
 The Shop tab is rebuilt (`client/src/shopView.js`, the rules in `shared/shop.js`, purchases in `server/shop.js`).
 
@@ -426,13 +440,7 @@ Six new operators, bought with Money in the Operators tab (the original eight an
 
 Written down so they aren't forgotten (see Status for what is built). They are built one at a time, one PR each, and the next one starts once the previous is confirmed. Server memory must stay low enough for Render's 512 MB plan.
 
-### Stage 2L - Two new detailed maps
-- Two new, much more detailed maps; the original maps are not changed, and all future maps use this level of detail.
-- Furniture built from many shapes (couches with cushions and armrests, beds, tables with legs, shelves with items, kitchen counters, lamps, rugs) with textures drawn in code (fabric, wood grain, tiles, carpet).
-- A mix of soft (destructible) and hard (indestructible) walls that clearly look different; paintings, posters, clocks, light switches, shelves, windows with frames and curtains.
-- Outside terrain that isn't flat: hills, slopes, paths, steps, low walls, fences, bushes and trees, with at least one attacker spawn at the bottom of a path leading up to the building.
-- Detailed vehicles (wheels, windows, lights, doors, no real brands) as cover.
-- Each map: 3 objective sites, hatches, rappel points, barricade spots, attacker spawns and a building boundary for run-out detection; both get top-down minimaps for the location select screen. Light enough for the Low graphics setting.
+Nothing is planned right now: every stage so far is built.
 
 ## Run locally
 
@@ -464,6 +472,10 @@ shared/            Code used by BOTH client and server
   constants.js     tuning values, key bit flags, team colours
   movementConfig.js  MOVEMENT TUNING: speeds, acceleration, strafing, stances, aiming, head bob, weapon sway
   map.js           map geometry (axis-aligned boxes), spawns, objective
+  terrain.js       hills and slopes for detailed maps: the smooth ground surface everything stands on and shoots at
+  maps/villa.js    Hillside Villa (detailed map)
+  maps/lodge.js    Pinecrest Lodge (detailed map)
+  maps/furnish.js  furniture, wall decorations, plants, fences and vehicles for detailed maps
   movement.js      deterministic movement + collision (prediction and authority)
   gunConfig.js     per-gun recoil, effects and sound settings (the file to tune gun feel)
   weapons.js       the 20 guns + deterministic ammo/fire-rate/reload/spread/swap, stat rows for menus
@@ -544,6 +556,8 @@ client/
   src/drones.js    drone models for everyone, smoothing, destroyed effect
   src/destruction.js  instanced wall panels, charges, explosions
   src/map.js       renders the shared map, lighting
+  src/mapDetail.js draws detailed maps, merged into one mesh per texture
+  src/mapTextures.js textures drawn in code for detailed maps
   src/ui.js        lobby and HUD DOM
 ```
 

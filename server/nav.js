@@ -70,6 +70,8 @@ class NavGrid {
     for (const b of this.near(x, z)) {
       if (b.max[0] > x - R && b.min[0] < x + R && b.max[2] > z - R && b.min[2] < z + R && b.max[1] <= y + 1e-3 && b.max[1] >= y - dist) best = Math.max(best, b.max[1]);
     }
+    const g = this.map.terrain?.surface(x, z);
+    if (g !== undefined && g <= y + 1e-3 && g >= y - dist) best = Math.max(best, g);
     return best;
   }
 

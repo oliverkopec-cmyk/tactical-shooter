@@ -6,6 +6,15 @@ the list from the menu.
 
 Format: `## <id> · <date> · <title>`, then one bullet per change. The id has to be unique and is what the game remembers.
 
+## 2L · 2026-11-04 · Two new maps
+- New map: Hillside Villa, a two-storey villa on a hill with a winding drive, gardens, a pool and a brick core. Attackers can start at the bottom of the drive and fight their way up.
+- New map: Pinecrest Lodge, a timber lodge in the pine woods above its own car park, with stone steps, a balcony, a big stone fireplace and a woodshed.
+- Both are far more detailed than the older maps: real-looking couches, beds, kitchens, shelves, lamps and rugs, plus paintings, posters, clocks, and windows with frames and curtains.
+- Walls now tell you what they are. Pale panelled walls can be broken. Brick and stone walls can't.
+- The land outside isn't flat any more: hills, paths, steps, low walls, fences, bushes and trees, with parked cars, vans and pickups to use as cover.
+- Each map has 3 objectives, hatches, rappel points, barricade spots and its own map on the location screen. They run on the Low graphics setting too.
+- Dockside House and Meridian Hotel haven't changed.
+
 ## 2K · 2026-11-04 · New shop
 - The shop has been rebuilt: big cards with each gun turning in 3D, rarity glows, price tags and OWNED labels.
 - A daily shop: 6 new skins every day at the same time, with a countdown. Some are skin packs that put one skin on 5 guns.

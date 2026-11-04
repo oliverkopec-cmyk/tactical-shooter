@@ -4,12 +4,14 @@
 
 import { buildDockside } from './maps/dockside.js';
 import { buildEstate } from './maps/estate.js';
+import { buildVilla } from './maps/villa.js';
+import { buildLodge } from './maps/lodge.js';
 
 export { findOpening } from './mapkit.js';
 
 export const DEFAULT_MAP_ID = 'dockside';
 
-const builders = { dockside: buildDockside, estate: buildEstate };
+const builders = { dockside: buildDockside, estate: buildEstate, villa: buildVilla, lodge: buildLodge };
 const built = new Map();
 
 /** The map with this id (built on first use), or the default map for an unknown id. */

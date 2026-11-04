@@ -8,8 +8,9 @@
 
 import { getMap, MAP_IDS } from '../shared/map.js';
 import { World } from '../shared/world.js';
-import { isSpaceFree, sweepDown } from '../shared/movement.js';
-import { STEP_HEIGHT } from '../shared/constants.js';
+import { isSpaceFree, sweepDown, createPlayerState, stepPlayer } from '../shared/movement.js';
+import { DRONE, createDroneState, stepDrone } from '../shared/drone.js';
+import { STEP_HEIGHT, KEY } from '../shared/constants.js';
 
 const H = 1.8, STEP = 0.5;
 const key = (x, z, y) => `${Math.round(x / STEP)},${Math.round(z / STEP)},${Math.round(y * 5)}`;
@@ -49,6 +50,44 @@ function reached(seen, x, z, y, tol = 0.35) {
   return false;
 }
 
+/** Every spot a rolling drone can reach from the starts, without hopping. */
+function droneFlood(world, starts, limit) {
+  const seen = new Map();
+  const queue = [];
+  const add = (x, z, y) => { const k = key(x, z, y); if (!seen.has(k)) { seen.set(k, { x, z, y }); queue.push({ x, z, y }); } };
+  for (const s of starts) add(s.x, s.z, s.y);
+  const { radius: r, height: h, stepHeight } = DRONE;
+  while (queue.length) {
+    const { x, z, y } = queue.pop();
+    for (const [dx, dz] of [[STEP, 0], [-STEP, 0], [0, STEP], [0, -STEP]]) {
+      const nx = x + dx, nz = z + dz;
+      if (Math.abs(nx) > limit || Math.abs(nz) > limit) continue;
+      // A box lower than a drone step is climbed; the ground's surface always lifts it (sweepDown)
+      const lift = y + stepHeight;
+      if (!isSpaceFree(world, nx, lift, nz, h, r) || !isSpaceFree(world, x + dx / 2, lift, z + dz / 2, h, r)) continue;
+      const down = sweepDown(world, nx, lift, nz, h, stepHeight + 0.5, r);
+      if (down <= lift - stepHeight - 0.5 + 1e-3) continue;
+      add(nx, nz, down);
+    }
+  }
+  return seen;
+}
+
+/** Drive a person or a drone along a line with the real movement code. Returns null if it arrives, or where it stopped. */
+function drive(world, agent, pts) {
+  const [x, z] = pts[0], y = world.ground.surface(x, z) + 0.05, dt = 1 / 60;
+  const s = agent === 'drone' ? createDroneState(x, y, z, 0) : createPlayerState({ x, y, z, yaw: 0 });
+  let i = 1, best = Infinity, since = 0;
+  for (let t = 0; t < 180 && i < pts.length; t += dt) {
+    const dx = pts[i][0] - s.x, dz = pts[i][1] - s.z, d = Math.hypot(dx, dz);
+    if (d < 1.2) { i++; best = Infinity; since = 0; continue; }
+    const input = { keys: KEY.FORWARD, yaw: Math.atan2(-dx, -dz), pitch: 0 };
+    if (agent === 'drone') stepDrone(s, input, dt, world.droneView); else stepPlayer(s, input, dt, world);
+    if (d < best - 0.02) { best = d; since = 0; } else if ((since += dt) > 2.5) break;
+  }
+  return i >= pts.length ? null : `(${s.x.toFixed(1)}, ${s.y.toFixed(1)}, ${s.z.toFixed(1)})`;
+}
+
 export function debugFlood(id, start) {
   const map = getMap(id); const world = new World(map);
   return floodFrom(world, [start], map.size - 2);
@@ -84,21 +123,55 @@ function check(id) {
     const mid = (o.from + o.to) / 2;
     const out = o.axis === 'x' ? [mid, o.fixed + (o.fixed < 0 ? -1.2 : 1.2)] : [o.fixed + (o.fixed < 0 ? -1.2 : 1.2), mid];
     const inn = o.axis === 'x' ? [mid, o.fixed + (o.fixed < 0 ? 1.2 : -1.2)] : [o.fixed + (o.fixed < 0 ? 1.2 : -1.2), mid];
-    say(reached(outside, out[0], out[1], 0), `outside ${o.name} door at ${mid.toFixed(1)}: not reachable from the attackers' entries`);
+    say(reached(outside, out[0], out[1], map.terrain ? map.terrain.top(out[0], out[1]) : 0, 0.6), `outside ${o.name} door at ${mid.toFixed(1)}: not reachable from the attackers' entries`);
     say(reached(outside, inn[0], inn[1], 0.02), `inside ${o.name} door at ${mid.toFixed(1)}: not reachable`);
   }
 
   // Every open standing spot in the building, on each floor: could a player get there?
-  const floors = [0.02, 3.2, 6.4];
+  // (the floors and the footprint come from the map's own boxes, so this fits every map)
+  const floorBoxes = map.boxes.filter((b) => b.kind === 'floor');
+  const floors = [...new Set(floorBoxes.map((b) => Math.round(b.max[1] * 100) / 100))].sort((a, b) => a - b);
+  const main = map.building[0];
+  const onFloorBox = (x, z, y) => floorBoxes.some((b) => Math.abs(b.max[1] - y) < 0.05 && x >= b.min[0] && x <= b.max[0] && z >= b.min[2] && z <= b.max[2]);
   const lost = [];
   let total = 0;
   for (const y of floors) {
-    for (let x = -19; x <= 19; x += 1) for (let z = -13; z <= 13; z += 1) {
-      if (!standable(x, z, y) || (y > 6 && x > -8.2)) continue;
-      if (y > 3 && y < 4 && false) continue;
+    for (let x = Math.ceil(main.x0) + 1; x <= main.x1 - 1; x += 1) for (let z = Math.ceil(main.z0) + 1; z <= main.z1 - 1; z += 1) {
+      if (!onFloorBox(x, z, y) || !standable(x, z, y)) continue;
       total++;
       if (!reached(outside, x, z, y)) lost.push({ x, z, y });
     }
+  }
+  if (map.terrain) {
+    // Parts of the grounds that can't be walked to (inside the fence line): a cliff or a closed-off corner
+    let cells = 0, cut = 0;
+    const samples = [];
+    for (let x = -map.size + 6; x <= map.size - 6; x += 4) for (let z = -map.size + 6; z <= map.size - 6; z += 4) {
+      const y = map.terrain.top(x, z);
+      if (!standable(x, z, y)) continue;
+      cells++;
+      if (!reached(outside, x, z, y, 0.6)) { cut++; if (samples.length < 10) samples.push(`(${x}, ${z}, y ${y.toFixed(1)})`); }
+    }
+    if (cut / Math.max(1, cells) > 0.03) problems.push(`${cut} of ${cells} ground spots can't be walked to, e.g. ${samples.join(' ')}`);
+    // Every path, walked and driven uphill for real, and a drone must be able to roll to the building from each spawn
+    for (const r of map.ribbons || []) {
+      const pts = Math.hypot(...r.pts[0]) < Math.hypot(...r.pts.at(-1)) ? [...r.pts].reverse() : r.pts;
+      for (const agent of ['person', 'drone']) {
+        const stopped = drive(world, agent, pts);
+        if (stopped) problems.push(`a ${agent} going up the path from (${pts[0]}) stops at ${stopped}`);
+      }
+    }
+    if (map.terrain.steepest() > 35) problems.push(`the ground is too steep in places: ${map.terrain.steepest().toFixed(0)} degrees`);
+    for (const s of map.spawns.attack) {
+      const seen = droneFlood(world, [{ x: s.x, z: s.z, y: s.y }], limit);
+      const atDoor = exteriorDoors.some((o) => {
+        const mid = (o.from + o.to) / 2;
+        const out = o.axis === 'x' ? [mid, o.fixed + (o.fixed < 0 ? -1.2 : 1.2)] : [o.fixed + (o.fixed < 0 ? -1.2 : 1.2), mid];
+        return reached(seen, out[0], out[1], map.terrain.surface(out[0], out[1]), 0.6);
+      });
+      say(atDoor, `a drone from the ${s.name} entry can't roll to any door`);
+    }
+    console.log(`  steepest slope: ${map.terrain.steepest().toFixed(0)} degrees; ${cut} of ${cells} ground spots out of reach`);
   }
   const pct = total ? Math.round((lost.length / total) * 100) : 0;
   return { map, problems, total, lost, pct };

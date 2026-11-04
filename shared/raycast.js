@@ -42,6 +42,13 @@ export function raycastWorld(world, o, d, maxT) {
     const hit = rayBox(o, d, b.min, b.max, best ? best.t : maxT);
     if (hit && (!best || hit.t < best.t)) best = { ...hit, box: b };
   }
+  if (world.ground) {
+    const t = world.ground.rayHit(o, d, best ? best.t : maxT);
+    if (t !== null) {
+      const point = [o[0] + d[0] * t, o[1] + d[1] * t, o[2] + d[2] * t];
+      return { t, point, normal: world.ground.normalAt(point[0], point[2]), box: world.ground.box };
+    }
+  }
   if (!best) return null;
   const normal = [0, 0, 0];
   normal[best.axis] = best.sign;

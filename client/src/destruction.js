@@ -3,6 +3,7 @@
 // here from server events so movement prediction and raycasts see the holes.
 
 import * as THREE from 'three';
+import { mapTexture } from './mapTextures.js';
 
 const PANEL_COLOR = new THREE.Color(0xe4ddd0);
 const REINFORCED_COLOR = new THREE.Color(0x4b535e);
@@ -16,12 +17,13 @@ export class DestructionView {
     this.effects = effects;
     this.audio = audio;
     this.charges = new Map(); // id -> { group, led, owner }
+    this.panelColor = world.map.style?.softWall ? new THREE.Color(world.map.style.softWall) : PANEL_COLOR;
     this.blink = 0;
 
     const panels = world.panels;
     this.mesh = new THREE.InstancedMesh(
       new THREE.BoxGeometry(1, 1, 1),
-      new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85 }),
+      new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85, map: world.map.detailed ? mapTexture('drywall') : null }),   // detailed maps: pale panels with visible seams, so soft walls look soft
       panels.length,
     );
     this.mesh.castShadow = true;
@@ -51,7 +53,7 @@ export class DestructionView {
     const c = new THREE.Color();
     for (const p of this.world.panels) {
       this.mesh.setMatrixAt(p.id, this.world.alive[p.id] ? this.matrices[p.id] : HIDDEN);
-      c.copy(this.world.reinforced[p.sectionId] ? REINFORCED_COLOR : p.hatch ? HATCH_COLOR : PANEL_COLOR).multiplyScalar(this.shade[p.id]);
+      c.copy(this.world.reinforced[p.sectionId] ? REINFORCED_COLOR : p.hatch ? HATCH_COLOR : this.panelColor).multiplyScalar(this.shade[p.id]);
       this.mesh.setColorAt(p.id, c);
     }
     this.mesh.instanceMatrix.needsUpdate = true;
