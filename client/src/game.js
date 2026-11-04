@@ -22,7 +22,7 @@ import { World } from '../../shared/world.js';
 import { raycastWorld, rayPlayer } from '../../shared/raycast.js';
 import { buildMap, setupLighting } from './map.js';
 import { LocalPlayer } from './player.js';
-import { RemotePlayer } from './avatars.js';
+import { RemotePlayer, setAvatarViewer } from './avatars.js';
 import { ViewModel } from './weapons.js';
 import { PreRound } from './preRound.js';
 import { PlaceGhost } from './placeGhost.js';
@@ -59,6 +59,7 @@ export class Game {
 
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(settings.fov, 1, 0.05, 300);
+    setAvatarViewer(this.camera);
     this.scene.add(this.camera);
     this.sun = setupLighting(this.scene);
 

@@ -2,7 +2,17 @@
 
 A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite on the client, Node.js + Socket.IO on an authoritative server. One Node process serves both the game client and the realtime server, so the whole thing deploys as a single Render web service.
 
-## Status: Stage N (money and ranks)
+## Status: Stage O (more detailed characters)
+
+The player models are rebuilt from many small shapes in code, with no external assets (`client/src/avatarModel.js`), and posed by a new animation system (`RemotePlayer.poseBody` in `client/src/avatars.js`). The first-person hands (`client/src/hands.js`) are unchanged.
+
+- **Bodies:** proper proportions, headgear (helmet, cap, beanie, boonie, hard hat, beret and more), a face area (goggles, gas mask, visor, balaclava, respirator, night vision), a vest, a rig or an apron with pouches, knee and elbow pads, boots, gloves with fingers, and a backpack, radio, tanks or other kit on the back.
+- **Every operator looks different** (`client/src/operatorLooks.js`, one line per operator): outfit colours come from their icon's colour, and what they carry suits their ability, such as Cinder's tanks and gas mask, Ram's hammer on the back, Mason's apron and hard hat, and the Medic's red-cross bag. A coloured armband on each arm and a chest flash show the team. An enemy looks like a Recruit until your team has seen who they are, the same rule as their icon.
+- **Animations:** arms and legs are solved from where the hands and feet need to be, so the hands stay on the gun and the feet step along the ground in the direction of travel, including sideways and backwards. Walking, running, crouch walking, crawling, leaning (feet stay planted), aiming (the gun comes up to the eye), reloading (the left hand takes the magazine to a pouch and back), rappelling (walking the wall, hand on the rope), vaulting (a hand on the obstacle, knees tucked) and placing gadgets (kneeling, or reaching to a wall). There is also idle breathing.
+- **Hitboxes** (`shared/raycast.js`) are unchanged. Standing, the head, torso, hips and legs stay within 7 cm of them. Arms holding a gun reach outside the torso box, as they did before. In a crouch the knees reach about 22 cm outside it, and lying down the legs about 13 cm.
+- **Detail levels:** about 8,000-10,000 triangles up close, about 1,100-1,700 further than 20 m away or on the Low graphics setting. Each body part is one merged shape shared by every player on the same operator, so a body takes about 15 draw calls, down from about 25.
+
+### Earlier: Stage N (money and ranks)
 
 - **Win bonus:** winning a match pays an extra **800 Money**, shown as its own "Win bonus" line on the end-of-match screen. Not in matches with bots, or if an admin or the owner played in the match at any point (`withAdmins` in `settleMatch`). It's Money only: XP still comes from the normal match rewards, so levelling speed hasn't changed.
 - **No daily Money cap:** the cap (it was 3,500 a day) is gone from the server, the profile and the end-of-match screen. Accounts' old `stats.daily` counters are dropped the next time they finish a match.
@@ -483,13 +493,6 @@ Six new operators, bought with Money in the Operators tab (the original eight an
 
 Written down so they aren't forgotten (see Status for what is built). They are built one at a time, one PR each, and the next one starts once the previous is confirmed. Server memory must stay low enough for Render's 512 MB plan.
 
-### Stage O - More detailed characters
-- Rebuild the player models with much more detail, built from many shapes in code (no external assets), all original designs: proper body proportions, helmet or cap, face area with goggles, mask or visor, tactical vest with pouches, knee and elbow pads, boots, gloves, a backpack or radio.
-- Each operator has a unique look and outfit colours that match their icon, so you can tell who's who at a glance.
-- Better animations: walking, running, crouch walking, crawling, leaning, aiming, reloading, rappelling, vaulting, placing gadgets.
-- Hitboxes still match the new models.
-- Lower-detail versions for far-away players and the Low graphics setting.
-
 ### Stage P - Weapon attachments
 - In the Operators tab, clicking an operator's gun opens a gun workshop: the gun appears large in 3D, drag to rotate it and scroll to zoom.
 - Attachment slots, each shown on the gun as you change it:
@@ -628,6 +631,8 @@ client/
   src/destruction.js  instanced wall panels, charges, explosions
   src/christmasRoom.js the Christmas room behind the Christmas tab
   src/menuChristmas.js snow and lights on the rooftop at Christmas
+  src/avatarModel.js the player bodies, built from shapes, in full and low detail
+  src/operatorLooks.js what each operator wears
   src/map.js       renders the shared map, lighting
   src/mapDetail.js draws detailed maps, merged into one mesh per texture
   src/mapTextures.js textures drawn in code for detailed maps
