@@ -69,7 +69,7 @@ export class AdminPanel {
     // Every skin as a picture with its name, grouped by rarity (Exclusive first), in a scrolling gallery
     const tile = (s) => `<button type="button" class="adm-skin-tile${s.rarity === 'exclusive' ? ' exclusive' : ''}" data-gift-skin="${s.id}" style="--rar:${s.rarityInfo.color}" title="${esc(s.name)}">
         <img alt="" data-thumb="${s.id}"><span class="adm-skin-name">${esc(s.name)}</span></button>`;
-    const skinGallery = ['exclusive', 'legendary', 'epic', 'rare', 'common'].map((r) => `
+    const skinGallery = ['exclusive', 'limited', 'legendary', 'epic', 'rare', 'common'].map((r) => `
         <div class="adm-skin-group${r === 'exclusive' ? ' excl-text' : ''}" style="color:${RARITIES[r].color}">${RARITIES[r].name}${r === 'exclusive' ? ' · gifts only' : ''}</div>
         ${skinList().filter((s) => s.rarity === r && s.source !== 'christmas').map(tile).join('')}`).join('');
     const charmOptions = charmList().map((c) => `<option value="${c.id}">${esc(c.name)} (${RARITIES[c.rarity].name})</option>`).join('');

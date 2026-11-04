@@ -3,7 +3,6 @@
 import { ownedOperatorIds } from '../shared/account.js';
 import { sanitizeSettings } from '../shared/settings.js';
 import { QUESTS } from '../shared/progression.js';
-import { DAILY_MONEY_CAP, earnedToday } from './progression.js';
 import { SKINS } from '../shared/skins.js';
 import { WEAPONS } from '../shared/weapons.js';
 import { OPERATORS } from '../shared/operators.js';
@@ -124,7 +123,6 @@ export function profileOf(row) {
     equippedOperators: equippedOperatorsOf(row),
     christmasCrates: row.christmas_crates || 0,
     skinsUnlocked: unlockAll,
-    dailyMoney: { earned: earnedToday(row.stats), limit: DAILY_MONEY_CAP },
     devTools,
     settings: sanitizeSettings(row.settings),
     quests: questsOf(row),

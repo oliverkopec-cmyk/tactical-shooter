@@ -11,6 +11,7 @@ import { profileOf } from './profile.js';
 export const REWARD = {
   participation: 100,   // for finishing a match
   win: 150,             // on top, for winning it
+  winBonus: 800,        // on top of that, its own line, only against real players with no admins in the match. Gives no XP.
   perRoundWon: 25,
   perKill: 10,
   perHeadshotKill: 5,   // extra, on top of the kill
@@ -27,12 +28,6 @@ export const RANK = {
   winRange: [15, 35],
   lossRange: [-30, -8],
 };
-
-/** The most Money one account can earn from matches and quests per UTC day. Crate refunds don't count. */
-export const DAILY_MONEY_CAP = 3500;
-export const utcDay = (now = Date.now()) => Math.floor(now / 86400000);
-/** Money earned today (0 if the saved day is an earlier one). */
-export const earnedToday = (stats, now = Date.now()) => (stats?.daily?.day === utcDay(now) ? stats.daily.earned || 0 : 0);
 
 /** A match only counts for a player who was in it for at least this many rounds. */
 export const MIN_ROUNDS_TO_COUNT = 2;
@@ -167,39 +162,31 @@ export class Progression {
       const { quests, completed } = advanceQuests(row.quests, match);
       const questMoney = completed.reduce((n, q) => n + q.reward, 0);
 
-      // Daily cap: only this much more Money can be earned today. Match Money is paid first, then quest rewards.
-      const before = earnedToday(row.stats);
-      let allowed = Math.max(0, DAILY_MONEY_CAP - before);
-      const paidMatch = Math.min(money.total, allowed);
-      allowed -= paidMatch;
-      const paidQuests = Math.min(questMoney, allowed);
-      const paid = paidMatch + paidQuests;
-      const capped = paid < money.total + questMoney;
-      const lines = capped ? [...money.lines, { label: 'Daily Money limit reached', amount: paidMatch - money.total }] : money.lines;
-
-      const xp = row.xp + money.total;
+      const xp = row.xp + money.total;     // the win bonus is Money only
       const level = levelFromXp(xp);
+      const bonus = match.won && !match.withBots && !match.withAdmins ? REWARD.winBonus : 0;
+      const lines = bonus ? [...money.lines, { label: 'Win bonus', amount: bonus }] : money.lines;
+      const matchMoney = money.total + bonus;
       const rankPoints = Math.max(0, row.rank_points + rankDelta);
-      const lifetime = row.stats || {};
+      const { daily: _oldCap, ...lifetime } = row.stats || {};   // (`daily` was the old daily Money cap's counter)
       const stats = {
         ...lifetime,
         matches: (lifetime.matches || 0) + 1,
         wins: (lifetime.wins || 0) + (match.won ? 1 : 0),
         kills: (lifetime.kills || 0) + match.kills,
         deaths: (lifetime.deaths || 0) + match.deaths,
-        daily: { day: utcDay(), earned: before + paid },
         opMatches: countOperators(lifetime.opMatches, match.operators),
       };
       const { rows } = await this.db.query(
         `UPDATE accounts SET money = money + $2, xp = $3, level = $4, rank_points = $5, quests = $6, stats = $7 WHERE id = $1 RETURNING *`,
-        [accountId, paid, xp, level, rankPoints, JSON.stringify(quests), JSON.stringify(stats)],
+        [accountId, matchMoney + questMoney, xp, level, rankPoints, JSON.stringify(quests), JSON.stringify(stats)],
       );
       const updated = rows[0];
       this.pushProfile(updated);
       return {
         won: match.won, score: match.score, rounds: match.rounds,
         stats: { kills: match.kills, deaths: match.deaths, headshots: match.headshots, objSecs: Math.floor(match.objSecs || 0), plants: match.plants },
-        money: { lines, total: paidMatch, quests: completed, questTotal: paidQuests, balance: updated.money, cap: { limit: DAILY_MONEY_CAP, earnedToday: before + paid, reached: capped } },
+        money: { lines, total: matchMoney, quests: completed, questTotal: questMoney, balance: updated.money },
         xp: { gained: money.total, total: xp, levelBefore: row.level, levelAfter: level },
         rank: { before: row.rank_points, after: rankPoints, delta: rankPoints - row.rank_points },
         quests: profileOf(updated).quests,

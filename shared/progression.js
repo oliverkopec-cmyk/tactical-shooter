@@ -3,41 +3,34 @@
 
 // ---------------------------------------------------------------- ranks
 
-export const RANK_POINTS_PER_TIER = 100;
-const ROMAN = ['I', 'II', 'III'];
-
-// Five ranks with three tiers each (I lowest), then Champion with no tiers.
+// Six ranks, no tiers. Each takes 200 points to climb, and the last climb, from Diamond to Champion, takes 500.
 export const RANKS = [
-  { id: 'bronze', name: 'Bronze', color: '#c0753a' },
-  { id: 'silver', name: 'Silver', color: '#b9c3cf' },
-  { id: 'gold', name: 'Gold', color: '#f0b43c' },
-  { id: 'platinum', name: 'Platinum', color: '#4fd1c5' },
-  { id: 'diamond', name: 'Diamond', color: '#6aa8ff' },
+  { id: 'bronze', name: 'Bronze', color: '#c0753a', floor: 0 },
+  { id: 'silver', name: 'Silver', color: '#b9c3cf', floor: 200 },
+  { id: 'gold', name: 'Gold', color: '#f0b43c', floor: 400 },
+  { id: 'platinum', name: 'Platinum', color: '#4fd1c5', floor: 600 },
+  { id: 'diamond', name: 'Diamond', color: '#6aa8ff', floor: 800 },
+  { id: 'champion', name: 'Champion', color: '#d65cff', floor: 1300 },
 ];
-export const CHAMPION = { id: 'champion', name: 'Champion', color: '#d65cff' };
-const CHAMPION_AT = RANKS.length * 3 * RANK_POINTS_PER_TIER;   // 1500
+
+/** Position in the rank ladder (0 = Bronze ... 5 = Champion), to tell promotions from demotions. */
+export function rankStep(points) {
+  const p = Math.max(0, Math.floor(points || 0));
+  let step = 0;
+  while (step + 1 < RANKS.length && p >= RANKS[step + 1].floor) step++;
+  return step;
+}
 
 /**
  * Everything a menu needs to show for a number of rank points:
- * { id, name, tier (1-3, 0 for Champion), label, color, floor, ceiling, progress (0-1), nextLabel }
+ * { id, name, label, color, floor, ceiling (null for Champion), progress (0-1), nextLabel }
  */
 export function rankInfo(points) {
   const p = Math.max(0, Math.floor(points || 0));
-  if (p >= CHAMPION_AT) {
-    return { ...CHAMPION, tier: 0, label: 'Champion', floor: CHAMPION_AT, ceiling: null, progress: 1, nextLabel: null };
-  }
-  const step = Math.floor(p / RANK_POINTS_PER_TIER);        // 0..14
-  const rank = RANKS[Math.floor(step / 3)], tier = (step % 3) + 1;
-  const floor = step * RANK_POINTS_PER_TIER;
-  const next = step + 1 >= RANKS.length * 3 ? CHAMPION.name : `${RANKS[Math.floor((step + 1) / 3)].name} ${ROMAN[(step + 1) % 3]}`;
-  return {
-    ...rank, tier, label: `${rank.name} ${ROMAN[tier - 1]}`,
-    floor, ceiling: floor + RANK_POINTS_PER_TIER, progress: (p - floor) / RANK_POINTS_PER_TIER, nextLabel: next,
-  };
+  const rank = RANKS[rankStep(p)], next = RANKS[rankStep(p) + 1];
+  if (!next) return { ...rank, label: rank.name, ceiling: null, progress: 1, nextLabel: null };
+  return { ...rank, label: rank.name, ceiling: next.floor, progress: (p - rank.floor) / (next.floor - rank.floor), nextLabel: next.name };
 }
-
-/** Position in the rank ladder (0 = Bronze I ... 15 = Champion), to tell promotions from demotions. */
-export const rankStep = (points) => Math.min(RANKS.length * 3, Math.floor(Math.max(0, points || 0) / RANK_POINTS_PER_TIER));
 
 // ---------------------------------------------------------------- levels
 

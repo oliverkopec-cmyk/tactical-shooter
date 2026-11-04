@@ -1419,7 +1419,7 @@ button.primary:hover:not(:disabled) { background: linear-gradient(180deg, #ffd47
   border: 1.5px solid color-mix(in srgb, var(--rar) 70%, transparent); box-shadow: 0 0 0 0 transparent, 0 10px 24px rgba(0, 0, 0, 0.35), 0 0 22px -10px var(--rar);
   transition: transform 0.22s var(--ease-out, ease-out), box-shadow 0.22s, border-color 0.22s; }
 .shop-card:hover { transform: translateY(-5px) scale(1.015); border-color: var(--rar); box-shadow: 0 16px 30px rgba(0, 0, 0, 0.45), 0 0 34px -6px var(--rar); }
-.shop-card.r-legendary { animation: rar-pulse 2.6s ease-in-out infinite; }
+.shop-card.r-legendary, .shop-card.r-limited { animation: rar-pulse 2.6s ease-in-out infinite; }
 @keyframes rar-pulse { 0%, 100% { box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35), 0 0 20px -10px var(--rar); } 50% { box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35), 0 0 34px -4px var(--rar); } }
 .shop-card.just-bought { animation: bought 1.1s ease-out; }
 @keyframes bought { 0% { transform: scale(1); } 30% { transform: scale(1.04); box-shadow: 0 0 50px var(--rar); } 100% { transform: scale(1); } }
