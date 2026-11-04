@@ -7,7 +7,8 @@ import { WEAPONS } from '../../shared/weapons.js';
 import { UTILITIES } from '../../shared/utilities.js';
 import { SKINS, RARITIES, skinList, hexColor, CRATE } from '../../shared/skins.js';
 import { operatorIcon, sideSymbol } from './operatorIcons.js';
-import { equipSkin, equipOperator, openCrate as openCrateRequest, buyOperator, equipCharm } from './account.js';
+import { equipSkin, equipOperator, openCrate as openCrateRequest, buyOperator, equipCharm, equipAttachment } from './account.js';
+import { GunWorkshop } from './gunWorkshop.js';
 import { CHARMS, charmList, charmUnlockLevel } from '../../shared/charms.js';
 import { PRESENT_BASE, countdownText } from '../../shared/christmas.js';
 import { ShopCards } from './shopCards.js';
@@ -69,6 +70,18 @@ export class Menu {
     });
     $('op-list').addEventListener('mouseleave', () => $('name-tip').classList.add('hidden'));
     $('op-detail').addEventListener('click', (e) => this.onDetailClick(e));
+    this.workshop = new GunWorkshop({
+      getAccount,
+      equipAttachment: async (gun, slot, value) => this.apply(equipAttachment(gun, slot, value)),
+      equipSkin: async (gun, id) => this.apply(equipSkin(gun, id)),
+      equipCharm: async (gun, id) => this.apply(equipCharm(gun, id)),
+      skinTiles: (gun) => this.skinTiles(gun),
+      charmTiles: (gun) => this.charmTiles(gun),
+      skinName: (id) => SKINS[id]?.name || 'Default',
+      charmName: (id) => CHARMS[id]?.name || 'None',
+      goToShop: () => this.setTab('shop'),
+      onClose: () => { if (this.active) this.scene?.start(); this.refresh(); },
+    });
     this.bindCrateOverlay();
     this.bindGifts();
     this.bindChristmasDev();
@@ -129,7 +142,7 @@ export class Menu {
     const a = this.getAccount();
     const id = a.equippedOperators?.menu && OPERATORS[a.equippedOperators.menu] ? a.equippedOperators.menu : 'recruit_atk';
     const op = OPERATORS[id], weaponId = op.weapons.primary;
-    this.scene?.setLook({ team: op.team, operatorId: id, weaponId, skinId: a.equippedSkins?.[weaponId] || null });
+    this.scene?.setLook({ team: op.team, operatorId: id, weaponId, skinId: a.equippedSkins?.[weaponId] || null, attachments: a.equippedAttachments?.[weaponId] || null });
   }
 
   // ---------------------------------------------------------------- operators tab
@@ -168,32 +181,13 @@ export class Menu {
         <span class="slot">${slot === 'primary' ? 1 : 2}</span>
         <span class="gun-name"><b>${esc(w.name)}</b><i>${esc(w.kind)}</i></span>
         <span class="gun-skin${skin?.rarity === 'exclusive' ? ' excl-text' : ''}"${rar ? ` style="color:${rar.color}"` : ''}>${skin ? esc(skin.name) : 'Default'}</span>
+        <span class="gun-open">Workshop ›</span>
       </button>`;
     };
     const w = WEAPONS[op.weapons[this.slot]];
     const current = a.equippedSkins?.[w.id] || null;
-    const owns = new Set(a.ownedSkins[w.id] || []);
-    const tiles = [`<button type="button" class="skin-tile${current === null ? ' equipped' : ''}" data-skin="" title="The gun's original look">
-        <span class="skin-swatch" style="background:linear-gradient(135deg,${hexColor(w.color)},${hexColor(w.accent)})"></span><span class="skin-name">Default</span><span class="skin-rar" style="color:#8b95a3">Standard</span></button>`]
-      // Exclusive (gift) and shop skins only show once you have them; the crate's skins always show, locked or not
-      .concat(skinList().filter((s) => (s.rarity !== 'exclusive' && !s.source) || owns.has(s.id)).map((s) => {
-        const ok = owns.has(s.id), excl = s.rarity === 'exclusive';
-        return `<button type="button" class="skin-tile${current === s.id ? ' equipped' : ''}${ok ? '' : ' locked'}${excl ? ' exclusive' : ''}" data-skin="${s.id}" style="--rar:${s.rarityInfo.color}" title="${ok ? '' : 'Not owned for this gun yet: click to go to the Shop'}">
-          ${swatch(s)}
-          <span class="skin-name">${esc(s.name)}</span><span class="skin-rar${excl ? ' excl-text' : ''}" style="color:${s.rarityInfo.color}">${excl ? EXCL_TAG : s.rarityInfo.name}${ok ? '' : ' · 🔒'}</span></button>`;
-      })).join('');
-
-    const ownedCharms = new Set(a.ownedCharms || []);
     const currentCharm = a.equippedCharms?.[w.id] || null;
-    const charmTiles = [`<button type="button" class="skin-tile${currentCharm === null ? ' equipped' : ''}" data-charm="" title="No charm">
-        <span class="skin-swatch charm-none"></span><span class="skin-name">None</span><span class="skin-rar" style="color:#8b95a3">&nbsp;</span></button>`]
-      .concat(charmList().filter((c) => !c.source || ownedCharms.has(c.id)).map((c) => {   // Christmas charms only show once you have them
-        const ok = ownedCharms.has(c.id), rar = RARITIES[c.rarity], lvl = charmUnlockLevel(c.id);
-        const why = lvl ? `Unlocks at level ${lvl}, or from the charm crate` : 'From the charm crate in the Shop';
-        return `<button type="button" class="skin-tile${currentCharm === c.id ? ' equipped' : ''}${ok ? '' : ' locked'}" data-charm="${c.id}" style="--rar:${rar.color}" title="${ok ? '' : why}">
-          <span class="skin-swatch charm-dot" style="background:${rar.color}">${esc(c.name[0])}</span>
-          <span class="skin-name">${esc(c.name)}</span><span class="skin-rar" style="color:${rar.color}">${rar.name}${ok ? '' : ` · 🔒${lvl ? ` L${lvl}` : ''}`}</span></button>`;
-      })).join('');
+    const tiles = this.skinTiles(w.id), charmTiles = this.charmTiles(w.id);
 
     $('op-detail').innerHTML = `
       <div class="detail-head">
@@ -216,7 +210,39 @@ export class Menu {
       <p class="error">${esc(this.error)}</p>`;
 
     const skinId = current && SKINS[current] ? current : null;
-    this.scene?.setLook({ team: op.team, operatorId: op.id, weaponId: w.id, skinId, charmId: currentCharm && CHARMS[currentCharm] ? currentCharm : null });
+    this.scene?.setLook({ team: op.team, operatorId: op.id, weaponId: w.id, skinId, charmId: currentCharm && CHARMS[currentCharm] ? currentCharm : null, attachments: a.equippedAttachments?.[w.id] || null });
+  }
+
+  /** The skin choices for a gun (the Operators tab and the gun workshop). */
+  skinTiles(gunId) {
+    const a = this.getAccount(), w = WEAPONS[gunId];
+    const current = a.equippedSkins?.[w.id] || null;
+    const owns = new Set(a.ownedSkins[w.id] || []);
+    return [`<button type="button" class="skin-tile${current === null ? ' equipped' : ''}" data-skin="" title="The gun's original look">
+        <span class="skin-swatch" style="background:linear-gradient(135deg,${hexColor(w.color)},${hexColor(w.accent)})"></span><span class="skin-name">Default</span><span class="skin-rar" style="color:#8b95a3">Standard</span></button>`]
+      // Exclusive (gift) and shop skins only show once you have them; the crate's skins always show, locked or not
+      .concat(skinList().filter((s) => (s.rarity !== 'exclusive' && !s.source) || owns.has(s.id)).map((s) => {
+        const ok = owns.has(s.id), excl = s.rarity === 'exclusive';
+        return `<button type="button" class="skin-tile${current === s.id ? ' equipped' : ''}${ok ? '' : ' locked'}${excl ? ' exclusive' : ''}" data-skin="${s.id}" style="--rar:${s.rarityInfo.color}" title="${ok ? '' : 'Not owned for this gun yet: click to go to the Shop'}">
+          ${swatch(s)}
+          <span class="skin-name">${esc(s.name)}</span><span class="skin-rar${excl ? ' excl-text' : ''}" style="color:${s.rarityInfo.color}">${excl ? EXCL_TAG : s.rarityInfo.name}${ok ? '' : ' · 🔒'}</span></button>`;
+      })).join('');
+  }
+
+  /** The charm choices for a gun. */
+  charmTiles(gunId) {
+    const a = this.getAccount(), w = WEAPONS[gunId];
+    const ownedCharms = new Set(a.ownedCharms || []);
+    const currentCharm = a.equippedCharms?.[w.id] || null;
+    return [`<button type="button" class="skin-tile${currentCharm === null ? ' equipped' : ''}" data-charm="" title="No charm">
+        <span class="skin-swatch charm-none"></span><span class="skin-name">None</span><span class="skin-rar" style="color:#8b95a3">&nbsp;</span></button>`]
+      .concat(charmList().filter((c) => !c.source || ownedCharms.has(c.id)).map((c) => {   // Christmas charms only show once you have them
+        const ok = ownedCharms.has(c.id), rar = RARITIES[c.rarity], lvl = charmUnlockLevel(c.id);
+        const why = lvl ? `Unlocks at level ${lvl}, or from the charm crate` : 'From the charm crate in the Shop';
+        return `<button type="button" class="skin-tile${currentCharm === c.id ? ' equipped' : ''}${ok ? '' : ' locked'}" data-charm="${c.id}" style="--rar:${rar.color}" title="${ok ? '' : why}">
+          <span class="skin-swatch charm-dot" style="background:${rar.color}">${esc(c.name[0])}</span>
+          <span class="skin-name">${esc(c.name)}</span><span class="skin-rar" style="color:${rar.color}">${rar.name}${ok ? '' : ` · 🔒${lvl ? ` L${lvl}` : ''}`}</span></button>`;
+      })).join('');
   }
 
   async onDetailClick(e) {
@@ -231,7 +257,13 @@ export class Menu {
     const equipBtn = e.target.closest('[data-equip-op]');
     if (equipBtn && !equipBtn.disabled) { await this.apply(equipOperator(equipBtn.dataset.equipOp)); return; }
     const gun = e.target.closest('[data-slot]');
-    if (gun) { this.slot = gun.dataset.slot; this.renderOperators(); return; }
+    if (gun) {
+      this.slot = gun.dataset.slot;
+      this.renderOperators();
+      this.scene?.stop();             // nothing else needs drawing behind the workshop
+      this.workshop.open(gun.dataset.gun);
+      return;
+    }
     const charmTile = e.target.closest('[data-charm]');
     if (charmTile) {
       if (charmTile.classList.contains('locked')) { this.setTab('shop'); return; }

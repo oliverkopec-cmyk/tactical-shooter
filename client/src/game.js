@@ -28,6 +28,7 @@ import { PreRound } from './preRound.js';
 import { PlaceGhost } from './placeGhost.js';
 import { PLACE } from '../../shared/placing.js';
 import { sightOf } from './gunModels.js';
+import { attachmentKey, loudnessOf } from '../../shared/attachments.js';
 import { Effects } from './effects.js';
 import { Audio } from './audio.js';
 import { DestructionView } from './destruction.js';
@@ -44,7 +45,7 @@ import { quality, pixelRatioFor, PRESETS, DISTANCES, SHADOWS, EFFECT_LEVELS } fr
 import { DRONE } from '../../shared/drone.js';
 import { actionFor, mouseCode, keyFor } from './controls.js';
 
-const sightCache = new Map();   // gun id -> { kind, zoom }
+const sightCache = new Map();   // gun and attachments -> { kind, zoom }
 const TRACER_OFFSET = new THREE.Vector3(0.2, -0.17, -0.9); // muzzle, roughly, in camera space
 
 export class Game {
@@ -85,6 +86,7 @@ export class Game {
     this.abilityCdEnd = 0;
     this.stunUntil = 0;
     this.mySkins = {};
+    this.myAttachments = {};
     this.myOwned = [];
     this.roster = [];          // everyone's operator (enemies show ? until your team has seen them) and whether they're alive
     this.stunMs = 0;
@@ -118,7 +120,7 @@ export class Game {
       backToDrone: () => this.closePrepLoadout(),
       getAccount: () => this.getAccount?.() || null,
       setAccount: (profile) => this.setAccount?.(profile),
-      onSkinsChanged: (skins, charms) => { this.mySkins = skins; this.myCharms = charms; },
+      onSkinsChanged: (skins, charms, attachments) => { this.mySkins = skins; this.myCharms = charms; if (attachments) { this.myAttachments = attachments; if (this.local) this.local.attachments = attachments; } },
       toast: (msg) => this.ui.toast(msg),
     });
     this.lastFrame = performance.now();
@@ -172,7 +174,7 @@ export class Game {
     network.on('roundStart', (payload) => this.newRound(payload));
     network.on('spawnChoice', ({ choice }) => { this.spawnChoice = choice; });
     network.on('spawnPicks', (picks) => { this.spawnPicks = picks; });
-    network.on('memberLook', ({ id, skins, charms }) => this.onMemberLook(id, skins, charms));
+    network.on('memberLook', ({ id, skins, charms, attachments }) => this.onMemberLook(id, skins, charms, attachments));
     network.on('attackerSpawn', ({ state }) => { if (this.running) this.local?.teleport(state); });
     network.on('defenderSpawn', ({ state }) => { if (this.running) this.local?.teleport(state); });
     network.on('pingResult', ({ hit }) => this.audio.beep(hit ? 1500 : 300, hit ? 0.09 : 0.06, 0.15, 'triangle'));
@@ -423,6 +425,7 @@ export class Game {
     this.myTeam = me.team;
     this.mySkins = me.skins || {};   // my equipped gun skins, drawn on my own gun
     this.myCharms = me.charms || {};   // and my gun charms
+    this.myAttachments = me.attachments || {};   // and what is fitted to my guns
     this.myOwned = me.owned || [];   // operators I own (the select screen locks the others)
     this.myOpMatches = me.opMatches || {};   // matches played with each operator (the badges on the select screen)
     this.members.clear();
@@ -445,6 +448,7 @@ export class Game {
         if (type === 'utility' && util?.charges > 0 && ['frag', 'impact', 'flash', 'smoke'].includes(util.id)) this.viewModel.throwUtility(util.id);
       },
     });
+    this.local.attachments = this.myAttachments;
     this.local.onPing = (down) => this.onPingKey(down);
     this.local.onLoadoutKey = () => (this.prepLoadout ? this.closePrepLoadout() : this.openPrepLoadout());
     this.local.onPlaceKey = (action, down) => { this.heldPlace = down ? this.placeKindFor(action) : null; };
@@ -573,11 +577,15 @@ export class Game {
   }
 
   /** A player changed skins or charms on the loadout screen: draw their guns with the new look. */
-  onMemberLook(id, skins, charms) {
-    if (id === this.network.id) { this.mySkins = skins; this.myCharms = charms; return; }
+  onMemberLook(id, skins, charms, attachments) {
+    if (id === this.network.id) {
+      this.mySkins = skins; this.myCharms = charms; this.myAttachments = attachments || {};
+      if (this.local) this.local.attachments = this.myAttachments;
+      return;
+    }
     const r = this.remotes.get(id);
     if (!r) return;
-    r.skins = skins || {}; r.charms = charms || {};
+    r.skins = skins || {}; r.charms = charms || {}; r.attachments = attachments || {};
     const weaponId = r.weaponId;
     r.weaponId = null;
     if (r.shield) { r.shieldMount.clear(); r.shield = null; }
@@ -622,9 +630,10 @@ export class Game {
   }
 
   /** Sight kind and zoom of a gun, worked out once per gun. */
-  sightFor(id) {
-    if (!sightCache.has(id)) sightCache.set(id, sightOf(id));
-    return sightCache.get(id);
+  sightFor(id, att) {
+    const key = `${id}|${attachmentKey(att)}`;
+    if (!sightCache.has(key)) sightCache.set(key, sightOf(id, att));
+    return sightCache.get(key);
   }
 
   /** Narrow the field of view by a zoom factor (1 = the player's FOV setting). */
@@ -858,12 +867,13 @@ export class Game {
       else if (hitPlayer) this.effects.blood(end);
       else if (wall) this.impact(wall);
     }
-    this.viewModel.fire(weaponId);
-    const rc = gunTuning(weaponId).recoil;
+    const myAtt = this.myAttachments[weaponId];
+    this.viewModel.fire(weaponId, myAtt);
+    const rc = gunTuning(weaponId, myAtt).recoil;
     this.muzzleLight.color.setHex(rc.flashColor);
     this.muzzleLight.intensity = 9 * rc.flash;
     this.effects.muzzleSmoke([muzzle.x, muzzle.y, muzzle.z], rc.smoke);
-    this.audio.shot(weaponId, null, null, this.soundEnv(null));
+    this.audio.shot(weaponId, null, null, { ...this.soundEnv(null), loudness: loudnessOf(myAtt) });
     this.audio.mech(weaponId);
   }
 
@@ -896,10 +906,10 @@ export class Game {
       const wall = raycastWorld(this.world, from, dir, len + 0.1);
       if (wall && wall.t > len - 0.2) this.impact(wall);
     }
-    const env = this.soundEnv(from);
-    this.audio.shot(w, from, this.listener(), env);
+    const env = this.soundEnv(from), theirAtt = r.attachments?.[w];
+    this.audio.shot(w, from, this.listener(), { ...env, loudness: loudnessOf(theirAtt) });
     this.audio.mech(w, from, this.listener(), env.clear);
-    const yaw = r.pose.yaw, rc = WEAPONS[w] && gunTuning(w).recoil;
+    const yaw = r.pose.yaw, rc = WEAPONS[w] && gunTuning(w, theirAtt).recoil;
     if (rc && Math.hypot(from[0] - this.camera.position.x, from[2] - this.camera.position.z) < 25) {
       this.effects.casing(from, [Math.cos(yaw), 0, -Math.sin(yaw)], rc.casing);
       this.effects.muzzleSmoke(from, rc.smoke * 0.7);
@@ -1520,15 +1530,16 @@ export class Game {
 
     const w = local.weaponDef;
     // Aiming down sights: zoom by the sight on the drawn gun
-    const sight = this.sightFor(local.weapon.id);
+    const myAtt = this.myAttachments[local.weapon.id];
+    const sight = this.sightFor(local.weapon.id, myAtt);
     const ads = local.alive && !inDrone && !noBody && !watching && !replaying ? s.ads || 0 : 0;
     const scoped = sight.kind === 'scope' && ads > 0.85;
     local.adsZoom = sight.zoom;
     this.setZoom(1 + (sight.zoom - 1) * ads * ads * (3 - 2 * ads));
-    this.ui.setSights(ads, sight.kind);
+    this.ui.setSights(ads, sight);
     const otherId = local.weapon.other?.id, sideShield = WEAPONS[otherId]?.shield ? { id: otherId, skin: this.mySkins[otherId], charm: this.myCharms?.[otherId] } : null;
     if (!replaying) this.viewModel.setOutfit(TEAM_COLORS[this.myTeam] ?? 0x888888, OPERATORS[this.loadout.op]?.color ?? 0xffffff);
-    if (!replaying) this.viewModel.setWeapon(local.weapon.id, this.mySkins[local.weapon.id], this.myCharms?.[local.weapon.id], sideShield);
+    if (!replaying) this.viewModel.setWeapon(local.weapon.id, this.mySkins[local.weapon.id], this.myCharms?.[local.weapon.id], sideShield, myAtt);
     this.muzzleLight.intensity *= Math.exp(-dt * 45);
     if (!replaying && local.weapon.id !== this.warmGun && this.audio.ctx) {
       // Render the sounds of the guns you carry now, so the first shot doesn't wait for them

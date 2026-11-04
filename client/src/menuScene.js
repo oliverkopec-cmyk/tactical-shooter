@@ -6,6 +6,7 @@
 import * as THREE from 'three';
 import { TEAM_COLORS } from '../../shared/constants.js';
 import { OPERATORS } from '../../shared/operators.js';
+import { attachmentKey } from '../../shared/attachments.js';
 import { RemotePlayer } from './avatars.js';
 import { makeGunModel } from './weapons.js';
 import { attachCharm } from './charmModels.js';
@@ -272,11 +273,12 @@ export class MenuScene {
   /** What to show: { team, operatorId, weaponId, skinId } */
   setLook(look) {
     this.look = { ...this.look, ...look };
-    const { team, operatorId, weaponId, skinId, charmId } = this.look;
+    const { team, operatorId, weaponId, skinId, charmId, attachments } = this.look;
     if (!this.avatar || this.avatarTeam !== team) this.buildAvatar(team);
     this.avatar.setOperator(operatorId);
     this.avatar.skins = { [weaponId]: skinId };
     this.avatar.charms = { [weaponId]: charmId };
+    this.avatar.attachments = attachments ? { [weaponId]: attachments } : {};
     this.avatar.weaponId = null;                 // force the gun to be rebuilt with the new skin
     this.avatar.setWeapon(weaponId);
     const color = OPERATORS[operatorId]?.color ?? TEAM_COLORS[team];
@@ -285,12 +287,12 @@ export class MenuScene {
     this.padLight.color.setHex(color);
     this.rim.color.setHex(color).lerp(new THREE.Color(0xffffff), 0.35);
 
-    const key = `${weaponId}|${skinId || ''}|${charmId || ''}`;
+    const key = `${weaponId}|${skinId || ''}|${charmId || ''}|${attachmentKey(attachments)}`;
     if (key !== this.showcaseKey) {
       this.showcaseKey = key;
       if (this.showcase) this.scene.remove(this.showcase);
       const holder = new THREE.Group();
-      const gun = makeGunModel(weaponId, skinId);
+      const gun = makeGunModel(weaponId, skinId, attachments);
       attachCharm(gun, charmId);
       this.showcaseGun = gun;
       gun.userData.hold && gun.position.set(0, 0, 0);

@@ -1,7 +1,7 @@
 // DOM screens: home (name + create/join), room lobby, and the in-game HUD.
 
 import { MAX_PER_TEAM, MAX_HEALTH } from '../../shared/constants.js';
-import { WEAPONS, weaponStats } from '../../shared/weapons.js';
+import { WEAPONS, weaponStats, gunFor } from '../../shared/weapons.js';
 import { UTILITIES } from '../../shared/utilities.js';
 import { OPERATORS } from '../../shared/operators.js';
 import { settings, setSetting, setKeybinds, onSettingsChange } from './settings.js';
@@ -371,6 +371,8 @@ export class UI {
     $('profile-level').textContent = `· Level ${p.level} (${(p.xp - xpForLevel(p.level)).toLocaleString()} / ${(xpForLevel(p.level + 1) - xpForLevel(p.level)).toLocaleString()} XP)`;
     $('profile-money').textContent = p.money.toLocaleString();
     $('profile-polish').textContent = p.polishMoney.toLocaleString();
+    this.myAttachments = p.equippedAttachments;   // the stat card on a gun shows it as you've set it up
+    this.tipGun = null;
     const rank = rankInfo(p.rankPoints);
     $('profile-rank-icon').innerHTML = rankIcon(rank, 44);
     $('profile-rank-label').textContent = rank.label;
@@ -600,11 +602,20 @@ export class UI {
     this.hud.classList.toggle('dead', !alive);
   }
 
-  /** Aiming down sights (ads 0..1) through a sight of this kind: the crosshair goes, a red dot or a scope view comes. */
-  setSights(ads, kind) {
+  /** Aiming down sights (ads 0..1) through this sight: the crosshair goes, and a red dot, a holographic ring or a scope's view comes. */
+  setSights(ads, sight) {
     this.hud.classList.toggle('aiming', ads > 0.5);
+    const kind = sight.kind;
     $('red-dot').classList.toggle('hidden', !(kind === 'dot' && ads > 0.7));
-    $('scope').classList.toggle('hidden', !(kind === 'scope' && ads > 0.85));
+    $('holo-ring').classList.toggle('hidden', !(kind === 'holo' && ads > 0.7));
+    const scope = $('scope');
+    const scoped = kind === 'scope' && ads > 0.85;
+    scope.classList.toggle('hidden', !scoped);
+    if (scoped && this.scopeId !== sight.id) {
+      this.scopeId = sight.id;
+      scope.dataset.sight = sight.id;
+      scope.style.setProperty('--lens', `${Math.round((sight.lens ?? 0.86) * 100)}`);
+    }
   }
 
   setCrosshairGap(px) {
@@ -716,7 +727,7 @@ export class UI {
     if (!w || !tip) return;
     if (this.tipGun !== id) {
       this.tipGun = id;
-      const rows = weaponStats(w).map((s) => `
+      const rows = weaponStats(gunFor(w.id, this.myAttachments) || w).map((s) => `
         <div class="tip-row"><span>${s.label}</span><div class="tip-bar"><i style="width:${Math.round(s.frac * 100)}%"></i></div><b>${s.text}</b></div>`).join('');
       tip.innerHTML = `
         <div class="tip-head"><b>${escapeHtml(w.name)}</b><span>${escapeHtml(w.kind)}${w.auto ? ' · auto' : ' · semi-auto'}</span></div>

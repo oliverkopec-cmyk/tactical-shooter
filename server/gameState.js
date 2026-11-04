@@ -6,7 +6,7 @@
 
 import { getMap, findOpening } from '../shared/map.js';
 import { createPlayerState, stepPlayer, weaponInput } from '../shared/movement.js';
-import { createWeaponState, stepWeapon, gunMobility, shieldCover } from '../shared/weapons.js';
+import { createWeaponState, stepWeapon, gunMobility, gunAimTime, shieldCover } from '../shared/weapons.js';
 import { UTILITIES, ABILITY_STATS } from '../shared/utilities.js';
 import { MIN_ROUNDS_TO_COUNT } from './progression.js';
 import { OPERATORS, defaultOperator, operatorsFor, speedMultiplier, damageMultiplier } from '../shared/operators.js';
@@ -377,7 +377,7 @@ export class GameState {
   applyOperator(p) {
     this.rosterDirty = true;
     const op = OPERATORS[p.operator];
-    p.weapon = createWeaponState(op.weapons.primary, op.weapons.secondary);
+    p.weapon = createWeaponState(op.weapons.primary, op.weapons.secondary, p.member.attachments);
     p.state.speedMul = speedMultiplier(op);
     p.ability = op.ability ? { charges: op.ability.charges ?? 0, cdUntil: 0, shieldId: null } : null;
     p.placedHeavy = null;
@@ -937,10 +937,11 @@ export class GameState {
           // Defenders can't leave the building during prep
           const solid = phase === PHASE.PREP && p.member.team === 'defense' ? this.world.barrierView : this.world;
           p.state.gunMul = gunMobility(p.weapon);
+          p.state.aimMul = gunAimTime(p.weapon, p.member.attachments);
           stepPlayer(p.state, input, input.dt, solid);
           if (p.state.swing >= 0) this.onSwingIn(id, p);
           const wasReloading = p.weapon.reload > 0;
-          if (stepWeapon(p.weapon, weaponInput(p.state, input), input.dt)) this.fire(id, p, input, wallNow);
+          if (stepWeapon(p.weapon, weaponInput(p.state, input), input.dt, p.member.attachments)) this.fire(id, p, input, wallNow);
           if (!wasReloading && p.weapon.reload > 0) this.voice(id, p, 'reload', wallNow);
         }
         p.lastSeq = input.seq;
@@ -1166,7 +1167,7 @@ export class GameState {
       mode: this.mode,
       defuser: this.mode === 'defuser' ? this.defuser.view(team) : null,
       players: [...this.players.entries()].map(([id, p]) => ({
-        id, name: p.member.name, owner: !!p.member.owner, tester: !!p.member.tester, bot: !!p.member.bot, team: p.member.team, skins: p.member.skins || {}, charms: p.member.charms || {}, owned: p.member.owned || [], opMatches: p.member.opMatches || {}, state: p.state,
+        id, name: p.member.name, owner: !!p.member.owner, tester: !!p.member.tester, bot: !!p.member.bot, team: p.member.team, skins: p.member.skins || {}, charms: p.member.charms || {}, attachments: p.member.attachments || {}, owned: p.member.owned || [], opMatches: p.member.opMatches || {}, state: p.state,
         weapon: this.canSee(team, p) ? p.weapon : null, health: p.health, alive: p.alive,
         charges: p.charges, placed: !!p.placedCharge, spawnChoice: p.spawnChoice, operator: this.canSee(team, p) ? p.operator : null,
       })),

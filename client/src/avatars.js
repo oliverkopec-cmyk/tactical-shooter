@@ -9,7 +9,7 @@ import { bodyHeight } from '../../shared/movement.js';
 import { makeGunModel, animateGun } from './weapons.js';
 import { attachCharm } from './charmModels.js';
 import { OPERATORS, defaultOperator } from '../../shared/operators.js';
-import { WEAPONS } from '../../shared/weapons.js';
+import { WEAPONS, gunFor } from '../../shared/weapons.js';
 import { SHIELD_HEIGHT } from '../../shared/raycast.js';
 import { bodyShapes, bodyMesh, LIMBS } from './avatarModel.js';
 import { quality } from './graphics.js';
@@ -140,10 +140,11 @@ function makeMarker(fill = '#ff2a2a') {
 }
 
 export class RemotePlayer {
-  constructor(scene, { id, name, team, skins, charms }, isTeammate) {
+  constructor(scene, { id, name, team, skins, charms, attachments }, isTeammate) {
     this.id = id;
     this.skins = skins || {};   // gun skins this player has equipped: { weaponId: skinId }
     this.charms = charms || {}; // charms hanging from their guns: { weaponId: charmId }
+    this.attachments = attachments || {}; // what is fitted to their guns: { weaponId: attachments }
     this.name = name;
     this.team = team;
     this.buffer = []; // [{ t, s }]
@@ -282,7 +283,7 @@ export class RemotePlayer {
       this.gun = null; this.hold = null; this.muzzle = null;
       return;
     }
-    const gun = makeGunModel(id, this.skins[id]);
+    const gun = makeGunModel(id, this.skins[id], this.attachments[id]);
     gun.scale.multiplyScalar(1.3);   // keeps the gun's own size
     gun.traverse((o) => { if (o.isMesh) o.castShadow = true; });
     this.gunMount.add(gun);
@@ -324,7 +325,7 @@ export class RemotePlayer {
     if (s.o) this.setOperator(s.o);
     this.reloading = !!(s.w && s.w.reload > 0);
     // How far through the reload (0 to 1). w.reload counts the seconds left.
-    if (s.w) this.reloadFrac = this.reloading ? Math.max(0, 1 - s.w.reload / (WEAPONS[s.w.id]?.reloadTime || 2.4)) : -1;
+    if (s.w) this.reloadFrac = this.reloading ? Math.max(0, 1 - s.w.reload / (gunFor(s.w.id, this.attachments)?.reloadTime || 2.4)) : -1;
     this.placing = s.pl || 0;
     // (the menu's stand-in poses carry no id and no shield state: a shield is shown raised there)
     this.cover = 'id' in s ? s.sh || 0 : WEAPONS[this.weaponId]?.shield ? 1 : 0;

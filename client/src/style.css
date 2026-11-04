@@ -175,13 +175,26 @@ button.ghost { background: transparent; }
 #red-dot { position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px 0 0 -2px; border-radius: 50%; background: #ff2a2a; box-shadow: 0 0 4px 1px rgba(255, 40, 40, 0.8); }
 #scope { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
 #scope .scope-lens {
-  position: relative; width: min(86vh, 86vw); aspect-ratio: 1; border-radius: 50%;
+  position: relative; width: min(calc(var(--lens, 86) * 1vh), calc(var(--lens, 86) * 1vw)); aspect-ratio: 1; border-radius: 50%;
   box-shadow: 0 0 0 200vmax #050607, inset 0 0 40px 18px rgba(0, 0, 0, 0.85);
 }
 #scope i { position: absolute; background: rgba(10, 10, 10, 0.9); }
 #scope .sc-h { left: 0; right: 0; top: 50%; height: 1px; }
 #scope .sc-v { top: 0; bottom: 0; left: 50%; width: 1px; }
 #scope .sc-dot { left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px 0 0 -2px; border-radius: 50%; background: #ff2a2a; }
+/* Each scope has its own reticle: 1.5x a chevron, 2x a post, 2.5x and the long scope a crosshair with marks */
+#scope .sc-chev, #scope .sc-tick { display: none; }
+#scope[data-sight="x15"] .sc-h, #scope[data-sight="x15"] .sc-v, #scope[data-sight="x15"] .sc-dot { display: none; }
+#scope[data-sight="x15"] .sc-chev { display: block; left: 50%; top: 50%; width: 14px; height: 14px; margin: -2px 0 0 -7px; background: none; border-top: 2px solid #ff3a2a; border-left: 2px solid #ff3a2a; transform: rotate(45deg); }
+#scope[data-sight="x2"] .sc-h { top: 50%; right: 54%; left: 0; }
+#scope[data-sight="x2"] .sc-v { top: 50%; }
+#scope[data-sight="x2"] .sc-dot { width: 3px; height: 3px; margin: -1px 0 0 -1px; }
+#scope[data-sight="x2"] .sc-tick.a { display: block; left: 54%; right: 0; top: 50%; height: 1px; }
+#scope[data-sight="x25"] .sc-tick, #scope[data-sight="x32"] .sc-tick { display: block; left: 50%; width: 15px; height: 1px; margin-left: -7px; }
+#scope[data-sight="x25"] .sc-tick.a, #scope[data-sight="x32"] .sc-tick.a { top: 58%; }
+#scope[data-sight="x25"] .sc-tick.b, #scope[data-sight="x32"] .sc-tick.b { top: 66%; }
+#holo-ring { position: absolute; left: 50%; top: 50%; width: 46px; height: 46px; margin: -23px 0 0 -23px; border: 2px solid rgba(255, 60, 40, 0.9); border-radius: 50%; box-shadow: 0 0 5px rgba(255, 60, 40, 0.7); }
+#holo-ring i { position: absolute; left: 50%; top: 50%; width: 3px; height: 3px; margin: -1.5px 0 0 -1.5px; border-radius: 50%; background: #ff3a2a; box-shadow: 0 0 4px rgba(255, 60, 40, 0.9); }
 .setting-choices { display: flex; gap: 16px; flex-wrap: wrap; margin: 4px 0 8px; }
 .setting-choices label { display: flex; align-items: center; gap: 8px; }
 .setting-choices select { background: #1b1f25; color: inherit; border: 1px solid #3a4250; border-radius: 4px; padding: 3px 6px; font: inherit; }
@@ -757,7 +770,7 @@ button.small { font-size: 12px; padding: 4px 10px; margin-top: 6px; }
 .detail-sub { margin-top: 8px; font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); }
 .detail-sub .muted { text-transform: none; letter-spacing: 0; }
 .detail-text { font-size: 13px; line-height: 1.4; }
-.gun-row { display: flex; align-items: center; gap: 10px; text-align: left; padding: 8px 10px; cursor: help; }
+.gun-row { display: flex; align-items: center; gap: 10px; text-align: left; padding: 8px 10px; cursor: pointer; }
 .gun-row.selected { border-color: var(--accent); background: rgba(240, 180, 60, 0.12); }
 .gun-row .slot { color: var(--accent); font-weight: 800; }
 .gun-name { flex: 1; display: flex; flex-direction: column; font-weight: 400; }
@@ -1482,3 +1495,44 @@ button.primary:hover:not(:disabled) { background: linear-gradient(180deg, #ffd47
 .xmas-crate-name { font-weight: 700; text-align: center; }
 .xmas-presents b { color: #ffd24a; }
 #xmas-dev select { width: 100%; }
+
+/* The gun workshop (Stage P) */
+#workshop { position: fixed; inset: 0; z-index: 40; background: radial-gradient(circle at 50% 46%, #303642, #0e1116 72%); pointer-events: auto; }
+#ws-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
+#ws-canvas:active { cursor: grabbing; }
+.ws-head { position: absolute; left: 50%; top: 14px; transform: translateX(-50%); width: min(44vw, 620px); display: flex; align-items: center; justify-content: space-between; gap: 16px; pointer-events: none; }
+.ws-head > * { pointer-events: auto; }
+.ws-head h2 { margin: 0; font-size: 28px; letter-spacing: 0.08em; }
+.ws-left, .ws-right { position: absolute; top: 14px; bottom: 14px; width: 310px; display: flex; flex-direction: column; gap: 8px; overflow: hidden; background: rgba(10, 13, 18, 0.86); }
+.ws-left { left: 14px; }
+.ws-right { right: 14px; width: 280px; overflow-y: auto; }
+.ws-hint { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); font-size: 13px; pointer-events: none; }
+.ws-tabs { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; flex: none; }
+.ws-tab { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 6px 8px; margin: 0; text-align: left; background: rgba(255, 255, 255, 0.04); border: 1px solid transparent; border-radius: 6px; font-size: 13px; }
+.ws-tab b { letter-spacing: 0.06em; text-transform: uppercase; font-size: 11px; color: var(--muted); }
+.ws-tab i { font-style: normal; font-size: 13px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.ws-tab.active { border-color: var(--accent); background: rgba(240, 180, 60, 0.12); }
+.ws-options { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 5px; padding-right: 3px; }
+.ws-option { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; padding: 9px 10px; margin: 0; text-align: left; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 7px; font-weight: 400; }
+.ws-option:hover { background: rgba(255, 255, 255, 0.11); }
+.ws-option.equipped { border-color: var(--accent); background: rgba(240, 180, 60, 0.12); }
+.ws-option-name { display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap; width: 100%; }
+.ws-option-name b { font-size: 15px; }
+.ws-zoom { font-size: 12px; color: var(--accent); }
+.ws-option-name em { font-style: normal; font-size: 11px; color: var(--muted); }
+.ws-option-name u { margin-left: auto; text-decoration: none; font-size: 11px; font-weight: 700; color: var(--accent); }
+.ws-option-desc { font-size: 12px; line-height: 1.35; color: var(--muted); }
+.ws-options .skin-grid { max-height: none; }
+.ws-stat { margin-bottom: 7px; }
+.ws-stat-head { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; margin-bottom: 3px; color: var(--muted); }
+.ws-stat-head b { color: var(--text); font-variant-numeric: tabular-nums; font-weight: 600; }
+.ws-stat-head s { color: var(--muted); font-weight: 400; }
+.ws-stat.better .ws-stat-head b { color: #6fe08a; }
+.ws-stat.worse .ws-stat-head b { color: #ff7a6a; }
+.ws-bar { position: relative; height: 6px; border-radius: 3px; background: rgba(255, 255, 255, 0.1); overflow: hidden; }
+.ws-bar i { position: absolute; left: 0; top: 0; bottom: 0; background: #c8ced8; border-radius: 3px 0 0 3px; }
+.ws-bar em { position: absolute; top: 0; bottom: 0; }
+.ws-stat.better .ws-bar em { background: #4ec86a; }
+.ws-stat.worse .ws-bar em { background: #e8604a; }
+@media (max-width: 900px) { .ws-left, .ws-right { top: auto; bottom: 8px; height: 42vh; width: calc(50% - 12px); } .ws-left { left: 8px; } .ws-right { right: 8px; } .ws-head { width: calc(100% - 16px); top: 8px; } }
+.gun-open { margin-left: auto; font-size: 11px; color: var(--accent); white-space: nowrap; }

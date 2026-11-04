@@ -42,6 +42,8 @@
 //   after                     after each shot: 'none', 'bolt' (marksman rifle), 'pump' (shotgun), 'hammer' (revolver)
 //   reload                    reload sounds: 'mag', 'smg', 'shell', 'belt', 'revolver'
 
+import { applyToRecoil, attachmentKey } from './attachments.js';
+
 export const GUN_TYPES = {
   rifle: {
     recoil: {
@@ -150,7 +152,7 @@ export const GUN_CONFIG = {
 const cache = new Map();
 
 /** { type, recoil, sound } for a gun with its type's defaults filled in (an unknown gun counts as a rifle). */
-export function gunTuning(id) {
+function baseTuning(id) {
   let t = cache.get(id);
   if (!t) {
     const c = GUN_CONFIG[id] || { type: 'rifle' };
@@ -169,4 +171,12 @@ const SURFACES = {
   glass: 'glass', window: 'glass',
   fence: 'wood', tree: 'wood', planter: 'wood', appliance: 'metal',
 };
+/** A gun's settings, with its attachments' effect on recoil and flash (shared/attachments.js). */
+const fittedTuning = new Map();
+export function gunTuning(id, att = null) {
+  const key = `${id}|${attachmentKey(att)}`;
+  if (!fittedTuning.has(key)) { const t = baseTuning(id); fittedTuning.set(key, { ...t, recoil: applyToRecoil(t.recoil, att) }); }
+  return fittedTuning.get(key);
+}
+
 export const surfaceOf = (kind) => SURFACES[kind] || 'concrete';

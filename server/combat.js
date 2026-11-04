@@ -7,7 +7,7 @@ import { LAG_COMP_MAX_MS, MAX_SHOT_RANGE } from '../shared/constants.js';
 import { raycastWorld, rayPlayer, rayBox } from '../shared/raycast.js';
 import { DRONE } from '../shared/drone.js';
 import { UTIL_STATS } from '../shared/utilities.js';
-import { WEAPONS, damageAtDistance, shotDirections, currentSpread, shieldCover } from '../shared/weapons.js';
+import { gunFor, damageAtDistance, shotDirections, currentSpread, shieldCover } from '../shared/weapons.js';
 import { getEyePosition } from '../shared/movement.js';
 
 const HISTORY_MS = 1000;
@@ -65,7 +65,7 @@ export const JAMMER_HIT_HALF = 0.16;
 export const GADGET_HIT_HALF = 0.14;
 
 export function resolveShot({ shooterId, shooter, input, world, players, history, now, drones = [], cameras = [], claymores = [], jammers = [], gadgets = [] }) {
-  const w = WEAPONS[shooter.weapon.id];
+  const w = gunFor(shooter.weapon.id, shooter.member.attachments);
   const eye = getEyePosition(shooter.state, world);
   const origin = [eye.x, eye.y, eye.z];
   const spread = currentSpread(shooter.weapon, shooter.state);

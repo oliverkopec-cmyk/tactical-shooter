@@ -19,6 +19,7 @@ import { OPERATORS, operatorsFor } from '../shared/operators.js';
 import { WEAPONS, aimDirection, shieldCover } from '../shared/weapons.js';
 import { getEyePosition, findRope, eyeHeight, bodyHeight } from '../shared/movement.js';
 import { raycastWorld } from '../shared/raycast.js';
+import { loudnessOf } from '../shared/attachments.js';
 import { inObjectiveZone } from '../shared/rules.js';
 import { droneEye } from '../shared/drone.js';
 import { navFor } from './nav.js';
@@ -77,7 +78,7 @@ export class BotBrains {
 
   onShot(shooterId, shooter) {
     const s = shooter.state;
-    this.noise([s.x, s.y + 1.4, s.z], 55, shooter.member.team, 'shot');
+    this.noise([s.x, s.y + 1.4, s.z], 55 * loudnessOf(shooter.member.attachments?.[shooter.weapon.id]), shooter.member.team, 'shot');
   }
 
   /** Everything broadcast to the room passes through here: explosions, breaches and deaths matter to bots. */

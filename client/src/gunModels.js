@@ -16,6 +16,7 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { WEAPONS } from '../../shared/weapons.js';
+import { ATTACHMENTS } from '../../shared/attachments.js';
 import { SKINS } from '../../shared/skins.js';
 import { applyExclusiveSkin } from './exclusiveSkins.js';
 
@@ -110,20 +111,38 @@ function addTrigger(b, y, z, parent = b.g) {
   b.add('trigger', box(0.006, 0.026, 0.008), 0, y - 0.012, z - 0.006, { parent, rot: [0.25, 0, 0] });
 }
 
-function addMuzzle(b, kind, z, r, y = 0) {
-  if (kind === 0) {            // flash hider: a short sleeve with prongs
+// How far each muzzle device reaches past the end of the barrel
+const MUZZLE_LENGTH = { none: 0, flash: 0.065, comp: 0.05, suppressor: 0.165, brake: 0.055 };
+
+/** Where the muzzle device goes (the builders say). What is fitted is the gun's own attachment, or nothing. */
+function addMuzzle(b, z, r, y = 0) {
+  b.muzzleSpot = { z, r, y };
+}
+
+function drawMuzzle(b) {
+  const { z, r, y } = b.muzzleSpot || { z: b.muzzleAt[2], r: 0.0095, y: b.muzzleAt[1] };
+  const kind = b.att.muzzle;
+  if (kind === 'flash') {        // a short sleeve with prongs
     b.add('muzzle.sleeve', cyl(r * 1.35, 0.045), 0, y, z - 0.02);
     for (const a of [0, 1, 2, 3]) b.add('muzzle.prong', box(0.008, 0.008, 0.03), Math.cos(a * Math.PI / 2) * r * 1.5, y + Math.sin(a * Math.PI / 2) * r * 1.5, z - 0.05);
-  } else if (kind === 1) {     // compensator: slotted block
+  } else if (kind === 'comp') {  // a slotted block, with ports on top
     b.add('muzzle.comp', cyl(r * 1.6, 0.05), 0, y, z - 0.025);
     for (const dz of [-0.012, 0.004]) b.add('muzzle.slot', box(r * 3.4, 0.005, 0.006), 0, y + r * 1.6, z - 0.03 - dz, { role: 'trim' });
-  } else {                     // suppressor: a long can
+  } else if (kind === 'suppressor') {   // a long can
     b.add('muzzle.can', cyl(r * 1.9, 0.16), 0, y, z - 0.07);
     b.add('muzzle.cap', cyl(r * 1.0, 0.012), 0, y, z - 0.153, { role: 'trim' });
+    for (const dz of [0, 0.06, 0.12]) b.add('muzzle.band', cyl(r * 1.98, 0.006), 0, y, z - 0.02 - dz, { role: 'trim' });
+  } else if (kind === 'brake') { // a wide block with big side ports
+    b.add('muzzle.brake', box(r * 3.6, r * 2.4, 0.055), 0, y, z - 0.028);
+    for (const dz of [-0.016, 0, 0.016]) for (const s of [-1, 1]) b.add('muzzle.port', box(0.003, r * 1.5, 0.008), s * r * 1.82, y, z - 0.028 + dz, { role: 'trim' });
   }
+  if (kind && kind !== 'none') b.muzzleAt = [0, y, z - (MUZZLE_LENGTH[kind] ?? 0) - 0.005];
+  else if (b.muzzleSpot) b.muzzleAt = [0, y, z - 0.005];
 }
 
 function addOptic(b, kind, y, z, scale = 1, postY = y) {
+  const fitted = b.att.sight;
+  if (fitted) { drawSight(b, fitted, y, z, scale, postY); return; }
   if (kind === 0) {            // red dot: base, hood and a glowing lens
     b.add('optic.base', box(0.03, 0.012, 0.07 * scale), 0, y + 0.006, z);
     b.add('optic.hood', box(0.034, 0.034, 0.012), 0, y + 0.03, z + 0.03 * scale);
@@ -145,6 +164,30 @@ function addOptic(b, kind, y, z, scale = 1, postY = y) {
     b.add('sight.post', box(0.006, 0.026, 0.008), 0, postY + 0.014, z - 0.14);
     b.add('sight.hood', box(0.018, 0.006, 0.01), 0, postY + 0.028, z - 0.14);
   }
+}
+
+/** A sight chosen in the workshop. */
+function drawSight(b, id, y, z, scale, postY) {
+  if (id === 'iron') { addOptic({ ...b, add: b.add.bind(b), att: {} }, 2, y, z, scale, postY); return; }
+  if (id === 'reddot') { addOptic({ ...b, add: b.add.bind(b), att: {} }, 0, y, z, scale, postY); return; }
+  if (id === 'holo') {         // a wide window on a box, with a battery at the back
+    b.add('optic.base', box(0.036, 0.016, 0.085 * scale), 0, y + 0.008, z);
+    b.add('optic.battery', box(0.024, 0.02, 0.026), 0, y + 0.02, z + 0.038 * scale);
+    b.add('optic.hood', box(0.042, 0.006, 0.05 * scale), 0, y + 0.062, z - 0.012 * scale);
+    for (const s of [-1, 1]) b.add('optic.side', box(0.004, 0.044, 0.05 * scale), s * 0.019, y + 0.04, z - 0.012 * scale);
+    b.add('lens.dot', box(0.034, 0.04, 0.003), 0, y + 0.04, z - 0.03 * scale, { rot: [0.05, 0, 0] });
+    return;
+  }
+  // Scopes: longer and fatter with more zoom
+  const size = { x15: [0.016, 0.1, 0.021], x2: [0.018, 0.14, 0.024], x25: [0.02, 0.19, 0.028], x32: [0.023, 0.26, 0.034] }[id] || [0.02, 0.19, 0.028];
+  const [r, len, bell] = size, tube = y + 0.03;
+  b.add('optic.tube', cyl(r, len), 0, tube, z);
+  b.add('optic.bell', cone(r, bell, len * 0.22), 0, tube, z - len / 2 - len * 0.1);
+  b.add('lens.front', new THREE.CircleGeometry(bell * 0.92, 14), 0, tube, z - len / 2 - len * 0.215);
+  b.add('lens.rear', new THREE.CircleGeometry(r * 0.85, 12).rotateY(Math.PI), 0, tube, z + len / 2 + 0.001);
+  for (const dz of [-0.3, 0.3]) b.add('ring.mount', box(0.016, 0.026, 0.014), 0, y + 0.01, z + dz * len);
+  b.add('optic.turret', box(0.012, 0.012, 0.012), 0, tube + r + 0.005, z);
+  if (len > 0.12) b.add('optic.turret', box(0.012, 0.012, 0.012), r + 0.005, tube, z);
 }
 
 /** Magazine: a main body, a baseplate and feed lips. */
@@ -169,7 +212,7 @@ function buildRifle(b, v) {
   b.add('handguard.cap', box(0.05, 0.07, 0.012), 0, 0.004, -0.404, { role: 'steel' });
   b.add('barrel.main', cyl(0.0125, 0.12), 0, 0.004, -0.46);
   b.add('barrel.gas', box(0.02, 0.028, 0.03), 0, 0.034, -0.42);
-  addMuzzle(b, v.muzzle, -0.52, 0.0125, 0.004);
+  addMuzzle(b, -0.52, 0.0125, 0.004);
   b.add('stock.tube', rbox(0.044, 0.07, 0.21, 0.012), 0, -0.012, 0.275);
   b.add('stock.pad', box(0.05, 0.1, 0.018), 0, -0.012, 0.388);
   b.add('stock.cheek', box(0.04, 0.012, 0.12), 0, 0.03, 0.275, { role: 'accent' });
@@ -181,7 +224,7 @@ function buildRifle(b, v) {
   b.add('bolt.knob', box(0.02, 0.012, 0.012), 0.006, 0, 0.018, { parent: bolt });
   addOptic(b, opticKind('rifle', v.optic), 0.058, v.optic === 1 ? 0.0 : -0.04, 1);
   b.anim = { bolt, boltTravel: 0.04, mag };
-  b.muzzleAt = [0, 0.004, -0.545 - (v.muzzle === 2 ? 0.1 : 0)];
+  b.muzzleAt = [0, 0.004, -0.545];
   b.anchorAt = [-0.034, 0.0, -0.2];
 }
 
@@ -192,20 +235,19 @@ function buildSmg(b, v) {
   b.add('shroud.main', rbox(0.05, 0.062, 0.14), 0, 0.008, -0.2);
   addVents(b, 5, 0.12, 0.025, 0.008, -0.2, 0.02);
   b.add('barrel.main', cyl(0.011, 0.1), 0, 0.01, -0.31);
-  addMuzzle(b, v.muzzle, -0.36, 0.011, 0.01);
+  addMuzzle(b, -0.36, 0.011, 0.01);
   b.add('stock.wire', box(0.006, 0.006, 0.14), 0.02, 0.012, 0.22);
   b.add('stock.wire', box(0.006, 0.006, 0.14), -0.02, 0.012, 0.22);
   b.add('stock.rear', box(0.05, 0.07, 0.012), 0, 0.012, 0.295);
   b.add('stock.brace', box(0.04, 0.006, 0.05), 0, 0.012, 0.15, { role: 'steel' });
   b.add('grip.main', rbox(0.032, 0.095, 0.04, 0.008), 0, -0.085, 0.1, { rot: [0.3, 0, 0] });
-  b.add('foregrip.vertical', rbox(0.026, 0.07, 0.03, 0.006), 0, -0.05, -0.17);
   addTrigger(b, -0.042, 0.04);
   const mag = addMagazine(b, 0, -0.042, -0.03, 0.028, 0.16, 0.04, { curve: 0.04 });
   const bolt = b.group('bolt', 0.034, 0.02, -0.02);
   b.add('bolt.handle', box(0.012, 0.012, 0.035), 0, 0, 0, { parent: bolt });
   addOptic(b, opticKind('smg', v.optic), 0.052, -0.02, 0.9, 0.038);
   b.anim = { bolt, boltTravel: 0.03, mag };
-  b.muzzleAt = [0, 0.01, -0.37 - (v.muzzle === 2 ? 0.1 : 0)];
+  b.muzzleAt = [0, 0.01, -0.37];
   b.anchorAt = [-0.032, 0.0, -0.14];
 }
 
@@ -220,7 +262,7 @@ function buildShotgun(b, v) {
   const pump = b.group('pump', 0, -0.016, -0.26);
   b.add('pump.main', rbox(0.056, 0.05, 0.16, 0.012), 0, 0, 0, { parent: pump });
   for (let i = 0; i < 5; i++) b.add('serration.groove', box(0.058, 0.004, 0.006), 0, -0.02, -0.06 + i * 0.03, { parent: pump });
-  addMuzzle(b, v.muzzle === 2 ? 0 : v.muzzle, -0.62, 0.0205, 0.018);
+  addMuzzle(b, -0.62, 0.0205, 0.018);
   b.add('sight.bead', box(0.007, 0.012, 0.007), 0, 0.048, -0.6);
   b.add('stock.main', rbox(0.05, 0.1, 0.26, 0.014), 0, -0.012, 0.27, { rot: [0.1, 0, 0] });
   b.add('buttpad.main', box(0.054, 0.115, 0.016), 0, -0.02, 0.4, { rot: [0.1, 0, 0] });
@@ -244,7 +286,7 @@ function buildLmg(b, v) {
   addVents(b, 6, 0.2, 0.035, 0.012, -0.32, 0.034);
   b.add('barrel.main', cyl(0.016, 0.2), 0, 0.016, -0.54);
   for (let i = 0; i < 4; i++) b.add('barrel.fin', cyl(0.021, 0.008), 0, 0.016, -0.48 - i * 0.03);
-  addMuzzle(b, v.muzzle, -0.64, 0.016, 0.016);
+  addMuzzle(b, -0.64, 0.016, 0.016);
   b.add('ring.carry', box(0.01, 0.05, 0.012), 0.02, 0.075, -0.4, { role: 'steel' });
   b.add('ring.carry', box(0.01, 0.05, 0.012), -0.02, 0.075, -0.4, { role: 'steel' });
   b.add('ring.carryTop', box(0.05, 0.01, 0.012), 0, 0.1, -0.4, { role: 'steel' });
@@ -253,7 +295,6 @@ function buildLmg(b, v) {
   b.add('stock.main', rbox(0.06, 0.12, 0.21, 0.014), 0, -0.02, 0.335);
   b.add('buttpad.main', box(0.064, 0.13, 0.016), 0, -0.02, 0.445);
   b.add('grip.main', rbox(0.04, 0.1, 0.046, 0.008), 0, -0.095, 0.16, { rot: [0.3, 0, 0] });
-  b.add('foregrip.main', rbox(0.034, 0.08, 0.04, 0.008), 0, -0.06, -0.26);
   addTrigger(b, -0.055, 0.095);
   // belt-fed box magazine
   const mag = b.group('magazine', 0, -0.07, -0.03);
@@ -265,7 +306,7 @@ function buildLmg(b, v) {
   b.add('bolt.knob', box(0.024, 0.014, 0.014), 0.008, 0, 0.022, { parent: bolt });
   addOptic(b, opticKind('lmg', v.optic), 0.092, 0.05, 1);
   b.anim = { bolt, boltTravel: 0.035, mag, magDrop: 0.18 };
-  b.muzzleAt = [0, 0.016, -0.67 - (v.muzzle === 2 ? 0.1 : 0)];
+  b.muzzleAt = [0, 0.016, -0.67];
   b.anchorAt = [-0.05, 0.0, -0.2];
 }
 
@@ -277,7 +318,7 @@ function buildDmr(b, v) {
   addVents(b, 5, 0.24, 0.023, 0.002, -0.28, 0.026);
   addRail(b, 0.22, 0, 0.04, -0.3);
   b.add('barrel.main', cyl(0.0105, 0.16), 0, 0.002, -0.52);
-  addMuzzle(b, v.muzzle === 2 ? 1 : v.muzzle, -0.6, 0.0105, 0.002);
+  addMuzzle(b, -0.6, 0.0105, 0.002);
   b.add('stock.main', rbox(0.046, 0.1, 0.24, 0.014), 0, -0.016, 0.34, { rot: [0.05, 0, 0] });
   b.add('buttpad.main', box(0.05, 0.11, 0.016), 0, -0.016, 0.465);
   b.add('cheek.rest', box(0.04, 0.02, 0.13), 0, 0.044, 0.34);
@@ -349,7 +390,7 @@ function buildMachinePistol(b, v) {
   b.add('sight.front', box(0.008, 0.012, 0.01), 0, 0.03, -0.1, { parent: slide });
   b.add('frame.main', rbox(0.038, 0.032, 0.19, 0.006), 0, 0.0, -0.02);
   b.add('barrel.tip', cyl(0.0105, 0.03), 0, 0.034, -0.145);
-  addMuzzle(b, v.muzzle === 2 ? 1 : v.muzzle, -0.158, 0.0105, 0.034);
+  addMuzzle(b, -0.158, 0.0105, 0.034);
   b.add('grip.main', rbox(0.038, 0.1, 0.055, 0.008), 0, -0.058, 0.06, { rot: [0.16, 0, 0] });
   b.add('foregrip.stub', rbox(0.03, 0.04, 0.03, 0.006), 0, -0.036, -0.08);
   b.add('stock.stub', box(0.03, 0.018, 0.06), 0, 0.03, 0.15, { role: 'steel' });
@@ -551,16 +592,20 @@ function opticKind(model, optic) {
   }
 }
 
-// How much each kind of sight zooms in when aiming down it (the marksman rifle's long scope more)
-const SIGHT_ZOOM = { iron: 1.3, dot: 1.6, scope: 2.4, longScope: 3.2 };
-
-/** The sight on a gun: { kind: 'iron' | 'dot' | 'scope', zoom }. */
-export function sightOf(id) {
+/** The sight a gun comes with, if nothing else is fitted (its own iron sights, a red dot or a scope). */
+export function stockSight(id) {
   const w = WEAPONS[id] || WEAPONS.rifle;
-  if (w.shield) return { kind: 'iron', zoom: 1 };   // nothing to aim down
+  if (w.model === 'dmr') return 'x32';
   const k = opticKind(w.model, variantOf(w.id, w.model).optic);
-  const kind = k === 0 ? 'dot' : k === 1 ? 'scope' : 'iron';
-  return { kind, zoom: SIGHT_ZOOM[w.model === 'dmr' ? 'longScope' : kind] };
+  return k === 0 ? 'reddot' : k === 1 ? 'x25' : 'iron';
+}
+
+/** The sight on a gun: { id, kind: 'iron' | 'dot' | 'holo' | 'scope', zoom, lens (how much of the screen a scope's view fills) }. */
+export function sightOf(id, att = null) {
+  const w = WEAPONS[id] || WEAPONS.rifle;
+  if (w.shield) return { id: 'iron', kind: 'iron', zoom: 1 };   // nothing to aim down
+  const sightId = att?.sight || stockSight(id), s = ATTACHMENTS.sight[sightId];
+  return { id: sightId, kind: s.view, zoom: s.zoom, lens: s.lens ?? 0.86 };
 }
 
 /** Height of the line of sight above the gun's origin (unscaled), found from the sight parts. */
@@ -589,11 +634,53 @@ function variantOf(id, model) {
   return { optic, muzzle };
 }
 
-/** Build a gun model pointing down -z. skinId: optional, from shared/skins.js. */
-export function makeGunModel(id, skinId = null) {
+/** A foregrip under the barrel, from the workshop. */
+function drawGrip(b) {
+  const kind = b.att.grip;
+  if (kind !== 'vertical' && kind !== 'angled') return;
+  const under = ['handguard.main', 'shroud.main'].flatMap((n) => b.parts[n] || [])[0];
+  if (!under) return;
+  under.geometry.computeBoundingBox();
+  const bb = under.geometry.boundingBox;
+  const y = under.position.y + bb.min.y, z = under.position.z + (bb.min.z + bb.max.z) * 0.15;
+  b.add('rail.base', box(0.026, 0.008, 0.07), 0, y - 0.003, z);
+  if (kind === 'vertical') {
+    b.add('foregrip.vertical', rbox(0.028, 0.085, 0.032, 0.008), 0, y - 0.048, z);
+    b.add('foregrip.cap', box(0.03, 0.008, 0.034), 0, y - 0.09, z, { role: 'steel' });
+  } else {
+    b.add('foregrip.angled', rbox(0.028, 0.03, 0.09, 0.008), 0, y - 0.016, z + 0.006, { rot: [-0.5, 0, 0] });
+  }
+}
+
+/** A longer magazine: the box or stick stretches down, or the shotgun's tube gets an extension. */
+function drawMagazine(b) {
+  if (b.att.mag !== 'extended') return;
+  const mag = b.anim?.mag;
+  if (mag) mag.scale.y = b.w.model === 'lmg' ? 1.25 : 1.36;
+  else if (b.parts['tube.mag']) {
+    const cap = b.parts['tube.cap']?.[0];
+    b.add('tube.mag', cyl(0.0155, 0.09), 0, -0.016, -0.55);
+    b.add('tube.clamp', box(0.034, 0.046, 0.012), 0, 0.001, -0.53, { role: 'steel' });
+    if (cap) cap.position.z = -0.6;
+  }
+}
+
+/** A sight on a handgun, which has no optic of its own to swap: over the slide, with its iron sights gone. */
+function drawHandgunSight(b) {
+  if (!['pistol', 'machinePistol'].includes(b.w.model) || b.att.sight !== 'reddot') return;
+  const slide = b.anim?.bolt;
+  for (const n of ['sight.rear', 'sight.front']) for (const m of b.parts[n] || []) m.removeFromParent();
+  delete b.parts['sight.rear']; delete b.parts['sight.front'];
+  drawSight(b, 'reddot', slide.position.y + 0.024, slide.position.z + 0.02, 0.7, slide.position.y + 0.024);
+}
+
+/** Build a gun model pointing down -z. skinId: optional, from shared/skins.js. att: its attachments (shared/attachments.js). */
+export function makeGunModel(id, skinId = null, att = null) {
   const w = WEAPONS[id] || WEAPONS.rifle;
   const b = new Builder(w);
+  b.att = att || {};
   (BUILDERS[w.model] || buildRifle)(b, variantOf(w.id, w.model));
+  if (w.model !== 'shield' && !w.shield) { drawMuzzle(b); drawGrip(b); drawMagazine(b); drawHandgunSight(b); }
   const muzzle = new THREE.Object3D();
   muzzle.position.set(...b.muzzleAt);
   b.g.add(muzzle);

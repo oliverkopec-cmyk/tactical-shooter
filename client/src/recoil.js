@@ -44,8 +44,8 @@ export class Recoil {
   }
 
   /** One shot of gun `id`. stance: { ads 0..1, crouch 0..1 }. */
-  fire(id, stance) {
-    const rc = gunTuning(id).recoil, now = performance.now() / 1000;
+  fire(id, stance, att = null) {
+    const rc = gunTuning(id, att).recoil, now = performance.now() / 1000;
     if (this.gun !== id || now - this.lastShot > rc.resetTime) this.shot = 0;
     this.gun = id;
     this.lastShot = now;
@@ -53,7 +53,7 @@ export class Recoil {
     const mul = (1 - (1 - rc.aimMul) * (stance.ads || 0)) * (1 - (1 - rc.crouchMul) * (stance.crouch || 0));
     const grow = 1 + rc.upGrowth * Math.min(1, i / Math.max(1, rc.growShots));
     const rnd = () => (Math.random() * 2 - 1) * rc.jitter;
-    const up = rc.up * grow + rnd() * 0.5, side = rc.side * sideOf(id, i, rc.swing) + rnd();
+    const up = rc.up * grow * (i === 0 ? rc.firstMul : 1) + rnd() * 0.5, side = rc.side * sideOf(id, i, rc.swing) + rnd();
     this.inP += up * mul * DEG;
     this.inY -= side * mul * DEG;
     // Visual only: the camera snaps a bit further and springs back, and buzzes
