@@ -8,12 +8,16 @@ import { RARITIES } from '../../shared/skins.js';
 import { makeGunModel } from './weapons.js';
 import { makeCharmModel } from './charmModels.js';
 import { menuAudio } from './menuAudio.js';
+import { PRESENT_SPOTS } from './menuChristmas.js';
 
 const PAPER = [0xd8323a, 0x2a7ae2, 0x2fb36a, 0x9a4ae8, 0xf0a020, 0x20b8c8];
 const RIBBON = [0xf2d46a, 0xffffff, 0xf2d46a, 0xffe0f0, 0xffffff, 0xf2d46a];
 // Where boxes sit: four spots on the platform in front of the operator; more gifts stack on top
 const SPOTS = [[-0.62, 0.95], [0.62, 0.95], [-1.12, 0.35], [1.12, 0.35]];
 const SIZE = 0.38;
+const XMAS_PAPER = [0xc8141e, 0x1f7a44, 0xc8141e, 0xe8b22a, 0x1f7a44, 0xf0ece4];
+const XMAS_RIBBON = [0xf2d46a, 0xf2d46a, 0xffffff, 0xc8141e, 0xffffff, 0xc8141e];
+const XMAS_SHOWN = 8;   // Christmas presents under the tree at once; more appear as these are opened
 
 /** A soft round glow texture for the halo behind each box. */
 let haloTexture = null;
@@ -47,8 +51,9 @@ class GiftBox {
     const s = SIZE * (0.9 + ((gift.id * 7) % 5) * 0.04);
     this.size = s;
     this.group = new THREE.Group();
-    this.paper = new THREE.MeshStandardMaterial({ color: gift.exclusive ? 0xf6f0e0 : PAPER[k], roughness: 0.45, metalness: gift.exclusive ? 0.6 : 0.1, emissive: 0x000000 });
-    this.ribbon = new THREE.MeshStandardMaterial({ color: gift.exclusive ? 0xffd86a : RIBBON[k], roughness: 0.3, metalness: 0.5, emissive: gift.exclusive ? 0xffc040 : RIBBON[k], emissiveIntensity: 0.25 });
+    const paper = gift.christmas ? XMAS_PAPER[k] : PAPER[k], ribbon = gift.christmas ? XMAS_RIBBON[k] : RIBBON[k];
+    this.paper = new THREE.MeshStandardMaterial({ color: gift.exclusive ? 0xf6f0e0 : paper, roughness: 0.45, metalness: gift.exclusive ? 0.6 : 0.1, emissive: 0x000000 });
+    this.ribbon = new THREE.MeshStandardMaterial({ color: gift.exclusive ? 0xffd86a : ribbon, roughness: 0.3, metalness: 0.5, emissive: gift.exclusive ? 0xffc040 : ribbon, emissiveIntensity: 0.25 });
     this.body = new THREE.Mesh(new THREE.BoxGeometry(s, s * 0.82, s), this.paper);
     this.body.position.y = s * 0.41;
     this.body.castShadow = true;
@@ -73,7 +78,7 @@ class GiftBox {
     this.bow.add(new THREE.Mesh(new THREE.SphereGeometry(s * 0.06, 10, 8), this.ribbon));
     this.bow.position.y = s * 0.08;
     this.lid.add(this.bow);
-    this.halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: halo(), color: gift.exclusive ? 0xffe7a0 : RIBBON[k], transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.55 }));
+    this.halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: halo(), color: gift.exclusive ? 0xffe7a0 : ribbon, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.55 }));
     this.halo.scale.setScalar(s * 3.2);
     this.halo.position.y = s * 0.5;
     this.halo.renderOrder = -1;
@@ -85,8 +90,9 @@ class GiftBox {
 
   /** Spot on the platform; the fifth gift onwards sits on top of the first ones. */
   place(index) {
-    const [x, z] = SPOTS[index % SPOTS.length];
-    this.base = new THREE.Vector3(x, Math.floor(index / SPOTS.length) * SIZE * 1.02, z);
+    const spots = this.gift.christmas ? PRESENT_SPOTS : SPOTS;
+    const [x, z] = spots[index % spots.length];
+    this.base = new THREE.Vector3(x, Math.floor(index / spots.length) * SIZE * 1.02 - (this.gift.christmas ? 0.1 : 0), z);
     this.group.position.copy(this.base);
   }
 
@@ -126,11 +132,16 @@ export class GiftPile {
   set(list, skipId = null) {
     const keep = new Set(list.map((g) => g.id));
     for (const [id, box] of this.boxes) if (!keep.has(id)) { box.dispose(this.scene); this.boxes.delete(id); }
-    list.filter((g) => g.id !== skipId).forEach((g, i) => {
+    const lay = (gifts) => gifts.forEach((g, i) => {
       let box = this.boxes.get(g.id);
       if (!box) { box = new GiftBox(g, i); this.boxes.set(g.id, box); this.scene.add(box.group); }
       else box.place(i);
     });
+    const waiting = list.filter((g) => g.id !== skipId);
+    lay(waiting.filter((g) => !g.christmas));
+    const presents = waiting.filter((g) => g.christmas);    // around the tree, oldest first
+    for (const g of presents.slice(XMAS_SHOWN)) { const box = this.boxes.get(g.id); if (box) { box.dispose(this.scene); this.boxes.delete(g.id); } }
+    lay(presents.slice(0, XMAS_SHOWN));
   }
 
   /** Take a box out of the pile to unwrap it (the pile doesn't redraw it any more). */

@@ -29,7 +29,7 @@ export function cleanContents(raw) {
   const money = Math.floor(Number(c.money) || 0);
   if (money < 0 || money > GIFT_LIMITS.money) return null;
   if (money > 0) out.money = money;
-  if (c.skin) { if (!SKINS[c.skin]) return null; out.skin = c.skin; }
+  if (c.skin) { if (!SKINS[c.skin] || SKINS[c.skin].source === 'christmas') return null; out.skin = c.skin; }   // the limited Christmas skins only come from the presents
   if (c.charm) { if (!CHARMS[c.charm]) return null; out.charm = c.charm; }
   if (c.crate) { if (c.crate !== 'mystery' && c.crate !== 'charm' && !WEAPONS[c.crate]) return null; out.crate = 'mystery'; }
   return Object.keys(out).length ? out : null;

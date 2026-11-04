@@ -13,7 +13,9 @@ import { sanitizeSettings } from '../shared/settings.js';
 import { profileOf, configureProfile, ownsSkin, equippedSkinsOf, equippedOperatorsOf, devToolsEnabled, ownsCharm, equippedCharmsOf } from './profile.js';
 import { OPERATORS as OPERATOR_DEFS } from '../shared/operators.js';
 import { SKINS, CRATE } from '../shared/skins.js';
-import { shopState, purchase, openCrate } from './shop.js';
+import { shopState, purchase, openCrate, rollChristmasCrate } from './shop.js';
+import { CHRISTMAS, christmasOn } from '../shared/christmas.js';
+import { christmasNow } from './christmas.js';
 import { WEAPONS } from '../shared/weapons.js';
 import { OPERATORS } from '../shared/operators.js';
 import { ownedOperatorIds } from '../shared/account.js';
@@ -248,7 +250,7 @@ export class Accounts {
     // ---------------------------------------------------------------- the shop (server/shop.js)
 
     // What is on sale now (the same for everyone), with this account's prices and what it owns
-    r.get('/shop', authed(async (row, _req, res) => res.json(shopState(row))));
+    r.get('/shop', authed(async (row, _req, res) => res.json(shopState(row, Date.now(), christmasNow()))));
 
     // Buy a daily item or a Limited skin. The server checks it is on sale now and what it costs; Money only.
     r.post('/shop/buy', authed(async (account, req, res) => {
@@ -263,29 +265,32 @@ export class Accounts {
           [row.id, buy.price, JSON.stringify(buy.add)],
         );
         if (!rows.length) return { status: 402, body: { error: 'Not enough Money.', account: profileOf(row) } };
-        return { status: 200, body: { account: profileOf(rows[0]), bought: { skin: buy.skin, guns: buy.guns, price: buy.price }, shop: shopState(rows[0]) } };
+        return { status: 200, body: { account: profileOf(rows[0]), bought: { skin: buy.skin, guns: buy.guns, price: buy.price }, shop: shopState(rows[0], Date.now(), christmasNow()) } };
       });
       if (out.status === 200) this.refreshSocketLoadout(await this.progression.load(account.id));
       res.status(out.status).json(out.body);
     }));
 
-    // Open the crate: the server takes the Money and draws a skin (on a gun) or a charm; anything already owned refunds half.
-    r.post('/crates/open', authed(async (account, _req, res) => {
+    // Open a crate: the server takes the Money and draws a skin (on a gun) or a charm; anything already owned refunds half.
+    const crateRoute = (crate, open) => authed(async (account, _req, res) => {
       const out = await this.progression.withLock(account.id, async () => {
         const row = (await this.db.query('SELECT * FROM accounts WHERE id = $1', [account.id])).rows[0];
         if (!row) return { status: 404, body: { error: 'Account not found.' } };
-        if (row.money < CRATE.price) return { status: 402, body: { error: `Not enough Money: the crate costs ${CRATE.price.toLocaleString()}.`, account: profileOf(row) } };
-        const { result, skins, charms } = openCrate(row);
+        if (crate === CHRISTMAS.crate && !christmasOn(christmasNow())) return { status: 410, body: { error: 'The Christmas crate has gone.', account: profileOf(row) } };
+        if (row.money < crate.price) return { status: 402, body: { error: `Not enough Money: the crate costs ${crate.price.toLocaleString()}.`, account: profileOf(row) } };
+        const { result, skins, charms } = open(row);
         const { rows } = await this.db.query(
           'UPDATE accounts SET money = money - $2 + $3, owned_skins = owned_skins || $4::jsonb, owned_charms = owned_charms || $5::jsonb WHERE id = $1 AND money >= $2 RETURNING *',
-          [row.id, CRATE.price, result.refund, JSON.stringify(skins), JSON.stringify(charms)],
+          [row.id, crate.price, result.refund, JSON.stringify(skins), JSON.stringify(charms)],
         );
         if (!rows.length) return { status: 402, body: { error: 'Not enough Money.', account: profileOf(row) } };
         return { status: 200, body: { account: profileOf(rows[0]), result } };
       });
       if (out.status === 200) this.refreshSocketLoadout(await this.progression.load(account.id));
       res.status(out.status).json(out.body);
-    }));
+    });
+    r.post('/crates/open', crateRoute(CRATE, openCrate));
+    r.post('/crates/christmas/open', crateRoute(CHRISTMAS.crate, rollChristmasCrate));
 
     r.post('/operators/buy', async (req, res) => {
       const found = await this.fromCookie(req.headers.cookie);

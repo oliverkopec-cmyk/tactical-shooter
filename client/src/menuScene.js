@@ -12,6 +12,7 @@ import { attachCharm } from './charmModels.js';
 import { CrateSequence } from './crateScene.js';
 import { GiftPile, GiftOpening } from './giftScene.js';
 import { MenuBackdrop } from './menuBackdrop.js';
+import { ChristmasDecor } from './menuChristmas.js';
 import { lowGraphics, quality, pixelRatioFor } from './graphics.js';
 import { onSettingsChange } from './settings.js';
 
@@ -133,7 +134,9 @@ export class MenuScene {
     this.renderer.shadowMap.needsUpdate = true;
     this.padLight.visible = !this.low;
     this.backdrop?.dispose();
-    this.backdrop = new MenuBackdrop(this.scene, { low: this.low });
+    this.backdrop = new MenuBackdrop(this.scene, { low: this.low, snowing: this.christmasOn });
+    this.decor?.dispose();
+    this.decor = this.christmasOn ? new ChristmasDecor(this.scene, { low: this.low }) : null;
     this.scene.traverse((o) => { if (o.material) o.material.needsUpdate = true; });   // shadows on/off need the shaders rebuilt
     this.resize();
   }
@@ -173,7 +176,14 @@ export class MenuScene {
 
   giftsShown() { return this.mode === 'play' && !this.opening && !this.crate; }
 
-  /** The unopened gifts: [{ id, title, exclusive }]. */
+  /** Christmas on or off (the server's dates): the tree, the snow and the lights come and go. */
+  setChristmas(on) {
+    if (!!on === !!this.christmasOn) return;
+    this.christmasOn = !!on;
+    this.applyQuality();
+  }
+
+  /** The unopened gifts: [{ id, title, exclusive, christmas }]. */
   setGifts(list) {
     this.giftList = list;
     this.gifts.set(list, this.opening?.box.gift.id);
@@ -295,6 +305,7 @@ export class MenuScene {
     this.opening?.update(dt, this.time);
     this.placeCamera(this.time);                     // drifts (and undoes the crate's landing thump from last frame)
     this.backdrop.update(dt);
+    this.decor?.update(dt, this.renderer.domElement.height);
     if (this.padLight.visible) this.padLight.intensity = 1.2 + Math.sin(this.time * 1.6) * 0.25;
     if (this.crate) this.crate.update(dt, this.camera);
     if (this.showcase?.visible) {

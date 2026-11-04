@@ -45,7 +45,7 @@ export const devMoney = () => call('POST', 'dev/money');
 export const buyOperator = (operator) => call('POST', 'operators/buy', { operator });
 
 /** Open the crate. The server charges the Money and draws a skin on a gun or a charm: { account, result } or { error }. */
-export const openCrate = () => call('POST', 'crates/open');
+export const openCrate = (kind = 'crate') => call('POST', kind === 'christmas' ? 'crates/christmas/open' : 'crates/open');
 
 /** What the shop sells right now (daily items, Limited skins, the crate), with this account's prices. */
 export const getShop = () => call('GET', 'shop');

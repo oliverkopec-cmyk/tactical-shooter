@@ -2,7 +2,27 @@
 
 A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite on the client, Node.js + Socket.IO on an authoritative server. One Node process serves both the game client and the realtime server, so the whole thing deploys as a single Render web service.
 
-## Status: Stage 2L (two detailed maps)
+## Status: Stage M (Christmas event)
+
+A Christmas event that turns itself on and off by date (`shared/christmas.js`, `server/christmas.js`). **All dates are Sydney time** and the server's clock decides everything; a player's own clock changes nothing.
+
+| When (Sydney) | What happens |
+|---|---|
+| 20 November 00:00 | Menu theme, countdown, Christmas crate and the first present begin |
+| 20 November to 17 December | One present a day: 50% Money (1,000-1,250), 30% a Christmas charm you don't have, 20% a Christmas crate |
+| 18 to 24 December | One present a day: 1,500 Money and that day's limited skin, a different one each day |
+| 25 December 00:00 | The countdown says "Merry Christmas!" and stays that way until the end |
+| 3 January 00:00 | Theme, countdown, crate and unclaimed presents disappear. Everything players got stays owned |
+
+- **Menu theme** (`client/src/menuChristmas.js`, about 20 extra draw calls): a decorated tree with glowing lights and a star, wrapped presents, warm string lights, snow on the roof, platform and rooftop objects, and falling snow instead of the rain. Low graphics has less snow and no extra lights or shadows.
+- **Countdown:** under the top bar, like "Christmas in 12d 04h 33m 10s", ticking on the server's time.
+- **Presents:** they wait under the tree (up to 8 shown at a time, more appear as those are opened) and open with the same unwrapping as admin gifts. Missed days can be claimed until the end of 2 January. `christmas_claims` has one row per account and day, and the claim and the reward are written in one statement, so a day can't be opened twice. Presents don't count towards the daily Money cap, like admin gifts.
+- **Limited skins** (`CHRISTMAS_LIMITED_SKINS` in `shared/christmasSkins.js`, effects in `client/src/exclusiveSkins.js`): Candy Cane, Wrapping Paper, Gingerbread, Frosted Ice, Red and Gold Ornament, Snowy Pine and Festive Lights, animated like Exclusive skins and owned on every gun. They only come from the last 7 presents: never sold, never in a crate, and an admin can't gift them.
+- **Christmas crate** (shop, Money only): 1,200 Money, with 600 back for anything you already own. It holds 10 Christmas skins (`CHRISTMAS_CRATE_SKINS`, on a random gun like the normal crate) and 10 Christmas charms, with odds of 55% Common, 28% Rare, 14% Epic and 3% Legendary. Nothing Christmas is in the normal crate or the daily shop.
+- **To run it another year:** change the three dates at the top of `shared/christmas.js` (and the UTC offset, if the dates leave daylight time).
+- **Testing on localhost:** on a local test database the Play tab has a box to pretend it is another date and to forget your presents (`christmasDevDate` and `christmasDevReset`). It doesn't exist on Render.
+
+### Earlier: Stage 2L (two detailed maps)
 
 Two new maps, **Hillside Villa** (`shared/maps/villa.js`) and **Pinecrest Lodge** (`shared/maps/lodge.js`), at a much higher level of detail. Dockside House and Meridian Hotel are unchanged and still use the old drawing path. **All future maps use this level of detail:** set `detailed: true` on the map and build it with `furnish.js` and `terrain.js`.
 
@@ -47,6 +67,7 @@ Resolution never goes above the screen's own pixel ratio (a 200% choice on a nor
 
 ### Changelog: every merged pull request adds an entry
 Add an entry at the top of `CHANGELOG.md` in the same pull request (plain English, written for players, a new unique id like `2K`). It reaches players when the pull request is merged and deployed, because the file is built into the page.
+Stages M to Q are the exception: they share one entry, added in the last of them.
 
 ### Earlier: Stage 2I (tester role, chat, reports and the owner's inboxes)
 
@@ -440,7 +461,38 @@ Six new operators, bought with Money in the Operators tab (the original eight an
 
 Written down so they aren't forgotten (see Status for what is built). They are built one at a time, one PR each, and the next one starts once the previous is confirmed. Server memory must stay low enough for Render's 512 MB plan.
 
-Nothing is planned right now: every stage so far is built.
+### Stage N - Money and ranks
+- Before starting: say what the daily Money cap is.
+- Winning a match gives an extra 800 Money on top of the current rewards, shown as its own line ("Win bonus +800") on the end-of-match screen. Not in matches with bots or admin players.
+- Raise the daily Money cap so the win bonus fits within it.
+- Simplify ranks: no tiers or numbers. Bronze, Silver, Gold, Platinum, Diamond, then Champion, 200 points each, so Champion is at 500 [as written in the request: to be confirmed]. Convert everyone's current points so nobody drops a rank. Update the rank icons and all screens.
+
+### Stage O - More detailed characters
+- Rebuild the player models with much more detail, built from many shapes in code (no external assets), all original designs: proper body proportions, helmet or cap, face area with goggles, mask or visor, tactical vest with pouches, knee and elbow pads, boots, gloves, a backpack or radio.
+- Each operator has a unique look and outfit colours that match their icon, so you can tell who's who at a glance.
+- Better animations: walking, running, crouch walking, crawling, leaning, aiming, reloading, rappelling, vaulting, placing gadgets.
+- Hitboxes still match the new models.
+- Lower-detail versions for far-away players and the Low graphics setting.
+
+### Stage P - Weapon attachments
+- In the Operators tab, clicking an operator's gun opens a gun workshop: the gun appears large in 3D, drag to rotate it and scroll to zoom.
+- Attachment slots, each shown on the gun as you change it:
+  - Sight: iron sights, red dot, holographic, 1.5x, 2x and 2.5x (only on guns where it makes sense)
+  - Muzzle: none, suppressor (quieter, less damage at range), flash hider (less flash), compensator (less side recoil), muzzle brake (less first-shot kick)
+  - Grip: none, vertical grip (less vertical recoil), angled grip (faster aim down sights)
+  - Magazine: standard, extended (more ammo, slower reload and aim)
+  - Skin and charm (as now)
+- Show what each attachment changes using the stat bars (before and after).
+- Each gun saves its own attachments to the account. Other players see them in matches.
+- Sights change the zoom and the view when aiming down sights.
+
+### Stage Q - Aegis shield bash and downed state
+- Aegis can bash with the shield (melee key while the shield is up). A bash on an enemy knocks them down into a "downed" state.
+- Downed players fall to the ground and can only crawl slowly; they can't shoot or use gadgets. They bleed out after 20 seconds unless revived, with the timer on their screen and a downed icon to their team.
+- Teammates revive by holding a key for 4 seconds next to them; revived players come back with 20 health. Enemies can finish them with any damage. The Medic's healing pistol revives a downed teammate from range.
+- Shield bash has a 3-second cooldown and can't down someone through walls. Bots can bash, revive and finish downed players.
+- "DOWNED" and "Revived by [name]" show in the kill feed.
+- The last stage also adds one `CHANGELOG.md` entry covering Stages M to Q, so players see them all in "What's new".
 
 ## Run locally
 
@@ -472,6 +524,8 @@ shared/            Code used by BOTH client and server
   constants.js     tuning values, key bit flags, team colours
   movementConfig.js  MOVEMENT TUNING: speeds, acceleration, strafing, stances, aiming, head bob, weapon sway
   map.js           map geometry (axis-aligned boxes), spawns, objective
+  christmas.js     Christmas event: every date and rule (Sydney time)
+  christmasSkins.js the 7 limited and 10 crate Christmas skins
   terrain.js       hills and slopes for detailed maps: the smooth ground surface everything stands on and shoots at
   maps/villa.js    Hillside Villa (detailed map)
   maps/lodge.js    Pinecrest Lodge (detailed map)
@@ -506,6 +560,7 @@ server/
   moderation.js    in-match chat, reports, warnings, suspensions and bans (and the owner's inboxes)
   admin.js         the admin tools: online list, matches, join as spectator or player
   gifts.js         announcements, sending gifts, the gift list and claiming (one claim per account)
+  christmas.js     Christmas presents: what they hold and claiming them (one claim per account and day)
   placing.js       times every placement; cancels it on letting go, a hit, sprinting or a weapon switch
   db.js            Postgres connection (DATABASE_URL) or local PGlite fallback, table setup
   accounts.js      sign-up/log-in API, session cookies, socket login check
@@ -555,6 +610,7 @@ client/
   src/skinThumbs.js  pictures of skins (each on a rifle) for the admin gift gallery
   src/drones.js    drone models for everyone, smoothing, destroyed effect
   src/destruction.js  instanced wall panels, charges, explosions
+  src/menuChristmas.js the Christmas decorations in the menu scene
   src/map.js       renders the shared map, lighting
   src/mapDetail.js draws detailed maps, merged into one mesh per texture
   src/mapTextures.js textures drawn in code for detailed maps

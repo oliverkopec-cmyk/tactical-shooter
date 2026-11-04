@@ -1,4 +1,4 @@
-// Gun charm models (30, built from simple shapes in code) and the pendulum that makes them swing.
+// Gun charm models (40, built from simple shapes in code) and the pendulum that makes them swing.
 // Each model hangs from its top: the origin is where the string ties on, and the charm
 // is about 4 cm tall below it. Original designs only.
 
@@ -162,6 +162,72 @@ const BUILD = {
     g.add(orb, m(ring(0.022, 0.0012), mat(0x9a7bff, { glow: 1 }), 0, -0.034, 0, [1.2, 0.3, 0]), m(ring(0.019, 0.001), mat(0x4ad6ff, { glow: 1 }), 0, -0.034, 0, [-0.4, 0, 0.9]), eyelet(-0.014));
     for (let i = 0; i < 4; i++) { const a = i * 1.6; g.add(m(sph(0.0016, 5), mat(0xffffff, { glow: 1 }), Math.cos(a) * 0.01, -0.034 + Math.sin(a * 1.3) * 0.011, Math.sin(a) * 0.012)); }
     g.userData.spin = [orb];
+  },
+  // ---------------------------------------------------------------- Christmas (Stage M)
+  xmas_bauble(g) {
+    g.add(m(sph(0.016, 14), mat(0xc8141e, { metal: 0.8, rough: 0.2 }), 0, -0.027), m(ring(0.0162, 0.0016), mat(0xf2c84a, { metal: 0.9, rough: 0.3 }), 0, -0.027), m(cyl(0.0048, 0.0048, 0.006, 10), GOLD, 0, -0.009), eyelet(-0.003));
+  },
+  xmas_bell(g) {
+    const gold = mat(0xe8b422, { metal: 0.9, rough: 0.28 });
+    g.add(m(cyl(0.018, 0.009, 0.022, 14), gold, 0, -0.026), m(sph(0.0095, 12), gold, 0, -0.015), m(cyl(0.0195, 0.0195, 0.003, 14), gold, 0, -0.038), m(sph(0.0045, 8), mat(0x8a6a14, { metal: 0.8 }), 0, -0.043), m(box(0.022, 0.003, 0.003), RED, 0, -0.012, 0.0085), eyelet(-0.004));
+  },
+  xmas_candy_cane(g) {
+    const red = mat(0xc8141e, { rough: 0.3 }), white = mat(0xf8f2ea, { rough: 0.3 });
+    for (let i = 0; i < 7; i++) g.add(m(cyl(0.0034, 0.0034, 0.0056, 10), i % 2 ? red : white, 0, -0.0165 - i * 0.0056));
+    for (let i = 0; i < 6; i++) g.add(m(ring(0.008, 0.0034, Math.PI / 6 + 0.04), i % 2 ? white : red, 0.008, -0.0135, 0, [0, 0, (i * Math.PI) / 6]));
+    g.add(eyelet(-0.002));
+  },
+  xmas_snowflake(g) {
+    const ice = mat(0xbfe8ff, { rough: 0.2, glow: 0.45 });
+    for (let i = 0; i < 3; i++) g.add(m(box(0.004, 0.038, 0.003), ice, 0, -0.026, 0, [0, 0, (i * Math.PI) / 3]));
+    for (let i = 0; i < 6; i++) {
+      const a = (i * Math.PI) / 3 + Math.PI / 2, x = Math.cos(a) * 0.012, y = -0.026 + Math.sin(a) * 0.012;
+      for (const side of [-0.7, 0.7]) g.add(m(box(0.0024, 0.009, 0.0024), ice, x, y, 0, [0, 0, a - Math.PI / 2 + side]));
+    }
+    g.add(m(sph(0.003, 8), mat(0xffffff, { glow: 0.5 }), 0, -0.026), eyelet(-0.004));
+  },
+  xmas_stocking(g) {
+    const red = mat(0xb8141c, { rough: 0.8 }), white = mat(0xf4f0e8, { rough: 0.9 });
+    g.add(m(slab([[-0.009, -0.009], [0.009, -0.009], [0.009, -0.031], [0.017, -0.038], [0.017, -0.046], [0.003, -0.046], [-0.009, -0.036]], 0.009), red));
+    g.add(m(box(0.022, 0.009, 0.0108), white, 0, -0.008), m(box(0.009, 0.008, 0.0098), white, 0.012, -0.042), m(box(0.009, 0.007, 0.0098), mat(0x1f6a3a, { rough: 0.8 }), -0.0035, -0.04), eyelet(-0.002));
+  },
+  xmas_gingerbread(g) {
+    const dough = mat(0x9a5a28, { rough: 0.85 }), icing = WHITE;
+    g.add(m(sph(0.0085, 12), dough, 0, -0.012), m(slab([[-0.008, -0.017], [0.008, -0.017], [0.009, -0.034], [-0.009, -0.034]], 0.006), dough));
+    for (const s of [-1, 1]) {
+      g.add(m(box(0.012, 0.005, 0.006), dough, s * 0.012, -0.022, 0, [0, 0, s * -0.35]), m(box(0.0055, 0.016, 0.006), dough, s * 0.0055, -0.041, 0, [0, 0, s * 0.18]));
+      g.add(m(sph(0.0013, 6), DARK, s * 0.003, -0.0105, 0.008), m(box(0.0012, 0.006, 0.0012), icing, s * 0.015, -0.023, 0.0034));
+    }
+    for (const y of [-0.021, -0.027]) g.add(m(sph(0.0016, 6), mat(0xd22b2b, { rough: 0.4 }), 0, y, 0.0034));
+    g.add(m(ring(0.0035, 0.0007, Math.PI), icing, 0, -0.0135, 0.0078, [0, 0, Math.PI]), eyelet(-0.003));
+  },
+  xmas_present(g) {
+    const paper = mat(0x1f7a44, { rough: 0.45 }), ribbon = mat(0xf2c84a, { metal: 0.6, rough: 0.3 });
+    g.add(m(box(0.026, 0.024, 0.026), paper, 0, -0.03), m(box(0.0055, 0.0245, 0.0265), ribbon, 0, -0.03), m(box(0.0265, 0.0245, 0.0055), ribbon, 0, -0.03));
+    for (const s of [-1, 1]) g.add(m(ring(0.005, 0.0016), ribbon, s * 0.0055, -0.0145, 0, [0, Math.PI / 2, s * 0.6]));
+    g.add(m(sph(0.0025, 8), ribbon, 0, -0.0165), eyelet(-0.006));
+  },
+  xmas_snowman(g) {
+    const snow = mat(0xf6f8fb, { rough: 0.8 });
+    g.add(m(sph(0.0125, 12), snow, 0, -0.038), m(sph(0.0095, 12), snow, 0, -0.022), m(cyl(0.008, 0.008, 0.0015, 12), DARK, 0, -0.0145), m(cyl(0.0052, 0.0052, 0.008, 12), DARK, 0, -0.0098));
+    g.add(m(cyl(0.0022, 0, 0.0085, 8), mat(0xf07a1a, { rough: 0.5 }), 0, -0.022, 0.0125, [Math.PI / 2, 0, 0]));
+    for (const s of [-1, 1]) g.add(m(sph(0.0012, 6), DARK, s * 0.0034, -0.0195, 0.0086), m(box(0.012, 0.0012, 0.0012), mat(0x4a2e1c), s * 0.0155, -0.03, 0, [0, 0, s * 0.5]));
+    g.add(m(ring(0.0075, 0.0022), mat(0xc8141e, { rough: 0.8 }), 0, -0.0292, 0, [Math.PI / 2, 0, 0]), m(box(0.004, 0.009, 0.002), mat(0xc8141e, { rough: 0.8 }), 0.0055, -0.0335, 0.007));
+    for (const y of [-0.033, -0.04]) g.add(m(sph(0.0013, 6), DARK, 0, y, 0.0122));
+    g.add(eyelet(-0.004));
+  },
+  xmas_reindeer(g) {
+    const fur = mat(0x7a4a24, { rough: 0.85 }), antler = mat(0xd8c4a0, { rough: 0.6 });
+    g.add(m(sph(0.0115, 12), fur, 0, -0.024, 0, null, [1, 1.08, 0.9]), m(sph(0.0068, 10), mat(0xa87448, { rough: 0.8 }), 0, -0.031, 0.0078), m(sph(0.0034, 8), mat(0xe8202a, { glow: 0.9, rough: 0.3 }), 0, -0.029, 0.0138));
+    for (const s of [-1, 1]) {
+      g.add(m(sph(0.0016, 6), DARK, s * 0.0052, -0.0215, 0.0098), m(box(0.0024, 0.015, 0.0024), antler, s * 0.0085, -0.0078, 0, [0, 0, s * -0.42]), m(box(0.0078, 0.0022, 0.0022), antler, s * 0.0135, -0.006, 0, [0, 0, s * 0.45]), m(box(0.0022, 0.0062, 0.0022), antler, s * 0.0058, -0.0042, 0, [0, 0, s * 0.3]));
+      g.add(m(sph(0.0036, 8), fur, s * 0.0118, -0.0195, 0, null, [1.3, 0.7, 0.6]));
+    }
+    g.add(eyelet(-0.009));
+  },
+  xmas_star(g) {
+    g.add(m(slab(starPoints(5, 0.0098, 0.0225), 0.0065), mat(0xffd24a, { metal: 0.7, rough: 0.28, glow: 0.75 }), 0, -0.027), m(slab(starPoints(5, 0.0048, 0.011), 0.008), mat(0xfff4c0, { glow: 1 }), 0, -0.027), eyelet(-0.003));
+    for (const [x, y] of [[0.02, -0.01], [-0.021, -0.012], [0.018, -0.046], [-0.017, -0.047]]) g.add(m(sph(0.0014, 6), mat(0xfff4c0, { glow: 1 }), x, y));
   },
 };
 function cone(r) { return new THREE.ConeGeometry(r, r * 1.6, 6); }

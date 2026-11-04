@@ -9,7 +9,7 @@
 
 import * as THREE from 'three';
 
-const FX = { lava: 0, space: 1, storm: 2, crystal: 3, neon: 4, scales: 5, circuit: 6, waves: 7, aurora: 8, blossom: 9, carbon: 10, glitch: 11, holo: 12, plasma: 13, marble: 14, hexes: 15, fire: 16, toxic: 17, synth: 18, damascus: 19, pixels: 20 };
+const FX = { lava: 0, space: 1, storm: 2, crystal: 3, neon: 4, scales: 5, circuit: 6, waves: 7, aurora: 8, blossom: 9, carbon: 10, glitch: 11, holo: 12, plasma: 13, marble: 14, hexes: 15, fire: 16, toxic: 17, synth: 18, damascus: 19, pixels: 20, candy: 21, wrap: 22, ginger: 23, frost: 24, ornament: 25, pine: 26, twinkle: 27 };
 const ROLE = { body: 0, accent: 1, steel: 2, trim: 3 };
 
 // One clock for every exclusive skin on screen (menu, game, crate), ticking on its own
@@ -217,6 +217,76 @@ void skinFx(vec2 uv, vec3 p, float t, float fres, out vec3 col, out vec3 glow, i
   float shim = band(uv.x * 0.12 + uv.y * 0.05 - t * 0.2, 0.12);
   glow = uC3 * shim * layer * 0.6;
   metal = 1.0; rough = 0.2 + 0.2 * layer;
+#elif FX == 21  // candy cane: red and white stripes winding round the gun, with a gloss sliding along them
+  float s = fract((uv.x + uv.y) * 0.42 - t * 0.1);
+  float red = smoothstep(0.46, 0.5, s) * smoothstep(1.0, 0.96, s);
+  float thin = smoothstep(0.06, 0.04, abs(s - 0.25)) * 0.8;
+  col = mix(mix(uC1, uC2, thin), uC2, red);
+  glow = uC3 * band(uv.x * 0.1 - t * 0.28, 0.1) * 0.7 + uC2 * red * 0.12;
+  metal = 0.1; rough = 0.2;
+#elif FX == 22  // wrapping paper: gold stars on red, tied with a green ribbon, and the stars catching the light in turn
+  vec2 g = uv * 0.95; g.x += 0.5 * mod(floor(g.y), 2.0);
+  vec2 cell = floor(g), f = fract(g) - 0.5;
+  float a = atan(f.y, f.x), r = length(f);
+  float star = smoothstep(0.015, 0.0, r - 0.17 * (0.62 + 0.38 * cos(a * 5.0 + h2(cell) * 6.28)));
+  float rx = abs(fract(uv.x * 0.15) - 0.5);
+  float ribbon = smoothstep(0.075, 0.068, rx), edge = smoothstep(0.09, 0.082, rx) - ribbon;
+  col = mix(uC1 * (0.9 + 0.2 * h2(floor(uv * 5.0))), uC2, star);
+  col = mix(mix(col, uC3, ribbon), uC2, edge);
+  float tw = pow(0.5 + 0.5 * sin(t * 2.2 + h2(cell) * 40.0), 5.0);
+  glow = (uC2 * star * (0.1 + 0.9 * tw) + uC2 * edge * 0.3 + uC3 * ribbon * 0.08) * (1.0 - ribbon);
+  metal = mix(0.1, 0.8, max(star, edge)); rough = mix(0.5, 0.25, max(star, ribbon));
+#elif FX == 23  // gingerbread: a baked crumb with icing lines that gleam and sprinkles that glow
+  float crumb = fbm(p * 2.2);
+  col = uC1 * (0.65 + 0.7 * crumb);
+  float wy = fract(uv.y * 0.5 + 0.1 * sin(uv.x * 2.2));
+  float ice = smoothstep(0.1, 0.065, abs(wy - 0.5));
+  vec2 g = uv * 1.2; vec2 cell = floor(g), f = fract(g) - 0.5;
+  float sprinkle = step(0.55, h2(cell)) * smoothstep(0.13, 0.09, length(f - (h22(cell) - 0.5) * 0.5)) * (1.0 - ice);
+  col = mix(mix(col, uC2, ice), uC3, sprinkle);
+  glow = uC2 * ice * (0.04 + 0.5 * band(uv.x * 0.13 - t * 0.25, 0.1)) + uC3 * sprinkle * (0.3 + 0.3 * sin(t * 2.0 + h2(cell) * 6.28));
+  metal = 0.0; rough = 0.8 - ice * 0.5;
+#elif FX == 24  // frosted ice: feathery frost spreading over blue ice, with sparkles
+  float q = fbm(p * 0.7 + vec3(0.0, 0.0, t * 0.04));
+  float fern = smoothstep(0.055, 0.0, abs(fbm(p * 1.7 + q * 1.4) - 0.5));
+  col = mix(uC1, uC2, smoothstep(0.32, 0.75, q));
+  col = mix(col, uC3, fern * 0.8);
+  vec2 sg = uv * 5.5;
+  float spark = step(0.96, h2(floor(sg) + floor(t * 2.5))) * smoothstep(0.45, 0.0, length(fract(sg) - 0.5));
+  glow = uC3 * (fern * 0.32 + spark * 2.6) + uC2 * fres * 0.4;
+  metal = 0.45; rough = 0.1;
+#elif FX == 25  // red and gold ornament: glossy red with gold bands and zigzags, and glitter in the gold
+  float b = abs(fract(uv.x * 0.21) - 0.5);
+  float gold = smoothstep(0.075, 0.065, b);
+  float zig = abs(fract(uv.y * 0.65 + abs(fract(uv.x * 0.65) - 0.5)) - 0.5);
+  float zz = smoothstep(0.075, 0.05, zig) * smoothstep(0.26, 0.24, b) * (1.0 - gold);
+  float deco = max(gold, zz);
+  col = mix(uC1, uC2, deco);
+  float glitter = step(0.88, h2(floor(uv * 13.0) + floor(t * 3.0)));
+  glow = uC3 * deco * (0.1 + 1.0 * glitter) + uC1 * fres * 0.55 + uC3 * band(uv.x * 0.1 - t * 0.2, 0.06) * 0.25;
+  metal = mix(0.75, 1.0, deco); rough = mix(0.1, 0.28, deco);
+#elif FX == 26  // snowy pine: green needles with snow settled on everything that faces up, sparkling
+  float n = n3(vec3(uv * vec2(2.6, 0.9), 0.0));
+  float needle = 0.5 + 0.5 * sin(uv.y * 9.0 + n * 7.0);
+  col = mix(uC1, uC2, needle * (0.4 + n));
+  float cover = vObjN.y * 0.6 + (fbm(p * 1.1) - 0.5) * 1.6 + 0.12;
+  float snow = smoothstep(0.12, 0.28, cover);
+  col = mix(col, uC3, snow);
+  glow = uC3 * snow * step(0.965, h2(floor(uv * 9.0) + floor(t * 2.0))) * 1.5 + uC2 * (1.0 - snow) * 0.04;
+  metal = 0.0; rough = mix(0.8, 0.5, snow);
+#elif FX == 27  // festive lights: strings of coloured bulbs on a dark wire, twinkling one by one
+  float row = uv.y * 0.72 + 0.12 * sin(uv.x * 1.3);
+  float y = fract(row), rowId = floor(row);
+  float wire = smoothstep(0.035, 0.012, abs(y - 0.5));
+  float bx = uv.x * 1.15 + rowId * 0.5, id = floor(bx);
+  vec2 d = vec2((fract(bx) - 0.5) / 1.15, (y - 0.5) / 0.72);
+  float bulb = smoothstep(0.17, 0.13, length(d * vec2(1.25, 0.95)));
+  float which = mod(id + rowId * 3.0, 4.0);
+  vec3 c = which < 1.0 ? vec3(1.0, 0.12, 0.1) : which < 2.0 ? vec3(0.15, 1.0, 0.3) : which < 3.0 ? vec3(1.0, 0.72, 0.15) : vec3(0.15, 0.45, 1.0);
+  float tw = 0.3 + 0.7 * pow(0.5 + 0.5 * sin(t * 3.0 + h2(vec2(id, rowId)) * 40.0), 2.0);
+  col = mix(uC1 + uC2 * n3(p * 1.5) * 0.7, c * 0.5, bulb);
+  glow = c * bulb * tw * 2.4 + c * smoothstep(0.42, 0.0, length(d)) * tw * 0.3 + uC3 * wire * 0.05;
+  metal = 0.3; rough = mix(0.55, 0.2, bulb);
 #else           // pixels: blocky camo whose colours slowly shift
   vec2 g = floor(uv * 1.5);
   float n = n3(vec3(g * 0.35, t * 0.15));

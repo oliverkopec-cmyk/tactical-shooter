@@ -1459,3 +1459,11 @@ button.primary:hover:not(:disabled) { background: linear-gradient(180deg, #ffd47
 .crate-contents.hidden { display: none; }
 .crate-skin.charm { font-style: italic; }
 @media (max-width: 900px) { .shop-featured { flex-direction: column; } .shop-crate { grid-template-columns: 1fr; } .sf-name { font-size: 28px; } }
+
+/* Christmas (Stage M): the countdown under the top bar */
+.xmas-bar { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 5px 16px; font-size: 15px; font-weight: 700; letter-spacing: 0.06em; font-variant-numeric: tabular-nums; color: #fff4d8; text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6); background: linear-gradient(90deg, transparent, rgba(150, 20, 28, 0.82) 22%, rgba(22, 92, 52, 0.82) 78%, transparent); }
+.xmas-bar.hidden { display: none; }
+.xmas-star { color: #ffd24a; text-shadow: 0 0 10px rgba(255, 210, 74, 0.9); }
+#screen-home.crate-mode .xmas-bar { visibility: hidden; }
+.shop-crate.christmas .crate-card-big { background: linear-gradient(160deg, rgba(120, 18, 26, 0.5), rgba(18, 74, 42, 0.5)); }
+#xmas-dev select { width: 100%; }

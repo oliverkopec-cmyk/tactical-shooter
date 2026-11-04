@@ -1,10 +1,11 @@
 // Gun charms: small objects that hang from the side of a gun and swing as you move.
-// 30 original charms in the same four rarities as skins. Models are drawn in code on the
+// 40 original charms in the same four rarities as skins. Models are drawn in code on the
 // client (client/src/charmModels.js); this file is the list both sides agree on.
 //
 // You get charms two ways:
 //   - levelling up: one charm every CHARM_LEVEL_STEP levels, from the CHARM_LEVEL_REWARDS list
 //   - the crate in the shop (shared/shop.js), which holds every charm as well as every crate skin
+//   - Christmas (`source: 'christmas'`, Stage M): only from the Christmas crate and the Christmas presents
 // One charm can be equipped per gun, and other players see it.
 
 export const CHARMS = {
@@ -42,6 +43,17 @@ export const CHARMS = {
   polish_eagle: { name: 'White Eagle', rarity: 'legendary' },
   golden_dragon: { name: 'Golden Dragon', rarity: 'legendary' },
   galaxy: { name: 'Galaxy Orb', rarity: 'legendary' },
+  // ---------------------------------------------------------------- Christmas (Stage M)
+  xmas_bauble: { name: 'Bauble', rarity: 'common', source: 'christmas' },
+  xmas_bell: { name: 'Jingle Bell', rarity: 'common', source: 'christmas' },
+  xmas_candy_cane: { name: 'Candy Cane', rarity: 'common', source: 'christmas' },
+  xmas_snowflake: { name: 'Snowflake', rarity: 'common', source: 'christmas' },
+  xmas_stocking: { name: 'Little Stocking', rarity: 'rare', source: 'christmas' },
+  xmas_gingerbread: { name: 'Gingerbread Person', rarity: 'rare', source: 'christmas' },
+  xmas_present: { name: 'Mini Present', rarity: 'rare', source: 'christmas' },
+  xmas_snowman: { name: 'Tiny Snowman', rarity: 'epic', source: 'christmas' },
+  xmas_reindeer: { name: 'Reindeer', rarity: 'epic', source: 'christmas' },
+  xmas_star: { name: 'Christmas Star', rarity: 'legendary', source: 'christmas' },
 };
 
 export const CHARM_IDS = Object.keys(CHARMS);
@@ -66,10 +78,10 @@ export function charmsFromLevel(level) {
 
 export const RARITY_ORDER = ['common', 'rare', 'epic', 'legendary'];
 
-/** Charms in the crate, grouped by rarity. */
+/** Charms in the crate, grouped by rarity (Christmas charms have their own crate). */
 export function charmCrateContents() {
   const out = { common: [], rare: [], epic: [], legendary: [] };
-  for (const id of CHARM_IDS) out[CHARMS[id].rarity].push(id);
+  for (const id of CHARM_IDS) if (!CHARMS[id].source) out[CHARMS[id].rarity].push(id);
   return out;
 }
 

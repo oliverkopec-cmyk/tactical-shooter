@@ -9,6 +9,7 @@ import { SKINS, RARITIES, skinList, hexColor, CRATE } from '../../shared/skins.j
 import { operatorIcon, sideSymbol } from './operatorIcons.js';
 import { equipSkin, equipOperator, openCrate as openCrateRequest, buyOperator, equipCharm } from './account.js';
 import { CHARMS, charmList, charmUnlockLevel } from '../../shared/charms.js';
+import { PRESENT_BASE, countdownText } from '../../shared/christmas.js';
 import { ShopView } from './shopView.js';
 import { fillKeys } from './controls.js';
 import { MenuScene } from './menuScene.js';
@@ -25,10 +26,14 @@ const swatch = (s) => (s.rarity === 'exclusive'
 
 export class Menu {
   /** getAccount() -> the current profile; setAccount(profile) stores a new one. */
-  constructor({ getAccount, setAccount, onSettings, onTab = () => {}, claimGift }) {
+  constructor({ getAccount, setAccount, onSettings, onTab = () => {}, claimGift, christmasRequest }) {
     this.onTab = onTab;
     this.claimGift = claimGift;   // (id) -> { result, account } or { error }, from the server
-    this.giftList = [];           // unopened gifts waiting as presents
+    this.christmasRequest = christmasRequest;   // (name, value): ask the server about Christmas
+    this.adminGifts = [];         // unopened admin gifts
+    this.christmas = null;        // the server's Christmas state (shared/christmas.js)
+    this.christmasClock = 0;      // server time - local time
+    this.giftList = [];           // unopened gifts and Christmas presents, waiting as presents
     this.giftOpen = null;         // the gift being unwrapped: { id, result, account }
     this.getAccount = getAccount;
     this.setAccount = setAccount;
@@ -40,7 +45,7 @@ export class Menu {
     this.error = '';
     this.opening = false;      // a crate opening is playing
     this.busy = false;
-    this.shop = new ShopView({ getAccount, setAccount, onOpenCrate: () => this.openCrate() });
+    this.shop = new ShopView({ getAccount, setAccount, onOpenCrate: (kind) => this.openCrate(kind) });
     this.scene = null;        // created the first time the menu is shown (needs WebGL)
     this.active = false;
 
@@ -65,6 +70,8 @@ export class Menu {
     $('op-detail').addEventListener('click', (e) => this.onDetailClick(e));
     this.bindCrateOverlay();
     this.bindGifts();
+    this.bindChristmasDev();
+    setInterval(() => this.tickChristmas(), 1000);
   }
 
   /** Called when the main menu screen is shown or hidden. */
@@ -77,7 +84,7 @@ export class Menu {
     if (!on) { this.scene?.stop(); return; }
     if (!this.scene) {
       try { this.scene = new MenuScene($('menu-canvas')); } catch { this.scene = null; $('menu-canvas').classList.add('hidden'); }
-      if (this.scene) { this.scene.onGiftClick = (id) => this.openGift(id); this.scene.setGifts(this.giftList); }
+      if (this.scene) { this.scene.onGiftClick = (id) => this.openGift(id); this.scene.setChristmas(this.christmas?.theme); this.scene.setGifts(this.giftList); }
     }
     this.scene?.start();
     this.refresh();
@@ -176,7 +183,7 @@ export class Menu {
     const currentCharm = a.equippedCharms?.[w.id] || null;
     const charmTiles = [`<button type="button" class="skin-tile${currentCharm === null ? ' equipped' : ''}" data-charm="" title="No charm">
         <span class="skin-swatch charm-none"></span><span class="skin-name">None</span><span class="skin-rar" style="color:#8b95a3">&nbsp;</span></button>`]
-      .concat(charmList().map((c) => {
+      .concat(charmList().filter((c) => !c.source || ownedCharms.has(c.id)).map((c) => {   // Christmas charms only show once you have them
         const ok = ownedCharms.has(c.id), rar = RARITIES[c.rarity], lvl = charmUnlockLevel(c.id);
         const why = lvl ? `Unlocks at level ${lvl}, or from the charm crate` : 'From the charm crate in the Shop';
         return `<button type="button" class="skin-tile${currentCharm === c.id ? ' equipped' : ''}${ok ? '' : ' locked'}" data-charm="${c.id}" style="--rar:${rar.color}" title="${ok ? '' : why}">
@@ -240,10 +247,11 @@ export class Menu {
   // ---------------------------------------------------------------- crate opening
 
   /** Open the crate (the shop's Open button): the server draws it, then the 3D scene plays the opening. */
-  async openCrate() {
+  async openCrate(kind = 'crate') {
     if (this.opening || this.busy) return;
     this.busy = true;
-    const res = await openCrateRequest();
+    this.crateKind = kind;
+    const res = await openCrateRequest(kind);
     this.busy = false;
     if (!res.result) { if (res.account) this.setAccount(res.account); this.shop.say(res.error || 'Could not open the crate.', true); return; }
 
@@ -273,7 +281,7 @@ export class Menu {
     $('crate-note').className = result.duplicate ? 'crate-note dup' : 'crate-note new';
     $('crate-equip').textContent = charm ? `Equip on ${w.name}` : 'Equip';
     $('crate-equip').disabled = false;
-    const price = CRATE.price;
+    const price = result.price ?? CRATE.price;
     $('crate-more').disabled = account.money < price;
     $('crate-more').textContent = account.money < price ? 'Not enough Money' : 'Open another';
     this.setAccount(account);   // updates the Money in the top bar (menu.refresh does nothing while opening)
@@ -301,7 +309,7 @@ export class Menu {
       $('crate-equip').disabled = !!res.account;
       if (res.account) this.setAccount(res.account);
     });
-    $('crate-more').addEventListener('click', () => { this.closeOpening(); this.openCrate(); });
+    $('crate-more').addEventListener('click', () => { this.closeOpening(); this.openCrate(this.crateKind); });
     $('crate-back').addEventListener('click', () => this.closeOpening());
   }
 
@@ -317,13 +325,65 @@ export class Menu {
 
   /** The server's list of unopened gifts: presents in the 3D scene, and a button in the Play tab. */
   setGifts(list) {
-    this.giftList = Array.isArray(list) ? list : [];
+    this.adminGifts = Array.isArray(list) ? list : [];
+    this.showGifts();
+  }
+
+  showGifts() {
+    const presents = (this.christmas?.presents || []).map((p) => ({ id: PRESENT_BASE + p.day, title: `Christmas present · ${p.date}`, exclusive: p.special, christmas: true }));
+    this.giftList = [...this.adminGifts, ...presents];
     this.scene?.setGifts(this.giftList);
     const n = this.giftList.length, el = $('gift-notice');
+    const where = presents.length && !this.adminGifts.length ? 'under the tree' : 'in front of your operator';
     el.classList.toggle('hidden', n === 0);
     el.classList.toggle('exclusive', this.giftList.some((g) => g.exclusive));
-    el.innerHTML = `<span class="gift-icon">🎁</span><span><b>${n === 1 ? 'You have a gift!' : `You have ${n} gifts!`}</b><br><span class="muted">${this.scene ? 'Click a present in front of your operator to open it.' : 'Click here to open it.'}</span></span>`;
+    el.innerHTML = `<span class="gift-icon">🎁</span><span><b>${n === 1 ? 'You have a gift!' : `You have ${n} gifts!`}</b><br><span class="muted">${this.scene ? `Click a present ${where} to open it.` : 'Click here to open it.'}</span></span>`;
     if (!this.giftOpen) $('gift-next').classList.toggle('hidden', true);
+  }
+
+  // ---------------------------------------------------------------- Christmas
+
+  /** What the server says about Christmas (null when logged out): the theme, the countdown and the presents. */
+  setChristmas(state) {
+    const wasOn = !!this.christmas?.theme;
+    this.christmas = state;
+    this.christmasClock = state ? state.now - Date.now() : 0;
+    this.christmasAsked = false;
+    this.scene?.setChristmas(state?.theme);
+    this.showGifts();
+    this.tickChristmas();
+    this.renderChristmasDev();
+    if (wasOn !== !!state?.theme) this.shop.christmasChanged();
+  }
+
+  /** Once a second: the countdown; and at each midnight in Sydney ask the server what has changed. */
+  async tickChristmas() {
+    const st = this.christmas;
+    if (!st) { $('xmas-bar').classList.add('hidden'); return; }
+    const now = Date.now() + this.christmasClock;
+    $('xmas-bar').classList.toggle('hidden', !st.theme);
+    if (st.theme) $('xmas-countdown').textContent = countdownText(now);
+    if (st.nextChange && now >= st.nextChange && !this.christmasAsked && this.christmasRequest) {
+      this.christmasAsked = true;
+      const res = await this.christmasRequest('christmasState');
+      if (res?.christmas) this.setChristmas(res.christmas); else this.christmasAsked = false;
+    }
+  }
+
+  /** Local test database only: pretend it is another date, to see the whole event. */
+  renderChristmasDev() {
+    const el = $('xmas-dev'), show = !!this.getAccount()?.devTools && !!this.christmas;
+    el.classList.toggle('hidden', !show);
+    if (!show || el.childElementCount) return;
+    const dates = [['-', 'Choose a date...'], ['', 'Today'], ['2026-11-19T23:59:50', '19 Nov, 10 s before it starts'], ['2026-11-20T12:00:00', '20 Nov, first present'], ['2026-12-17T12:00:00', '17 Dec, last random day'], ['2026-12-18T12:00:00', '18 Dec, first skin day'], ['2026-12-24T23:59:50', '24 Dec, 10 s to Christmas'], ['2026-12-28T12:00:00', '28 Dec'], ['2027-01-02T23:59:50', '2 Jan, 10 s before the end']];
+    el.innerHTML = `<span class="muted small-note">Local test database only: pretend it is</span>
+      <select id="xmas-dev-date">${dates.map(([v, label]) => `<option value="${v}">${label}</option>`).join('')}</select>
+      <button type="button" class="ghost small" id="xmas-dev-reset">Forget my presents</button>`;
+  }
+
+  bindChristmasDev() {
+    $('xmas-dev').addEventListener('change', (e) => { if (e.target.id !== 'xmas-dev-date' || e.target.value === '-') return; this.christmasRequest?.('christmasDevDate', e.target.value ? `${e.target.value}+11:00` : ''); });
+    $('xmas-dev').addEventListener('click', (e) => { if (e.target.id === 'xmas-dev-reset') this.christmasRequest?.('christmasDevReset'); });
   }
 
   /** Open a gift: the server adds what's inside, then the unwrapping plays and shows it. */
@@ -340,6 +400,7 @@ export class Menu {
     $('gift-hint').classList.remove('hidden');
     if (this.scene) this.scene.playGift(id, res.result, { showGun: this.giftGun(), onReveal: () => this.showGiftResult() });
     else this.showGiftResult();
+    if (res.christmas) this.setChristmas(res.christmas);   // after the box has been taken out of the pile
   }
 
   /** The gun a gifted skin is shown on and equipped to: the menu operator's primary. */
@@ -365,7 +426,7 @@ export class Menu {
     }
     if (result.crate) {
       const c = result.crate, what = c.kind === 'charm' ? `${esc(CHARMS[c.charm].name)} charm` : `${esc(SKINS[c.skin].name)} for the ${esc(WEAPONS[c.weapon].name)}`;
-      items.push(`<div class="gift-item">A ${c.kind === 'charm' ? 'charm' : esc(WEAPONS[c.weapon].name)} crate: ${rarityTag(c.rarity)} <b>${what}</b>${c.duplicate ? ` <span class="muted">(duplicate: +${c.refund.toLocaleString()} Money)</span>` : ''}</div>`);
+      items.push(`<div class="gift-item">${c.label ? `A ${esc(c.label)}` : `A ${c.kind === 'charm' ? 'charm' : esc(WEAPONS[c.weapon].name)} crate`}: ${rarityTag(c.rarity)} <b>${what}</b>${c.duplicate ? ` <span class="muted">(duplicate: +${c.refund.toLocaleString()} Money)</span>` : ''}</div>`);
     }
     if (result.charm) items.push(`<div class="gift-item">${rarityTag(result.charm.rarity)} <b>${esc(CHARMS[result.charm.id].name)}</b> charm${result.charm.duplicate ? ' <span class="muted">(you already had it)</span>' : ''}</div>`);
     if (result.money) items.push(`<div class="gift-item money"><b>+${result.money.toLocaleString()} Money</b></div>`);
