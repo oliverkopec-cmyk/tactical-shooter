@@ -1,4 +1,6 @@
-// Other players: simple blocky bodies, interpolated between server snapshots.
+// Other players: detailed bodies (client/src/avatarModel.js), interpolated between server snapshots and posed here.
+// Arms and legs are solved from where the hands and feet need to be: the hands stay on the gun through aiming and
+// reloads, and the feet step along the ground in the direction of travel.
 
 import * as THREE from 'three';
 import { TEAM_COLORS, LEAN_OFFSET, STAND_EYE, STAND_HEIGHT } from '../../shared/constants.js';
@@ -6,14 +8,89 @@ import { PRONE_BODY } from '../../shared/raycast.js';
 import { bodyHeight } from '../../shared/movement.js';
 import { makeGunModel, animateGun } from './weapons.js';
 import { attachCharm } from './charmModels.js';
-import { OPERATORS } from '../../shared/operators.js';
+import { OPERATORS, defaultOperator } from '../../shared/operators.js';
 import { WEAPONS } from '../../shared/weapons.js';
 import { SHIELD_HEIGHT } from '../../shared/raycast.js';
+import { bodyShapes, bodyMesh, LIMBS } from './avatarModel.js';
+import { quality } from './graphics.js';
 
 const SHIELD_ID = Object.values(WEAPONS).find((w) => w.shield)?.id;
 
 const LEAN_ANGLE = Math.atan2(LEAN_OFFSET, STAND_EYE);
 const BUFFER_MS = 1000;
+const NEAR = 16, FAR = 20;      // metres: closer than NEAR the full body, further than FAR the low one
+const STEP_ANKLE = LIMBS.ankle;
+const REACH_EPS = 0.001;
+
+// Whose eyes decide how much detail a body needs (the game's camera; the menus have none, so they get the full body)
+let viewer = null;
+export function setAvatarViewer(camera) { viewer = camera; }
+
+const lerp = (a, b, k) => a + (b - a) * k;
+const ease = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+
+// Working values for posing, so a frame makes no garbage
+const V = () => new THREE.Vector3();
+const vS = V(), vT = V(), vD = V(), vE = V(), vP = V(), vX = V(), vY = V(), vZ = V(), vF = V(), vR = V(), vL = V(), vA = V(), vB = V();
+const mA = new THREE.Matrix4(), mB = new THREE.Matrix4(), qU = new THREE.Quaternion(), qF = new THREE.Quaternion();
+
+/** The rotation that runs a limb's -y along `dir`, with its -z (knee pads, elbow pads) towards `pole`. */
+function aim(q, dir, pole) {
+  vY.copy(dir).negate();
+  vZ.copy(pole).addScaledVector(vY, -pole.dot(vY));
+  if (vZ.lengthSq() < 1e-6) vZ.set(0, 0, 1).addScaledVector(vY, -vY.z);
+  vZ.normalize().negate();
+  vX.crossVectors(vY, vZ);
+  q.setFromRotationMatrix(mA.makeBasis(vX, vY, vZ));
+}
+
+/** Two-joint limb: upper hangs at `root`, lower hangs from its end, and the far end reaches `target` if it can. */
+function solveLimb(upper, lower, root, target, pole, l1, l2) {
+  vD.subVectors(target, root);
+  const reach = Math.max(Math.abs(l1 - l2) + REACH_EPS, Math.min(l1 + l2 - REACH_EPS, vD.length()));
+  vD.normalize();
+  const a = (l1 * l1 - l2 * l2 + reach * reach) / (2 * reach), h = Math.sqrt(Math.max(0, l1 * l1 - a * a));
+  vP.copy(pole).addScaledVector(vD, -pole.dot(vD));
+  if (vP.lengthSq() < 1e-6) vP.set(0, 0, -1).addScaledVector(vD, vD.z);
+  vP.normalize();
+  vE.copy(vD).multiplyScalar(a).addScaledVector(vP, h);        // the elbow or knee, from the root
+  vF.copy(vE).normalize();
+  aim(qU, vF, vP);
+  upper.position.copy(root);
+  upper.quaternion.copy(qU);
+  vF.copy(vD).multiplyScalar(reach).sub(vE).normalize();
+  aim(qF, vF, vP);
+  lower.position.set(0, -l1, 0);
+  lower.quaternion.copy(qU).invert().multiply(qF);
+}
+
+/** Where the hands go on a gun, in the gun's own coordinates. */
+function holdPoints(gun, model) {
+  const parts = gun.userData.parts || {}, names = Object.keys(parts);
+  const find = (prefix) => names.filter((n) => n.startsWith(prefix)).flatMap((n) => parts[n]);
+  const box = (meshes) => {
+    const b = new THREE.Box3();
+    for (const m of meshes) {
+      m.geometry.computeBoundingBox();
+      const bb = m.geometry.boundingBox.clone();
+      bb.translate(m.position);
+      if (m.parent !== gun) bb.translate(m.parent.position);
+      b.union(bb);
+    }
+    return b;
+  };
+  const grip = find('grip.main');
+  const gc = grip.length ? box(grip).getCenter(V()) : V().set(0, -0.06, 0.08);
+  const right = gc.clone().add(V().set(0, 0, 0));
+  const pistol = ['pistol', 'revolver', 'machinePistol'].includes(model);
+  const side = pistol ? [] : find('foregrip'), under = pistol ? [] : [...find('pump.main'), ...find('handguard.main'), ...find('shroud.main')];
+  let left;
+  if (pistol) left = gc.clone().add(V().set(-0.03, -0.03, 0));
+  else if (side.length) left = box(side).getCenter(V());
+  else if (under.length) { const b = box(under), c = b.getCenter(V()); left = V().set(c.x, b.min.y - 0.012, c.z); }
+  else left = V().set(0, -0.05, -0.25);
+  return { right, left };
+}
 
 function lerpAngle(a, b, t) {
   let d = (b - a) % (Math.PI * 2);
@@ -77,72 +154,32 @@ export class RemotePlayer {
     this.flashTime = 0;
 
     const color = TEAM_COLORS[team] ?? 0xffffff;
-    const bodyMat = new THREE.MeshStandardMaterial({ color, roughness: 0.7 });
-    const darkMat = new THREE.MeshStandardMaterial({ color: 0x1d2228, roughness: 0.5 });
-    this.visorMat = new THREE.MeshStandardMaterial({ color: 0x1d2228, roughness: 0.4, emissive: 0x000000 });
 
     this.root = new THREE.Group();        // at the feet, rotated by yaw
     this.lean = new THREE.Group();        // tilts around the feet
     this.root.add(this.lean);
 
-    // A simple humanoid: head with helmet, torso with vest, two arms holding the gun,
-    // and two-segment legs. Poses are driven from snapshots in update().
-    const skinMat = new THREE.MeshStandardMaterial({ color: 0xcfa27d, roughness: 0.8 });
-    const bootMat = new THREE.MeshStandardMaterial({ color: 0x15181b, roughness: 0.7 });
-    const box = (w, h, d, mat, y = 0) => {
-      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
-      m.position.y = y;
-      m.castShadow = true;
-      return m;
-    };
-
-    // Legs: thigh and shin hang from the hip and bend to match the crouch
-    this.hips = new THREE.Group();
-    this.legs = [-1, 1].map((side) => {
-      const thigh = new THREE.Group();
-      thigh.position.x = side * 0.12;
-      thigh.add(box(0.16, 0.46, 0.17, darkMat, -0.23));
-      const shin = new THREE.Group();
-      shin.position.y = -0.46;
-      shin.add(box(0.14, 0.4, 0.15, darkMat, -0.2));
-      const boot = box(0.15, 0.08, 0.24, bootMat, -0.43);
-      boot.position.z = -0.03;
-      shin.add(boot);
-      thigh.add(shin);
-      this.hips.add(thigh);
-      return { thigh, shin };
-    });
-    this.hips.add(box(0.36, 0.14, 0.24, darkMat, 0));
-    this.lean.add(this.hips);
-
-    // Torso with a vest, and arms pivoting at the shoulders
-    this.upper = new THREE.Group();
-    this.upper.add(box(0.46, 0.55, 0.27, bodyMat, 0.275));
-    this.upper.add(box(0.5, 0.36, 0.31, darkMat, 0.3));
-    this.arms = [1, -1].map((side) => {
-      const arm = new THREE.Group();
-      arm.position.set(side * 0.31, 0.5, 0);
-      arm.add(box(0.11, 0.3, 0.11, bodyMat, -0.15));
-      const fore = box(0.1, 0.27, 0.1, skinMat, -0.43);
-      arm.add(fore);
-      arm.add(box(0.1, 0.08, 0.1, bootMat, -0.6));      // glove
-      arm.rotation.order = 'YXZ';
-      this.upper.add(arm);
-      return arm;
-    });
-    this.lean.add(this.upper);
-
-    this.head = new THREE.Group();
-    this.head.add(new THREE.Mesh(new THREE.SphereGeometry(0.14, 16, 12), skinMat));
-    const helmet = new THREE.Mesh(new THREE.SphereGeometry(0.165, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.62), bodyMat);
-    helmet.position.y = 0.015;
-    helmet.castShadow = true;
-    const visor = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.07, 0.05), this.visorMat);
-    visor.position.set(0, 0.0, -0.13);
-    this.head.add(helmet, visor);
-    this.lean.add(this.head);
+    // The body, one mesh per part (client/src/avatarModel.js). Poses are worked out in update(). Index 0 is the right side.
+    const bone = (parent) => { const m = bodyMesh(); (parent || this.lean).add(m); return m; };
+    this.hips = bone();
+    this.upper = bone();                  // the torso, from the hips to the neck
+    this.head = bone();
+    this.lensMesh = new THREE.Mesh();
+    this.lensMesh.userData.shared = true;
+    this.head.add(this.lensMesh);
+    this.arms = [0, 1].map(() => { const upper = bone(); const fore = bone(upper); return { upper, fore }; });
+    this.legs = [0, 1].map(() => { const thigh = bone(); const shin = bone(thigh); const foot = bone(); return { thigh, shin, foot }; });
+    this.operatorId = null;
+    this.low = null;
+    this.detailTimer = 0;
+    this.inMenu = id === 'menu' || id === 'preview';
+    this.applyShapes(defaultOperator(team), quality().effects === 'low');
     this.walkPhase = 0;
+    this.time = Math.random() * 10;       // idle breathing, so players aren't in step
     this.swingT = 0;
+    this.sprintAmt = 0; this.adsAmt = 0; this.moveAmt = 0; this.vaultAmt = 0; this.rapAmt = 0; this.airAmt = 0; this.reloadAmt = 0;
+    this.moveX = 0; this.moveZ = -1;      // the way the feet are stepping, in the body's own frame
+    this.rapPhase = 0; this.lastY = 0;
     this.speed = 0; this.onGround = true; this.vy = 0; this.reloading = false;   // read by the soundscape
 
     // Small red marker above the head while a drone pilot has pinged this enemy.
@@ -181,9 +218,8 @@ export class RemotePlayer {
     this.placing = 0;
     this.placeAmt = 0; this.kneelAmt = 0;
     this.placeItem = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.08, 0.11), new THREE.MeshStandardMaterial({ color: 0x2a2f36, roughness: 0.5, metalness: 0.5 }));
-    this.placeItem.position.set(-0.31, -0.64, 0);   // between the two hands (in the right arm's frame)
     this.placeItem.visible = false;
-    this.arms[0].add(this.placeItem);
+    this.lean.add(this.placeItem);
     this.weaponId = null;
     this.flash = new THREE.Mesh(
       new THREE.SphereGeometry(0.07, 8, 6),
@@ -202,12 +238,37 @@ export class RemotePlayer {
     scene.add(this.root);
   }
 
-  /** Tint the visor with the operator's colour. */
+  /** Dress the body as this operator. */
   setOperator(opId) {
     if (!opId || opId === this.operatorId) return;
+    this.applyShapes(opId, this.low);
+  }
+
+  /** Put an operator's shapes on the bones, in full or low detail. */
+  applyShapes(opId, low) {
     this.operatorId = opId;
-    const op = OPERATORS[opId];
-    if (op) this.visorMat.color.setHex(op.color);
+    this.low = low;
+    const s = bodyShapes(opId, this.team, low);
+    this.hips.geometry = s.hips;
+    this.upper.geometry = s.torso;
+    this.head.geometry = s.head;
+    this.lensMesh.visible = !!s.lens;
+    if (s.lens) { this.lensMesh.geometry = s.lens; this.lensMesh.material = s.lensMaterial; }
+    this.arms.forEach((a, i) => { a.upper.geometry = s.upperArm[i]; a.fore.geometry = s.foreArm[i]; });
+    this.legs.forEach((l, i) => { l.thigh.geometry = s.thigh[i]; l.shin.geometry = s.shin[i]; l.foot.geometry = s.foot[i]; });
+  }
+
+  /** Every so often: is this body close enough to need the full version? The Low graphics setting always uses the low one. */
+  checkDetail(dt) {
+    this.detailTimer -= dt;
+    if (this.detailTimer > 0) return;
+    this.detailTimer = 0.4;
+    let low = quality().effects === 'low';
+    if (!low && viewer && !this.inMenu) {
+      const d = viewer.position.distanceTo(this.root.position);
+      low = this.low ? d > NEAR : d > FAR;      // a gap between the two, so it doesn't flick at the boundary
+    }
+    if (low !== this.low) this.applyShapes(this.operatorId, low);
   }
 
   setWeapon(id) {
@@ -218,7 +279,7 @@ export class RemotePlayer {
     if (WEAPONS[id]?.shield) {
       this.ensureShield(id);
       if (!this.cover) this.cover = 1;
-      this.gun = null; this.muzzle = null;
+      this.gun = null; this.hold = null; this.muzzle = null;
       return;
     }
     const gun = makeGunModel(id, this.skins[id]);
@@ -227,6 +288,7 @@ export class RemotePlayer {
     this.gunMount.add(gun);
     attachCharm(gun, this.charms[id]);
     this.gun = gun;
+    this.hold = holdPoints(gun, WEAPONS[id]?.model);
     this.muzzle = gun.userData.muzzle;
     this.muzzle.add(this.flash);
   }
@@ -261,6 +323,8 @@ export class RemotePlayer {
     if (s.w) this.setWeapon(s.w.id);
     if (s.o) this.setOperator(s.o);
     this.reloading = !!(s.w && s.w.reload > 0);
+    // How far through the reload (0 to 1). w.reload counts the seconds left.
+    if (s.w) this.reloadFrac = this.reloading ? Math.max(0, 1 - s.w.reload / (WEAPONS[s.w.id]?.reloadTime || 2.4)) : -1;
     this.placing = s.pl || 0;
     // (the menu's stand-in poses carry no id and no shield state: a shield is shown raised there)
     this.cover = 'id' in s ? s.sh || 0 : WEAPONS[this.weaponId]?.shield ? 1 : 0;
@@ -284,7 +348,9 @@ export class RemotePlayer {
     this.flashTime -= dt;
     this.flash.visible = this.flashTime > 0;
     // The slide or bolt kicks back with each shot; a reload drops the magazine
-    if (this.gun) animateGun(this.gun, { kick: Math.max(0, this.flashTime) / 0.05, reloadFrac: this.reloading ? ((performance.now() / 1000) % 2.4) / 2.4 : -1 });
+    const reloadFrac = this.reloading ? this.reloadFrac ?? -1 : -1;
+    if (this.gun) animateGun(this.gun, { kick: Math.max(0, this.flashTime) / 0.05, reloadFrac });
+    this.checkDetail(dt);
     this.root.visible = this.alive && !this.hiddenForSpectate;
     this.marker.visible = this.spotted && this.alive;
     this.glow.visible = this.detected && this.alive;
@@ -326,39 +392,82 @@ export class RemotePlayer {
     this.lean.rotation.x = -Math.PI / 2 * prone;
     this.lean.position.set(0, 0.17 * prone, PRONE_BODY.max[2] * prone);
     if (this.rap) {
-      // Hanging on a rope: leaning back against the wall, or flipped head down (the body turns about the feet, then is lifted so the hips stay put)
-      const flip = this.rapFlip, back = 0.5;
-      this.lean.rotation.x = back + flip * (Math.PI - back);
+      // Hanging on a rope: leaning back from the wall, or rolled head down, still facing where they look (then lifted so the hips stay put)
+      const flip = this.rapFlip;
+      this.lean.rotation.x = 0.5 * (1 - flip);
+      this.lean.rotation.z = Math.PI * flip;
       this.lean.position.y = flip * 1.8;
     }
-    // Body pose height: crouch height upright, straightening out as the body lies down
+    this.poseBody(a, b, t, dt, reloadFrac);
+    const top = bodyHeight(crouch, prone);   // real height above the floor, for the name tag and marker
+    this.label.position.y = top + 0.35;
+    this.markerPhase = (this.markerPhase || 0) + dt * 5;
+    this.marker.position.y = top + 0.75 + Math.sin(this.markerPhase) * 0.05;
+    this.carryMark.position.y = top + 0.75 + Math.sin(this.markerPhase) * 0.05;
+  }
+
+  /** Pose the body for this frame, from where the hands and feet need to be. */
+  poseBody(a, b, t, dt, reloadFrac) {
+    const L = (k) => (a.s[k] || 0) + ((b.s[k] || 0) - (a.s[k] || 0)) * t;
+    const p = this.pose, crouch = p.crouch, prone = p.prone;
+    const k = (rate) => 1 - Math.exp(-rate * dt);
+    this.time += dt;
+    const time = this.time;
+
     // Placing: ease into kneeling (floor items) or reaching forward (wall items)
-    this.placeAmt += ((this.placing ? 1 : 0) - this.placeAmt) * Math.min(1, dt * 8);
-    this.kneelAmt += ((this.placing === 1 ? 1 : 0) - this.kneelAmt) * Math.min(1, dt * 8);
+    this.placeAmt += ((this.placing ? 1 : 0) - this.placeAmt) * k(9);
+    this.kneelAmt += ((this.placing === 1 ? 1 : 0) - this.kneelAmt) * k(9);
+    // Body pose height: crouch height upright, straightening out as the body lies down
     const upright = bodyHeight(Math.max(crouch, this.kneelAmt)) - 0.25 * this.kneelAmt;
     const h = upright + (STAND_HEIGHT - upright) * prone;
 
-    // Pose the body from the snapshot: height from crouch, legs from speed, arms from aim
-    const speed = Math.hypot(L('vx'), L('vz'));
+    // How fast, and which way in the body's own frame
+    const vx = L('vx'), vz = L('vz');
+    const speed = Math.hypot(vx, vz);
     this.speed = speed;
     this.onGround = b.s.onGround !== false;
     this.vy = L('vy');
-    const sprinting = speed > 5;
-    this.walkPhase += speed * dt * 2.3;
-    const k = Math.min(1, speed / 4);
+    const cy = Math.cos(p.yaw), sy = Math.sin(p.yaw);
+    if (speed > 0.25) {
+      const lx = (vx * cy - vz * sy) / speed, lz = (vx * sy + vz * cy) / speed;
+      this.moveX += (lx - this.moveX) * k(12); this.moveZ += (lz - this.moveZ) * k(12);
+    }
+    const sprinting = speed > 5 && prone < 0.5;
+    this.sprintAmt += ((sprinting ? 1 : 0) - this.sprintAmt) * k(9);
+    this.moveAmt += (Math.min(1, speed / 0.8) - this.moveAmt) * k(12);
+    this.adsAmt += (L('ad') - this.adsAmt) * k(16);
+    this.vaultAmt += ((this.vaulting ? 1 : 0) - this.vaultAmt) * k(14);
+    this.rapAmt += ((this.rap ? 1 : 0) - this.rapAmt) * k(10);
+    this.airAmt += ((!this.onGround && !this.rap && !this.vaulting ? 1 : 0) - this.airAmt) * k(10);
+    this.reloadAmt += ((reloadFrac >= 0 ? 1 : 0) - this.reloadAmt) * k(10);
+    const sprint = this.sprintAmt, ads = this.adsAmt * (1 - sprint), move = this.moveAmt, vault = this.vaultAmt, rap = this.rapAmt, kneel = this.kneelAmt, place = this.placeAmt;
+    const stand = 1 - prone;
+
+    // Steps: the foot travels +-A along the way of travel, and lifts while it swings forward
+    const A = (0.14 + Math.min(speed, 7) * 0.042) * lerp(1, 0.72, crouch);
+    this.walkPhase += (speed * dt) / Math.max(0.1, A * 1.7);
+    const phase = this.walkPhase;
+
     const shoulderY = h - 0.33;
     const hipY = shoulderY - 0.55;
-    this.hips.position.y = hipY + Math.abs(Math.sin(this.walkPhase)) * 0.025 * k;
-    const bend = Math.acos(Math.min(1, Math.max(0, hipY / 0.92)));     // thigh angle that puts the foot under the hip
-    const swing = Math.sin(this.walkPhase) * 0.65 * k;
-    this.legs[0].thigh.rotation.x = bend + swing;
-    this.legs[1].thigh.rotation.x = bend - swing;
-    this.legs[0].shin.rotation.x = -2 * bend - Math.max(0, swing) * 0.9;
-    this.legs[1].shin.rotation.x = -2 * bend - Math.max(0, -swing) * 0.9;
+    const bob = (Math.cos(phase * 2) * 0.016 - 0.01) * move * (1 + sprint) * stand;
+    const breathe = Math.sin(time * 1.5) * 0.004;
 
-    this.upper.position.y = hipY;
-    this.upper.rotation.x = (sprinting ? -0.18 : 0) - 0.4 * this.kneelAmt;   // bent over the floor while kneeling
-    this.head.position.y = h - 0.18;
+    // The spine leans into a sprint, a crouch or kneeling, and takes a share of looking up and down. The hips go back
+    // to balance it, so the head stays over the feet, where its hitbox is.
+    const lie = Math.PI / 2 * prone;
+    const spine = THREE.MathUtils.clamp((0.28 * Math.max(crouch, 0) + 0.24 * sprint + 0.48 * kneel * (this.placing === 1 ? 1 : 0) + 0.5 * vault + 0.07 * move - p.pitch * 0.22) * stand, -0.22, 0.75);
+    const back = Math.sin(spine) * 0.34;
+    const twist = Math.sin(phase) * (0.05 + 0.1 * sprint) * move * stand * (1 - ads);
+    const crawl = prone * Math.min(1, speed / 0.3);
+    this.hips.position.set(0, hipY + bob, back);
+    this.hips.rotation.set(-spine * 0.4, twist * -0.8, 0);
+    this.upper.position.set(0, hipY + bob + breathe, back);
+    this.upper.rotation.set(-spine, twist + Math.sin(phase) * 0.12 * crawl, Math.sin(phase) * 0.03 * move * stand);
+    this.upper.updateMatrix(); this.hips.updateMatrix();
+
+    this.head.position.set(0, h - 0.18 + breathe + bob * 0.5, 0);
+    this.head.rotation.set(p.pitch + lie, -twist * 0.5, -0.1 * ads);
 
     // Melee: both arms chop forward and up, then settle
     let strike = 0;
@@ -366,23 +475,131 @@ export class RemotePlayer {
       this.swingT += dt / 0.3;
       if (this.swingT >= 1) this.swingT = 0; else strike = Math.sin(this.swingT * Math.PI);
     }
-    // Lying down, "forward" for arms, gun and head is along the body (towards the head)
-    const lie = Math.PI / 2 * prone;
-    this.head.rotation.x = p.pitch + lie;
-    let armBase = sprinting ? 0.55 : Math.PI / 2 + p.pitch + lie;   // sprinting carries the gun low
-    if (this.placeAmt > 0.01) armBase += ((this.placing === 1 || this.kneelAmt > 0.5 ? 0.75 : Math.PI / 2 - 0.1) - armBase) * this.placeAmt;   // down to the floor, or out to the wall
-    this.arms[0].rotation.set(armBase + strike * 0.9, 0.25 - strike * 0.3, 0);
-    this.arms[1].rotation.set(armBase + strike * 0.9, -0.5 + strike * 0.3, 0);
-    this.gunMount.position.set(0.1, shoulderY - 0.1 - (sprinting ? 0.12 : 0) + 0.3 * prone, -0.3 - strike * 0.25 + 0.41 * prone);
-    this.gunMount.rotation.x = sprinting ? -0.2 : p.pitch + lie + strike * 0.5;
-    this.gunMount.visible = this.placeAmt < 0.5;
-    this.placeItem.visible = this.placeAmt >= 0.5;
+
+    // ---------------------------------------------------------------- the gun
+    const kick = Math.max(0, this.flashTime) / 0.05;
+    const reloadTilt = this.reloadAmt * (1 - ads);
+    const swayX = Math.sin(time * 0.9) * 0.003, swayY = Math.sin(time * 1.5) * 0.004 + Math.sin(phase * 2) * 0.01 * move * stand;
+    const gunScale = this.gun ? this.gun.userData.sightY * 1.3 : 0.06;
+    let gx = 0.1, gy = shoulderY - 0.1, gz = -0.3;
+    gx = lerp(gx, 0.03, sprint); gy = lerp(gy, shoulderY - 0.25, sprint); gz = lerp(gz, -0.2, sprint);
+    gx = lerp(gx, 0.055, ads); gy = lerp(gy, h - 0.16 - gunScale, ads * stand); gz = lerp(gz, -0.34, ads);
+    gy += 0.3 * prone; gz += 0.41 * prone;
+    gy -= 0.06 * reloadTilt; gz += 0.05 * reloadTilt;
+    gz += 0.022 * kick - strike * 0.25 + 0.06 * Math.sin(phase) * crawl;
+    gy += swayY - 0.14 * vault - 0.1 * rap * (1 - ads);
+    this.gunMount.position.set(gx + swayX + 0.05 * vault, gy, gz);
+    const rx = lerp(p.pitch + lie, -0.34, sprint) + strike * 0.5 + 0.03 * kick + 0.28 * reloadTilt - 0.4 * vault - 0.5 * rap * (1 - this.rapFlip);
+    this.gunMount.rotation.set(rx, 0.62 * sprint + 0.14 * reloadTilt, -0.26 * sprint + 0.42 * reloadTilt);
+    this.gunMount.visible = place < 0.5;
+    this.gunMount.updateMatrix();
+
+    // ---------------------------------------------------------------- the hands
+    const right = vR, left = vL;
+    if (this.gun && this.hold) {
+      this.gun.updateMatrix();
+      mB.multiplyMatrices(this.gunMount.matrix, this.gun.matrix);
+      right.copy(this.hold.right).applyMatrix4(mB);
+      left.copy(this.hold.left).applyMatrix4(mB);
+      // Reloading: the left hand takes the magazine out, goes to a pouch on the vest, brings a new one back
+      const mag = this.gun.userData.anim?.mag;
+      if (reloadFrac >= 0 && mag) {
+        vA.copy(mag.position);
+        if (mag.parent !== this.gun) vA.add(mag.parent.position);
+        vA.applyMatrix4(mB);
+        vB.set(-0.13, 0.17, -0.2).applyMatrix4(this.upper.matrix);
+        const f = reloadFrac;
+        const toMag = ease(0, 0.1, f) * (1 - ease(0.88, 1, f));
+        const toPouch = ease(0.36, 0.5, f) * (1 - ease(0.58, 0.72, f));
+        vA.lerp(vB, toPouch);
+        left.lerp(vA, toMag);
+      }
+    } else if (this.cover || this.shield) {
+      // A shield and nothing else: both hands on its grips
+      const s = this.shieldMount.position;
+      right.set(s.x + 0.1, s.y - 0.1, s.z + 0.1);
+      left.set(s.x - 0.12, s.y - 0.02, s.z + 0.1);
+    } else {
+      right.set(0.26, hipY + 0.02, -0.06);
+      left.set(-0.26, hipY + 0.02, -0.06);
+    }
+    if (this.gun && this.shield && this.cover) { const s = this.shieldMount.position; left.set(s.x + 0.02, s.y, s.z + 0.1); }   // pistol in the right, shield in the left
+
+    // Placing something: both hands on the item, working at it
+    if (place > 0.01) {
+      const floor = this.placing === 1 || kneel > 0.5;
+      const work = Math.sin(time * 9) * 0.012;
+      const ix = 0.02, iy = floor ? 0.2 + work : shoulderY - 0.06 + work, iz = floor ? -0.46 : -0.46 + work;
+      this.placeItem.position.set(ix, iy, iz);
+      this.placeItem.visible = place >= 0.5;
+      right.lerp(vA.set(ix + 0.085, iy + 0.03, iz + 0.015), place);
+      left.lerp(vA.set(ix - 0.085, iy + 0.03, iz + 0.015), place);
+    } else this.placeItem.visible = false;
+
+    // On a rope the left hand holds it above the head; hopping over something it plants on the obstacle
+    if (rap > 0.01 && this.rapFlip < 0.5) left.lerp(vA.set(-0.06, shoulderY + 0.28 + Math.sin(this.rapPhase) * 0.05, -0.34), rap);
+    if (vault > 0.01) left.lerp(vA.set(-0.2, hipY - 0.12, -0.46), vault);
+
+    const elbowDown = lerp(-1, -0.3, prone);
+    vS.set(0.25, 0.49, 0).applyMatrix4(this.upper.matrix);
+    vT.set(0.75, elbowDown, lerp(0.42, -0.9, prone));
+    solveLimb(this.arms[0].upper, this.arms[0].fore, vS, right, vT, LIMBS.upperArm, LIMBS.foreArm);
+    vS.set(-0.25, 0.49, 0).applyMatrix4(this.upper.matrix);
+    vT.set(-0.85, elbowDown, lerp(0.18, -0.9, prone));
+    solveLimb(this.arms[1].upper, this.arms[1].fore, vS, left, vT, LIMBS.upperArm, LIMBS.foreArm);
+
+    // ---------------------------------------------------------------- the feet
+    const leanA = p.lean * LEAN_ANGLE * stand * (1 - rap), cosL = Math.cos(leanA), sinL = Math.sin(leanA);
+    this.rapPhase += Math.abs(p.y - this.lastY) * 3.4;
+    this.lastY = p.y;
+    this.legs.forEach((leg, i) => {
+      const side = i === 0 ? 1 : -1, ph = phase + (i === 0 ? 0 : Math.PI);
+      const swingK = Math.sin(ph), liftK = Math.max(0, Math.cos(ph));
+      // Standing and walking
+      const stance = 0.135 + 0.02 * crouch;
+      let fx = side * stance + this.moveX * A * swingK * move;
+      let fz = (side > 0 ? -0.15 : 0.14) * crouch + this.moveZ * A * swingK * move + (side > 0 ? -0.07 : 0.07);
+      let fy = STEP_ANKLE + liftK ** 1.5 * (0.06 + 0.2 * sprint + 0.02 * crouch) * move;
+      let toe = -0.6 * liftK * (0.25 + sprint) * move;   // (above zero lifts the toe, below lifts the heel)
+      // A heel lifts when the back foot of a crouch is bent far under
+      if (side < 0) { fy += 0.05 * crouch; toe -= 0.5 * crouch; }
+      // Kneeling to place something: right foot forward, left knee on the floor
+      if (kneel > 0.01) {
+        fx = lerp(fx, side * 0.13, kneel);
+        fz = lerp(fz, side > 0 ? -0.3 : 0.32, kneel);
+        fy = lerp(fy, side > 0 ? STEP_ANKLE : 0.13, kneel);
+        toe = lerp(toe, side > 0 ? 0 : -0.9, kneel);
+      }
+      // Hopping over something: both knees tucked up
+      if (vault > 0.01) { fy = lerp(fy, hipY - 0.28, vault); fz = lerp(fz, -0.12 * side, vault); toe = lerp(toe, -0.3, vault); }
+      // In the air: legs drawn up a little
+      if (this.airAmt > 0.01) { fy = lerp(fy, Math.max(STEP_ANKLE, hipY - 0.68), this.airAmt); fz = lerp(fz, side * 0.1, this.airAmt); toe = lerp(toe, -0.5, this.airAmt); }
+      // Lying down: legs straight out behind, drawn up in turn when crawling
+      if (prone > 0.01) {
+        const draw = Math.max(0, Math.sin(ph)) * crawl;
+        fx = lerp(fx, side * (0.14 + 0.1 * draw), prone);
+        fy = lerp(fy, 0.2 + 0.26 * draw, prone);
+        fz = lerp(fz, 0.02, prone);
+        toe *= 1 - prone;
+      }
+      // On a rope: walking the wall in front
+      if (rap > 0.01) {
+        const walk = Math.sin(this.rapPhase + i * Math.PI);
+        fx = lerp(fx, side * 0.15, rap);
+        fy = lerp(fy, 0.24 + walk * 0.1, rap);
+        fz = lerp(fz, -0.56 - Math.max(0, walk) * 0.05, rap);
+        toe = lerp(toe, 1.05, rap);
+      }
+      // Leaning tips the body about the feet, but the feet stay flat on the floor
+      vT.set(fx * cosL - fy * sinL, fx * sinL + fy * cosL, fz);
+      vS.set(side * 0.095, -0.07, 0).applyMatrix4(this.hips.matrix);
+      vA.set(side * (0.1 + prone * 0.9), 0, lerp(-1, 0.15, prone));
+      solveLimb(leg.thigh, leg.shin, vS, vT, vA, LIMBS.thigh, LIMBS.shin);
+      leg.foot.position.copy(vT);
+      leg.foot.rotation.set(toe - 1.3 * prone, side * (0.12 + 0.3 * prone), 0);
+    });
+
     if (this.shield) this.poseShield(dt, h, strike, prone);
-    const top = bodyHeight(crouch, prone);   // real height above the floor, for the name tag and marker
-    this.label.position.y = top + 0.35;
-    this.markerPhase = (this.markerPhase || 0) + dt * 5;
-    this.marker.position.y = top + 0.75 + Math.sin(this.markerPhase) * 0.05;
-    this.carryMark.position.y = top + 0.75 + Math.sin(this.markerPhase) * 0.05;
   }
 
   /** Put the shield where shieldCover() says it is (eased): in front, held to the side, or swung aside. Matches shieldBox() in shared/raycast.js. */
@@ -409,6 +626,7 @@ export class RemotePlayer {
   dispose() {
     this.scene.remove(this.root);
     this.root.traverse((o) => {
+      if (o.userData.shared) return;
       o.geometry?.dispose();
       if (o.material) { o.material.map?.dispose(); o.material.dispose(); }
     });
