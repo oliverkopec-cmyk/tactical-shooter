@@ -179,16 +179,14 @@ export function buildDetailedMap(group, map) {
 function addGround(group, map, texSize) {
   const t = map.terrain, n = t.n;
   const scale = 1 / TEX_SCALE.grass;
-  const y = (i, j) => t.at(Math.max(0, Math.min(n - 1, i)), Math.max(0, Math.min(n - 1, j)));
-  // Smooth the steps a little for drawing: each point is the average of itself and its neighbours
-  const heightAt = (i, j) => (y(i, j) * 4 + y(i - 1, j) + y(i + 1, j) + y(i, j - 1) + y(i, j + 1)) / 8;
+  const y = (i, j) => t.vertex(Math.max(0, Math.min(n - 1, i)), Math.max(0, Math.min(n - 1, j)));
   const pos = new Float32Array(n * n * 3), norm = new Float32Array(n * n * 3), uv = new Float32Array(n * n * 2), col = new Float32Array(n * n * 3);
   const base = new THREE.Color(map.style.grass ?? 0x6f8f55);
   for (let i = 0; i < n; i++) {
     for (let j = 0; j < n; j++) {
       const k = (i * n + j), x = t.centre(i), z = t.centre(j);
-      pos[k * 3] = x; pos[k * 3 + 1] = heightAt(i, j); pos[k * 3 + 2] = z;
-      const nx = heightAt(i - 1, j) - heightAt(i + 1, j), nz = heightAt(i, j - 1) - heightAt(i, j + 1), ny = t.cell * 2, len = Math.hypot(nx, ny, nz);
+      pos[k * 3] = x; pos[k * 3 + 1] = y(i, j); pos[k * 3 + 2] = z;
+      const nx = y(i - 1, j) - y(i + 1, j), nz = y(i, j - 1) - y(i, j + 1), ny = t.cell * 2, len = Math.hypot(nx, ny, nz);
       norm[k * 3] = nx / len; norm[k * 3 + 1] = ny / len; norm[k * 3 + 2] = nz / len;
       uv[k * 2] = x * scale; uv[k * 2 + 1] = z * scale;
       const v = 0.86 + 0.2 * (Math.sin(x * 0.21) * Math.cos(z * 0.17) * 0.5 + 0.5);
@@ -212,10 +210,6 @@ function addGround(group, map, texSize) {
   group.add(mesh);
 
   // Paths: strips that follow the surface, a little above it
-  const surfaceAt = (x, z) => {
-    const fx = (x + t.half) / t.cell - 0.5, fz = (z + t.half) / t.cell - 0.5, i = Math.floor(fx), j = Math.floor(fz), a = fx - i, b = fz - j;
-    return (heightAt(i, j) * (1 - a) + heightAt(i + 1, j) * a) * (1 - b) + (heightAt(i, j + 1) * (1 - a) + heightAt(i + 1, j + 1) * a) * b;
-  };
   const strips = new Map();
   for (const r of map.ribbons || []) {
     if (!strips.has(r.tex)) strips.set(r.tex, new Batch());
@@ -237,7 +231,7 @@ function addGround(group, map, texSize) {
       const n0 = dir(i), n1 = dir(i + 1), step = Math.hypot(line[i + 1][0] - line[i][0], line[i + 1][1] - line[i][1]), parts = 4;
       for (let p = 0; p < parts; p++) {
         const u0 = (p / parts - 0.5) * r.width, u1 = ((p + 1) / parts - 0.5) * r.width;
-        const P = (l, n, u) => { const x = l[0] + n[0] * u, z = l[1] + n[1] * u; return [x, surfaceAt(x, z) + 0.07, z]; };
+        const P = (l, n, u) => { const x = l[0] + n[0] * u, z = l[1] + n[1] * u; return [x, t.surface(x, z) + 0.07, z]; };
         batch.quad(P(line[i], n0, u0), P(line[i], n0, u1), P(line[i + 1], n1, u1), P(line[i + 1], n1, u0), [0, 1, 0],
           [[u0 * s, along * s], [u1 * s, along * s], [u1 * s, (along + step) * s], [u0 * s, (along + step) * s]], rgbv);
       }

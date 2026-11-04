@@ -62,6 +62,7 @@ function overlapsZ(b, z, r) {
 }
 
 export function isSpaceFree(world, x, y, z, h, r = R) {
+  if (world.ground && y < world.ground.surface(x, z) - 0.05) return false;
   for (const b of world.boxes) {
     if (overlapsX(b, x, r) && overlapsY(b, y, h) && overlapsZ(b, z, r)) return false;
   }
@@ -104,6 +105,8 @@ export function sweepDown(world, x, y, z, h, dist, r = R) {
     if (!overlapsX(b, x, r) || !overlapsZ(b, z, r)) continue;
     if (b.max[1] <= y + EPS && b.max[1] > ny) ny = b.max[1];
   }
+  // Terrain (detailed maps): walking uphill lifts you onto the surface, so a slope never blocks anyone
+  if (world.ground) ny = Math.max(ny, world.ground.surface(x, z));
   return ny;
 }
 
@@ -336,8 +339,9 @@ export function findVault(s, world) {
   let land = null;
   for (let d = 0.9; d <= VAULT.maxDepth; d += 0.1) {
     const lx = s.x + fx * d, lz = s.z + fz * d;
-    if (!isSpaceFree(world, lx, s.y + 0.03, lz, STAND_HEIGHT - 0.1)) continue;
-    const floor = sweepDown(world, lx, s.y + 0.03, lz, STAND_HEIGHT, 0.4);
+    const from = world.ground ? Math.max(s.y + 0.03, world.ground.surface(lx, lz)) : s.y + 0.03;   // on a slope the far side may be higher
+    if (!isSpaceFree(world, lx, from, lz, STAND_HEIGHT - 0.1)) continue;
+    const floor = sweepDown(world, lx, from, lz, STAND_HEIGHT, 0.4);
     if (floor < s.y - 0.4 + EPS) continue;
     land = { x: lx, z: lz, y: Math.max(floor, s.y - 0.4) };
     break;

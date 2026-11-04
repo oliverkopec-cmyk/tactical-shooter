@@ -44,7 +44,6 @@ export function buildVilla() {
     ],
   });
   const terrain = createTerrain({ half: HALF, height });
-  terrain.addColliders(kit);
   const top = (x, z) => terrain.top(x, z);
 
   box(IX0, 0, IZ0, IX1, FL0, IZ1, 'floor');
@@ -319,7 +318,8 @@ export function buildVilla() {
   F.steps('z', -22, -2.2, 2.2, sy, 5, Math.max(0.1, -sy / 5), 0.8, 1);
   F.lowWall(-11, -17.6, -2.8, -17.6, top, { h: 0.95 });
   F.lowWall(2.8, -17.6, 15, -17.6, top, { h: 0.95 });
-  F.lowWall(-22, -12, -22, 8, top, { h: 0.9 });
+  F.lowWall(-22, -12, -22, -7.5, top, { h: 0.9 });       // with a gap where the west path comes through
+  F.lowWall(-22, -2.5, -22, 8, top, { h: 0.9 });
   F.lowWall(-22, -18, -11, -18, top, { h: 0.9 });
   // Terraces on the way up the drive
   F.lowWall(-34, -33, -24, -33, top);

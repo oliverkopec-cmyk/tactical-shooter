@@ -1,16 +1,15 @@
-// Terrain for the detailed maps (Stage 2L): hills, slopes and paths. Everything solid in the game is a box, so the
-// ground you collide with is a grid of columns whose tops go up in small steps (at most a walkable step between
-// neighbours on anything meant to be walked), merged into as few boxes as possible. On top of that the client draws
-// a smooth surface through the same heights, so it looks like a hillside and walks like one.
+// Terrain for the detailed maps (Stage 2L): hills, slopes and paths. The ground is one smooth surface, not boxes:
+// people, drones, bots, bullets and grenades all use the same triangles the client draws, so you stand on what you see
+// and a hill never has an invisible step. Maps without terrain don't use any of this.
 //
 //   createTerrain({ half, height(x, z) }) where height is the map's own shape (use the helpers below)
-//   t.top(x, z)      the ground's height at a point (what props and spawns stand on)
-//   t.addColliders(kit)
-//   t.samples()      the grid heights the client draws
+//   t.top(x, z)      the ground's height at a point (what props and spawns stand on), same as t.surface
+//   t.rayHit(o, d, maxT)  where a ray first comes down through the ground
+//   t.vertex(i, j)   the grid heights the client draws
 
 export const TERRAIN_CELL = 2;     // metres
-export const TERRAIN_STEP = 0.2;   // heights are multiples of this
-const FLOOR_Y = -8;                // the bottom of the ground columns
+const FLOOR_Y = -8;                // only the size of the box reported for a ground hit
+const RAY_STEP = 0.5;              // metres between samples along a ray
 
 export const smooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 export const lerp = (a, b, t) => a + (b - a) * t;
@@ -49,43 +48,59 @@ export function shapedHeight({ shape, paths = [], flats = [] }) {
 
 export function createTerrain({ half, height }) {
   const n = Math.ceil((half * 2) / TERRAIN_CELL);
-  const cellOf = (v) => Math.max(0, Math.min(n - 1, Math.floor((v + half) / TERRAIN_CELL)));
   const centre = (i) => -half + (i + 0.5) * TERRAIN_CELL;
-  // The quantised height of every cell
   const grid = new Float32Array(n * n);
-  for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) grid[i * n + j] = Math.round(height(centre(i), centre(j)) / TERRAIN_STEP) * TERRAIN_STEP;
+  let highest = -Infinity;
+  for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) { const h = height(centre(i), centre(j)); grid[i * n + j] = h; highest = Math.max(highest, h); }
   const at = (i, j) => grid[i * n + j];
 
+  // Which triangle a point is in, split the way the client draws each grid square (corner a to corner c)
+  const locate = (x, z) => {
+    const fx = Math.max(0, Math.min(n - 1 - 1e-6, (x + half) / TERRAIN_CELL - 0.5));
+    const fz = Math.max(0, Math.min(n - 1 - 1e-6, (z + half) / TERRAIN_CELL - 0.5));
+    const i = Math.floor(fx), j = Math.floor(fz), u = fx - i, v = fz - j;
+    const a = at(i, j), c = at(i + 1, j + 1);
+    return u >= v
+      ? { a, dx: at(i + 1, j) - a, dz: c - at(i + 1, j), u, v }
+      : { a, dx: c - at(i, j + 1), dz: at(i, j + 1) - a, u, v };
+  };
+  const surface = (x, z) => { const t = locate(x, z); return t.a + t.dx * t.u + t.dz * t.v; };
+  const normalAt = (x, z) => {
+    const t = locate(x, z), sx = t.dx / TERRAIN_CELL, sz = t.dz / TERRAIN_CELL, len = Math.hypot(sx, 1, sz);
+    return [-sx / len, 1 / len, -sz / len];
+  };
+  const box = { id: -2, kind: 'ground', min: [-half, FLOOR_Y, -half], max: [half, highest, half] };   // what a ray says it hit
+
   return {
-    half, n, cell: TERRAIN_CELL, centre, at,
-    top: (x, z) => at(cellOf(x), cellOf(z)),
-    /** Whether the terrain is walkable between neighbouring cells here (for checking a map). */
+    half, n, cell: TERRAIN_CELL, centre, box, surface, normalAt,
+    vertex: at,
+    top: surface,
+    /** The steepest slope anywhere, in degrees (for checking a map). */
     steepest() {
       let worst = 0;
       for (let i = 0; i + 1 < n; i++) for (let j = 0; j + 1 < n; j++) worst = Math.max(worst, Math.abs(at(i, j) - at(i + 1, j)), Math.abs(at(i, j) - at(i, j + 1)));
-      return worst;
+      return Math.atan(worst / TERRAIN_CELL) * 180 / Math.PI;
     },
-    /** One box per merged rectangle of cells with the same height. */
-    addColliders(kit) {
-      const done = new Uint8Array(n * n);
-      let count = 0;
-      for (let i = 0; i < n; i++) {
-        for (let j = 0; j < n; j++) {
-          if (done[i * n + j]) continue;
-          const y = at(i, j);
-          let dj = 1;
-          while (j + dj < n && !done[i * n + j + dj] && at(i, j + dj) === y) dj++;
-          let di = 1;
-          outer: while (i + di < n) {
-            for (let k = 0; k < dj; k++) if (done[(i + di) * n + j + k] || at(i + di, j + k) !== y) break outer;
-            di++;
-          }
-          for (let a = 0; a < di; a++) for (let b = 0; b < dj; b++) done[(i + a) * n + j + b] = 1;
-          kit.box(-half + i * TERRAIN_CELL, FLOOR_Y, -half + j * TERRAIN_CELL, -half + (i + di) * TERRAIN_CELL, y, -half + (j + dj) * TERRAIN_CELL, 'ground', { hidden: true });
-          count++;
+    /** The first place a ray comes down through the ground: its distance, or null. A ray starting underneath passes up through it. */
+    rayHit(o, d, maxT) {
+      // Only the part of the ray at or below the highest ground needs testing
+      let t0 = 0, t1 = maxT;
+      if (o[1] > highest) { if (d[1] >= 0) return null; t0 = (highest - o[1]) / d[1]; if (t0 > maxT) return null; }
+      else if (d[1] > 0) t1 = Math.min(maxT, (highest - o[1]) / d[1]);
+      const gap = (t) => o[1] + d[1] * t - surface(o[0] + d[0] * t, o[2] + d[2] * t);
+      const flat = Math.hypot(d[0], d[2]);
+      const step = flat > 1e-3 ? RAY_STEP / flat : t1 - t0;
+      let a = t0, ga = gap(a);
+      while (a < t1) {
+        const b = Math.min(t1, a + step), gb = gap(b);
+        if (ga >= 0 && gb < 0) {
+          let lo = a, hi = b;
+          for (let k = 0; k < 12; k++) { const mid = (lo + hi) / 2; if (gap(mid) >= 0) lo = mid; else hi = mid; }
+          return hi;
         }
+        a = b; ga = gb;
       }
-      return count;
+      return null;
     },
   };
 }

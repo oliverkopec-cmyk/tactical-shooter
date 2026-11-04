@@ -94,6 +94,7 @@ export function getWallLayout(map) {
 export class World {
   constructor(map) {
     this.map = map;
+    this.ground = map.terrain || null;   // detailed maps: a smooth surface instead of a ground box
     this.layout = getWallLayout(map);
     this.reset();
   }
@@ -117,10 +118,10 @@ export class World {
     // Openings covered by Rampart's armour panels (nobody swings in through those)
     this.armored = new Set([...this.extra.values()].filter((b) => b.kind === 'armor').map((b) => b.openingId));
     // What defenders collide with during prep: the map plus plugs in every exterior opening.
-    this.barrierView = { boxes: boxes.concat(this.map.barriers) };
+    this.barrierView = { boxes: boxes.concat(this.map.barriers), ground: this.ground };
     // Drones can't fall into an open hatch: for them its hole is still floor
     const open = panels.filter((p) => p.hatch && !this.alive[p.id]);
-    this.droneView = open.length ? { boxes: boxes.concat(open.map((p) => ({ id: -1000 - p.id, kind: 'hatchGuard', min: p.min, max: p.max }))) } : this;
+    this.droneView = open.length ? { boxes: boxes.concat(open.map((p) => ({ id: -1000 - p.id, kind: 'hatchGuard', min: p.min, max: p.max }))), ground: this.ground } : this;
   }
 
   addBox(box) { this.extra.set(box.id, box); this.rebuild(); }

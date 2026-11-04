@@ -45,7 +45,6 @@ export function buildLodge() {
     ],
   });
   const terrain = createTerrain({ half: HALF, height });
-  terrain.addColliders(kit);
   const top = (x, z) => terrain.top(x, z);
 
   box(IX0, 0, IZ0, IX1, FL0, IZ1, 'floor');
@@ -321,7 +320,7 @@ export function buildLodge() {
   box(-22, 0, -6.4, -20.4, 0.4, -4.8, 'concrete', { hidden: true });
   part([-21.2, 0.2, -5.6], [1.6, 0.4, 1.6], { color: 0x8a8680, tex: 'stone', shape: 'cyl' });
   part([-21.2, 0.42, -5.6], [1.1, 0.06, 1.1], { color: 0xff7a2a, glow: 0.8, shape: 'cyl' });
-  for (const [a, b] of [[-24, -3], [-19, -8.2]]) F.bench(a, b, a < -21 ? 1 : 2, 0);
+  for (const [a, b] of [[-24, -7], [-19, -8.2]]) F.bench(a, b, a < -21 ? 1 : 2, 0);
   box(9.9, 0, -14.1, 10.1, 7, -13.9, 'rail', { hidden: true });
   part([10, 3.5, -14], [0.1, 7, 0.1], { color: 0xc8ccd0, tex: 'metal', shape: 'cyl' });
   part([10.8, 6.5, -14], [1.5, 0.8, 0.03], { color: 0x2f6a4a, tex: 'fabric' });
@@ -363,7 +362,7 @@ export function buildLodge() {
   F.vehicle(-4.4, -25, 2, lotY, { type: 'suv', color: 0x7a2a4a });
   F.vehicle(5.2, -25, 2, lotY, { type: 'sedan', color: 0x4a7a6a });
   F.vehicle(22, 6.6, 0, 0, { type: 'van', color: 0xe0e0d8 });                  // the kitchen's delivery van
-  F.vehicle(-46.5, -8, 1, top(-46.5, -8), { type: 'pickup', color: 0x7a5a2a });
+  F.vehicle(-46.5, -12.5, 1, top(-46.5, -12.5), { type: 'pickup', color: 0x7a5a2a });
   F.vehicle(-34, 42, 3, top(-34, 42), { type: 'suv', color: 0x4a4a52 });
   F.vehicle(38, -44, 2, top(38, -44), { type: 'van', color: 0x3a6a8a });
 

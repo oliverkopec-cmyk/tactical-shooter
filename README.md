@@ -9,12 +9,12 @@ Two new maps, **Hillside Villa** (`shared/maps/villa.js`) and **Pinecrest Lodge*
 - **Furniture and decoration** (`shared/maps/furnish.js`): couches with cushions and armrests, beds, tables with legs, shelves with items, kitchen runs, lamps, rugs, baths, a pool table and more, each made of many shapes. Paintings, posters, clocks, light switches, wall shelves, and windows with frames, sills and curtains. Each object has **one simple collision box**; the extra shapes (`kit.part` in `shared/mapkit.js`) are only stored where `document` exists, so the server never holds them.
 - **Textures drawn in code** (`client/src/mapTextures.js`): wood, fabric, carpet, tiles, brick, stone, plaster, drywall, concrete, grass, dirt, asphalt, metal, paint, glass, bark, leaves and shingles. Nothing is downloaded.
 - **Soft and hard walls:** pale panels with visible seams can be destroyed (kind `interior`); brick and stone can't (kinds `exterior` and `hardwall`). Wall decorations only go on hard walls, so nothing floats in the air when a soft wall breaks.
-- **Terrain** (`shared/terrain.js`): a 2 m grid with heights in 0.2 m steps. Collision is ordinary boxes merged together (kind `ground`), drawn as one smooth surface with paths laid on top. Building floors stay at y = 0; the land runs from about -3.4 to +3. Each map has at least one attacker spawn at the bottom of a path up to the building (the Villa's Lower Gate, the Lodge's Valley Road).
+- **Terrain** (`shared/terrain.js`): one smooth surface on a 2 m grid, not boxes. People, drones, bots, bullets and grenades all use the same triangles the client draws (`world.ground`, used by `sweepDown`, `isSpaceFree`, `raycastWorld` and `server/nav.js`), so you stand on exactly what you see and a slope never blocks anyone. The steepest slope is about 26 degrees. Building floors stay at y = 0; the land runs from about -3.4 to +3. Each map has at least one attacker spawn at the bottom of a path up to the building (the Villa's Lower Gate, the Lodge's Valley Road).
 - **Vehicles:** sedan, SUV, van and pickup with wheels, windows, lights and doors, no real brands, parked as cover.
 - **Each map has** 3 objective sites, hatches, rappel points, barricade spots, 3 attacker spawns, a building boundary for run-out detection and a top-down map on the location screen (`client/src/topMap.js`).
 - **Drawing** (`client/src/mapDetail.js`): all static geometry is merged into one mesh per texture, about 26 meshes for a whole map. Low graphics drops the shapes marked `fine`, draws round shapes with fewer sides and uses 128 px textures.
-- **Server cost:** about 2,500 collision boxes per map, fewer than the Hotel's 3,645. The server used about 61 MB with a match running on a map.
-- **Checking a map:** `node tools/check-map.mjs villa lodge` confirms every spawn, site and doorway can be reached, and now also reports any ground out of reach. It takes about 90 seconds per map.
+- **Server cost:** about 1,800-2,050 collision boxes per map, fewer than the Hotel's 3,645. The server used about 171 MB after bot matches on both new maps. Most of that is the bots' navigation grids, about 40-50 MB per map played, the same kind of cost as the Hotel's.
+- **Checking a map:** `node tools/check-map.mjs villa lodge` confirms every spawn, site and doorway can be reached and reports any ground out of reach. On terrain maps it also walks and drives every path uphill with the real movement code, checks that a drone can roll to a door from every attacker spawn, and fails on slopes over 35 degrees. It takes a few minutes per map.
 
 ### Earlier: Stage 2K (shop redesign)
 
@@ -472,7 +472,7 @@ shared/            Code used by BOTH client and server
   constants.js     tuning values, key bit flags, team colours
   movementConfig.js  MOVEMENT TUNING: speeds, acceleration, strafing, stances, aiming, head bob, weapon sway
   map.js           map geometry (axis-aligned boxes), spawns, objective
-  terrain.js       hills and slopes for detailed maps: collision boxes and heights
+  terrain.js       hills and slopes for detailed maps: the smooth ground surface everything stands on and shoots at
   maps/villa.js    Hillside Villa (detailed map)
   maps/lodge.js    Pinecrest Lodge (detailed map)
   maps/furnish.js  furniture, wall decorations, plants, fences and vehicles for detailed maps
