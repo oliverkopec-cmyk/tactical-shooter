@@ -12,9 +12,11 @@
 // Shop skins (shared/shopSkins.js, `source: 'daily' | 'limited'`) are only sold in the daily shop or the Limited
 // section (shared/shop.js), never in the crate.
 //   pattern also: 'digital' | 'dots' | 'bands' | 'split' | 'tiger' (Stage 2K)
+// Christmas skins (shared/christmasSkins.js, Stage M) only come from the Christmas presents and the Christmas crate.
 
 import { EXCLUSIVE_SKINS } from './exclusiveSkins.js';
 import { DAILY_SKINS, LIMITED_SKINS } from './shopSkins.js';
+import { CHRISTMAS_LIMITED_SKINS, CHRISTMAS_CRATE_SKINS } from './christmasSkins.js';
 
 export const RARITIES = {
   common: { id: 'common', name: 'Common', color: '#b0b6bd', order: 0 },
@@ -49,6 +51,9 @@ export const SKINS = {
   ...LIMITED_SKINS,
   // ---------------------------------------------------------------- exclusive (gifts only)
   ...EXCLUSIVE_SKINS,
+  // ---------------------------------------------------------------- Christmas
+  ...CHRISTMAS_LIMITED_SKINS,
+  ...CHRISTMAS_CRATE_SKINS,
 };
 
 export const isExclusive = (id) => SKINS[id]?.rarity === 'exclusive';

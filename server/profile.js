@@ -122,6 +122,7 @@ export function profileOf(row) {
     ownedCharms: ownedCharmsOf(row),
     equippedCharms: equippedCharmsOf(row),
     equippedOperators: equippedOperatorsOf(row),
+    christmasCrates: row.christmas_crates || 0,
     skinsUnlocked: unlockAll,
     dailyMoney: { earned: earnedToday(row.stats), limit: DAILY_MONEY_CAP },
     devTools,

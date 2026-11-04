@@ -11,6 +11,7 @@ import { AdminPanel } from './admin.js';
 import { ModPanel } from './modAdmin.js';
 import { ReportDialog, WarningPopup } from './moderation.js';
 import { WhatsNew } from './whatsNew.js';
+import { PRESENT_BASE } from '../../shared/christmas.js';
 import * as THREE from 'three';
 import { makeGunModel, animateGun } from './gunModels.js';
 import { sheet } from './gunSheet.js';
@@ -48,7 +49,8 @@ const social = new Social({ network, getAccount: () => account, onCreateRoom: ()
 const menu = new Menu({
   getAccount: () => account, setAccount, onSettings: () => ui.openSettings(false),
   onTab: (tab) => { social.setVisible(tab === 'friends'); admin.setVisible(tab === 'admin'); modPanel.setVisible(tab === 'admin'); },
-  claimGift: (id) => network.request('giftClaim', id),
+  claimGift: (id) => (id >= PRESENT_BASE ? network.request('christmasClaim', id - PRESENT_BASE) : network.request('giftClaim', id)),
+  christmasRequest: (name, value) => network.request(name, value),
 });
 ui.onShow = (screen) => { menu.setActive(screen === 'home'); if (screen === 'home' && account) warnings.check(); };   // unread warnings show up in the menu
 syncSettingsToAccount(() => !!account);
@@ -76,6 +78,7 @@ function leaveAccount(message = '') {
   ui.show('auth');
   ui.authError(message);
   menu.setGifts([]);
+  menu.setChristmas(null);
 }
 
 ui.bindAuth({
@@ -183,6 +186,7 @@ network.on('profile', (profile) => {
 });
 // Gifts waiting to be opened (sent when we connect and whenever an admin sends one), and admin announcements
 network.on('gifts', (list) => menu.setGifts(list));
+network.on('christmas', (state) => menu.setChristmas(state));
 network.on('announcement', (a) => ui.showAnnouncement(a));
 network.on('matchSummary', (summary) => ui.showMatchSummary({ ...summary, name: account?.username, owner: !!account?.owner, tester: !!account?.tester, reportable: game.reportablePlayers() }));
 

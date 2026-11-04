@@ -4,6 +4,7 @@
 // to the horizon under a dusk sky, a searchlight sweeps the clouds, fog drifts past, light rain
 // falls and now and then an aircraft light crosses the sky. Everything is built in code.
 // `low` (the Low graphics setting) uses fewer buildings, raindrops and fog banks and no extra lights.
+// `snowing` (Christmas, client/src/menuChristmas.js draws the snow) leaves the rain out.
 
 import * as THREE from 'three';
 
@@ -169,7 +170,7 @@ varying float vA;
 void main() { gl_FragColor = vec4(0.72, 0.78, 0.9, 0.3 * vA); }`;
 
 export class MenuBackdrop {
-  constructor(scene, { low = false } = {}) {
+  constructor(scene, { low = false, snowing = false } = {}) {
     this.scene = scene;
     this.low = low;
     this.group = new THREE.Group();
@@ -182,7 +183,7 @@ export class MenuBackdrop {
     this.buildTarget();
     this.buildSearchlight();
     this.buildFog();
-    this.buildRain();
+    if (!snowing) this.buildRain();
     this.buildAircraft();
   }
 
@@ -410,7 +411,7 @@ export class MenuBackdrop {
     const t = (this.time += dt);
     clock.value = t;
     this.skyMat.uniforms.uTime.value = t;
-    this.rainMat.uniforms.uTime.value = t;
+    if (this.rainMat) this.rainMat.uniforms.uTime.value = t;
     // the searchlight sweeps left and right, rising and dipping a little
     const a = Math.sin(t * 0.16) * 0.9, up = 0.75 + Math.sin(t * 0.23) * 0.12;
     const dir = new THREE.Vector3(Math.sin(a) - 0.25, up, -0.35).normalize();

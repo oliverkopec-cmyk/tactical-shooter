@@ -12,10 +12,13 @@ import { attachCharm } from './charmModels.js';
 import { CrateSequence } from './crateScene.js';
 import { GiftPile, GiftOpening } from './giftScene.js';
 import { MenuBackdrop } from './menuBackdrop.js';
+import { ChristmasDecor } from './menuChristmas.js';
+import { ChristmasRoom, PRESENT_SPOTS } from './christmasRoom.js';
 import { lowGraphics, quality, pixelRatioFor } from './graphics.js';
 import { onSettingsChange } from './settings.js';
 
 const CAMERA = { y: 1.6, z: 6.8, lookY: 1.15 };
+const ROOM_LOOK_Y = 1.3;   // in the Christmas room the camera looks a little higher, under the menu's top bar
 
 /** A soft round glow (for the light pooling under the operator). */
 function glowTexture() {
@@ -100,22 +103,26 @@ export class MenuScene {
     this.dragging = false;
     this.gifts = new GiftPile(this.scene);   // unopened gifts, as presents in front of the operator
     this.giftList = [];
+    this.presents = null;                      // the Christmas presents under the tree in the room
+    this.presentList = [];
     this.opening = null;                       // a present being unwrapped
     this.onGiftClick = null;
 
     canvas.addEventListener('pointerdown', (e) => { this.dragging = true; this.lastX = e.clientX; this.downAt = [e.clientX, e.clientY]; canvas.setPointerCapture?.(e.pointerId); });
     canvas.addEventListener('pointermove', (e) => {
       if (this.dragging) { this.userYaw += (e.clientX - this.lastX) * 0.012; this.lastX = e.clientX; }
-      const id = this.giftsShown() ? this.gifts.pick(this.ndc(e), this.camera) : null;
-      this.gifts.hover = id;
+      const pile = this.activePile();
+      const id = pile ? pile.pick(this.ndc(e), this.camera) : null;
+      if (pile) pile.hover = id;
       canvas.style.cursor = id !== null ? 'pointer' : '';
     });
     const release = () => { this.dragging = false; };
     // A click (not a drag) on a present opens it
     canvas.addEventListener('pointerup', (e) => {
       const d = this.downAt ? Math.hypot(e.clientX - this.downAt[0], e.clientY - this.downAt[1]) : 99;
-      if (d < 6 && this.giftsShown()) {
-        const id = this.gifts.pick(this.ndc(e), this.camera);
+      const pile = this.activePile();
+      if (d < 6 && pile) {
+        const id = pile.pick(this.ndc(e), this.camera);
         if (id !== null) this.onGiftClick?.(id);
       }
     });
@@ -133,9 +140,30 @@ export class MenuScene {
     this.renderer.shadowMap.needsUpdate = true;
     this.padLight.visible = !this.low;
     this.backdrop?.dispose();
-    this.backdrop = new MenuBackdrop(this.scene, { low: this.low });
+    this.backdrop = new MenuBackdrop(this.scene, { low: this.low, snowing: this.christmasOn });
+    this.decor?.dispose();
+    this.decor = this.christmasOn ? new ChristmasDecor(this.scene, { low: this.low }) : null;
+    this.rebuildRoom();
     this.scene.traverse((o) => { if (o.material) o.material.needsUpdate = true; });   // shadows on/off need the shaders rebuilt
     this.resize();
+  }
+
+  /** The Christmas room is built the first time it is shown, and again if the graphics setting changes. */
+  rebuildRoom() {
+    if (this.room) {
+      this.presents.set([]);
+      this.presents = null;
+      this.room.dispose();
+      this.room = null;
+    }
+    if (this.christmasOn && this.inRoom) this.ensureRoom();
+  }
+
+  ensureRoom() {
+    if (this.room) return;
+    this.room = new ChristmasRoom({ low: this.low });
+    this.presents = new GiftPile(this.room.scene, { spots: PRESENT_SPOTS, shown: PRESENT_SPOTS.length });
+    this.presents.set(this.presentList);
   }
 
   resize() {
@@ -152,15 +180,18 @@ export class MenuScene {
   placeCamera(t) {
     const d = this.camDist || CAMERA.z;
     this.camera.position.set(Math.sin(t * 0.13) * 0.22 + Math.sin(t * 0.051) * 0.12, CAMERA.y + Math.sin(t * 0.17) * 0.06, d + Math.sin(t * 0.09) * 0.18);
-    this.camera.lookAt(Math.sin(t * 0.11) * 0.05, CAMERA.lookY + Math.sin(t * 0.07) * 0.03, 0);
+    this.camera.lookAt(Math.sin(t * 0.11) * 0.05, (this.inRoom ? ROOM_LOOK_Y : CAMERA.lookY) + Math.sin(t * 0.07) * 0.03, 0);
   }
 
   /**
    * 'play': the operator stands in the middle. 'operators': they step left to make room for the gun showcase.
    * 'shop': just the big gun, to look at a skin before buying it.
+   * 'christmas': the Christmas room (while Christmas is on; after that, the rooftop).
    */
   setMode(mode) {
     this.mode = mode;
+    this.inRoom = mode === 'christmas' && !!this.christmasOn;
+    if (this.inRoom) this.ensureRoom();
     this.targetX = mode === 'operators' ? -0.8 : 0;
     this.applyShowcaseLayout();
     if (mode !== 'crate') this.stopCrate();
@@ -171,21 +202,41 @@ export class MenuScene {
     return new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
   }
 
-  giftsShown() { return this.mode === 'play' && !this.opening && !this.crate; }
+  /** The pile you can click right now: the admin gifts on the rooftop, or the Christmas presents in the room. */
+  activePile() {
+    if (this.opening || this.crate) return null;
+    if (this.inRoom) return this.presents;
+    return this.mode === 'play' ? this.gifts : null;
+  }
 
-  /** The unopened gifts: [{ id, title, exclusive }]. */
+  /** Christmas on or off (the server's dates): the tree, the snow and the lights come and go. */
+  setChristmas(on) {
+    if (!!on === !!this.christmasOn) return;
+    this.christmasOn = !!on;
+    this.inRoom = this.christmasOn && this.mode === 'christmas';
+    this.applyQuality();
+  }
+
+  /** The unopened admin gifts: [{ id, title, exclusive }]. */
   setGifts(list) {
     this.giftList = list;
     this.gifts.set(list, this.opening?.box.gift.id);
   }
 
+  /** The Christmas presents waiting under the tree: [{ id, title, exclusive, christmas }]. */
+  setPresents(list) {
+    this.presentList = list;
+    this.presents?.set(list, this.opening?.box.gift.id);
+  }
+
   /** Unwrap a present: result is what the server says was inside; onReveal runs when it is up. showGun: the gun a gifted skin is shown on. */
   playGift(id, result, { showGun, onReveal }) {
-    const box = this.gifts.take(id);
+    const pile = this.inRoom ? this.presents : this.gifts;
+    const box = pile.take(id);
     if (!box) { onReveal?.(); return; }
     this.stopGift();
-    this.opening = new GiftOpening(this.scene, box, result, { showGun, onReveal });
-    this.gifts.setVisible(false);
+    this.opening = new GiftOpening(pile.scene, box, result, { showGun, onReveal });
+    pile.setVisible(false);
   }
 
   stopGift() {
@@ -193,14 +244,15 @@ export class MenuScene {
     this.opening = null;
     this.gifts.setVisible(true);
     this.gifts.set(this.giftList);
+    if (this.presents) { this.presents.setVisible(true); this.presents.set(this.presentList); }
   }
 
   /** Play the crate opening for a result { weapon, skin, rarity }; onReveal runs when the gun appears. */
-  playCrate(result, onReveal) {
+  playCrate(result, onReveal, { christmas = false } = {}) {
     this.stopCrate();
     this.mode = 'crate';
     this.applyShowcaseLayout();
-    this.crate = new CrateSequence(this.scene, result, { onReveal });
+    this.crate = new CrateSequence(this.inRoom ? this.room.scene : this.scene, result, { onReveal, christmas });
     return this.crate;
   }
 
@@ -290,11 +342,16 @@ export class MenuScene {
       this.avatar.update(now, dt);
       this.avatar.root.visible = this.mode !== 'shop' && this.mode !== 'crate' && !this.opening;   // stepped aside while a gift is unwrapped
     }
-    this.gifts.setVisible(this.giftsShown());
+    this.gifts.setVisible(this.mode === 'play' && !this.opening && !this.crate);
     this.gifts.update(this.time);
+    if (this.presents) { this.presents.setVisible(this.inRoom && !this.opening && !this.crate); this.presents.update(this.time); }
     this.opening?.update(dt, this.time);
     this.placeCamera(this.time);                     // drifts (and undoes the crate's landing thump from last frame)
-    this.backdrop.update(dt);
+    if (this.inRoom) this.room.update(dt);
+    else {
+      this.backdrop.update(dt);
+      this.decor?.update(dt, this.renderer.domElement.height);
+    }
     if (this.padLight.visible) this.padLight.intensity = 1.2 + Math.sin(this.time * 1.6) * 0.25;
     if (this.crate) this.crate.update(dt, this.camera);
     if (this.showcase?.visible) {
@@ -303,6 +360,6 @@ export class MenuScene {
       const charm = this.showcaseGun?.userData.charm;
       if (charm) { charm.push(Math.sin(this.time * 2.1) * 0.1 * dt * 12, Math.cos(this.time * 1.7) * 0.06 * dt * 12); charm.update(dt, this.showcase.position); }
     }
-    this.renderer.render(this.scene, this.camera);
+    this.renderer.render(this.inRoom ? this.room.scene : this.scene, this.camera);
   }
 }

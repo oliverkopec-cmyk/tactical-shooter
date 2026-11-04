@@ -9,9 +9,9 @@ const W = 480, H = 300;      // the render size; cards are drawn from it at thei
 const FRAME_MS = 33;
 
 /** A stylised crate for the crate card: a dark box with glowing trim. */
-function makeCrateModel() {
+export function makeCrateModel(christmas = false) {
   const g = new THREE.Group();
-  const body = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.42, 0.42), new THREE.MeshStandardMaterial({ color: 0x1c2026, roughness: 0.5, metalness: 0.6 }));
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.42, 0.42), new THREE.MeshStandardMaterial({ color: christmas ? 0x8a141c : 0x1c2026, roughness: 0.5, metalness: christmas ? 0.25 : 0.6 }));
   g.add(body);
   const trim = new THREE.MeshStandardMaterial({ color: 0xf0b43c, emissive: 0xf0b43c, emissiveIntensity: 0.7, metalness: 0.9, roughness: 0.3 });
   for (const y of [-0.21, 0.21]) for (const z of [-0.21, 0.21]) { const b = new THREE.Mesh(new THREE.BoxGeometry(0.64, 0.03, 0.03), trim); b.position.set(0, y, z); g.add(b); }
@@ -24,6 +24,14 @@ function makeCrateModel() {
   const dot = new THREE.Mesh(new THREE.SphereGeometry(0.02, 8, 6), trim);
   dot.position.set(0, -0.09, 0.222);
   g.add(mark, dot);
+  if (christmas) {
+    // A green ribbon round the box, with a bow
+    const ribbon = new THREE.MeshStandardMaterial({ color: 0x1f7a44, roughness: 0.4, metalness: 0.2 });
+    for (const size of [[0.1, 0.432, 0.432], [0.632, 0.432, 0.09]]) g.add(new THREE.Mesh(new THREE.BoxGeometry(...size), ribbon));
+    mark.position.x = dot.position.x = 0.2;
+    for (const side of [-1, 1]) { const loop = new THREE.Mesh(new THREE.TorusGeometry(0.06, 0.018, 8, 16), ribbon); loop.position.set(side * 0.06, 0.28, 0); loop.rotation.set(0, Math.PI / 2, side * 0.5); g.add(loop); }
+    lid.visible = false;
+  }
   g.userData.isCrate = true;
   return g;
 }
@@ -74,7 +82,7 @@ export class ShopCards {
     this.clear();
     if (!this.ensure()) return;
     this.cards = list.map((c, i) => {
-      const pivots = c.crate ? [fit(makeCrateModel())] : c.guns.map((g) => fit(makeGunModel(g, c.skin)));
+      const pivots = c.crate ? [fit(makeCrateModel(c.crate === 'christmas'))] : c.guns.map((g) => fit(makeGunModel(g, c.skin)));
       if (c.crate) pivots[0].scale.multiplyScalar(0.62);   // a box fills more of the view than a gun of the same length
       const dpr = Math.min(2, window.devicePixelRatio || 1);
       c.canvas.width = Math.round((c.canvas.clientWidth || W) * dpr);

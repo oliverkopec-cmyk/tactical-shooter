@@ -19,7 +19,7 @@ const T_LAND = 0.55, T_BURST = 2.75, T_RISE_END = 3.9;
 
 export class CrateSequence {
   /** parent: the THREE scene. result: { weapon, skin, rarity }. onReveal runs when the gun appears. */
-  constructor(scene, result, { onReveal } = {}) {
+  constructor(scene, result, { onReveal, christmas = false } = {}) {
     this.scene = scene;
     this.result = result;
     this.onReveal = onReveal;
@@ -35,7 +35,7 @@ export class CrateSequence {
     this.finalStep = RARITY_ORDER.indexOf(result.rarity);
 
     this.group = new THREE.Group();
-    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x2a3038, roughness: 0.5, metalness: 0.6 });
+    const bodyMat = new THREE.MeshStandardMaterial({ color: christmas ? 0x8a141c : 0x2a3038, roughness: 0.5, metalness: christmas ? 0.25 : 0.6 });
     this.trimMat = new THREE.MeshStandardMaterial({ color: 0x555a60, emissive: 0x888888, emissiveIntensity: 0.3, roughness: 0.4 });
     this.body = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.8, 0.8), bodyMat);
     this.body.position.y = 0.4;

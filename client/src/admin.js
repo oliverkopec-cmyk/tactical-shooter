@@ -71,7 +71,7 @@ export class AdminPanel {
         <img alt="" data-thumb="${s.id}"><span class="adm-skin-name">${esc(s.name)}</span></button>`;
     const skinGallery = ['exclusive', 'legendary', 'epic', 'rare', 'common'].map((r) => `
         <div class="adm-skin-group${r === 'exclusive' ? ' excl-text' : ''}" style="color:${RARITIES[r].color}">${RARITIES[r].name}${r === 'exclusive' ? ' · gifts only' : ''}</div>
-        ${skinList().filter((s) => s.rarity === r).map(tile).join('')}`).join('');
+        ${skinList().filter((s) => s.rarity === r && s.source !== 'christmas').map(tile).join('')}`).join('');
     const charmOptions = charmList().map((c) => `<option value="${c.id}">${esc(c.name)} (${RARITIES[c.rarity].name})</option>`).join('');
     const crateOptions = '<option value="mystery">The crate (a skin or a charm)</option>';
     $('admin-send').innerHTML = `
@@ -137,7 +137,7 @@ export class AdminPanel {
   loadThumbs() {
     if (this.thumbsStarted) return;
     this.thumbsStarted = true;
-    renderSkinThumbs(skinList().map((s) => s.id), (id, url) => {
+    renderSkinThumbs(skinList().filter((s) => s.source !== 'christmas').map((s) => s.id), (id, url) => {
       const img = document.querySelector(`#gift-skins img[data-thumb="${id}"]`);
       if (img) img.src = url;
     });

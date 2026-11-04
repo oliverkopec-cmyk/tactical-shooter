@@ -8,12 +8,15 @@ import { RARITIES } from '../../shared/skins.js';
 import { makeGunModel } from './weapons.js';
 import { makeCharmModel } from './charmModels.js';
 import { menuAudio } from './menuAudio.js';
+import { makeCrateModel } from './shopCards.js';
 
 const PAPER = [0xd8323a, 0x2a7ae2, 0x2fb36a, 0x9a4ae8, 0xf0a020, 0x20b8c8];
 const RIBBON = [0xf2d46a, 0xffffff, 0xf2d46a, 0xffe0f0, 0xffffff, 0xf2d46a];
 // Where boxes sit: four spots on the platform in front of the operator; more gifts stack on top
 const SPOTS = [[-0.62, 0.95], [0.62, 0.95], [-1.12, 0.35], [1.12, 0.35]];
 const SIZE = 0.38;
+const XMAS_PAPER = [0xc8141e, 0x1f7a44, 0xc8141e, 0xe8b22a, 0x1f7a44, 0xf0ece4];
+const XMAS_RIBBON = [0xf2d46a, 0xf2d46a, 0xffffff, 0xc8141e, 0xffffff, 0xc8141e];
 
 /** A soft round glow texture for the halo behind each box. */
 let haloTexture = null;
@@ -40,15 +43,17 @@ export function exclusiveColor(t, out = new THREE.Color()) {
 }
 
 class GiftBox {
-  constructor(gift, index) {
+  constructor(gift, index, spots) {
     this.gift = gift;
+    this.spots = spots;
     this.phase = (gift.id * 1.7) % 6.28;
     const k = gift.id % PAPER.length;
     const s = SIZE * (0.9 + ((gift.id * 7) % 5) * 0.04);
     this.size = s;
     this.group = new THREE.Group();
-    this.paper = new THREE.MeshStandardMaterial({ color: gift.exclusive ? 0xf6f0e0 : PAPER[k], roughness: 0.45, metalness: gift.exclusive ? 0.6 : 0.1, emissive: 0x000000 });
-    this.ribbon = new THREE.MeshStandardMaterial({ color: gift.exclusive ? 0xffd86a : RIBBON[k], roughness: 0.3, metalness: 0.5, emissive: gift.exclusive ? 0xffc040 : RIBBON[k], emissiveIntensity: 0.25 });
+    const paper = gift.christmas ? XMAS_PAPER[k] : PAPER[k], ribbon = gift.christmas ? XMAS_RIBBON[k] : RIBBON[k];
+    this.paper = new THREE.MeshStandardMaterial({ color: gift.exclusive ? 0xf6f0e0 : paper, roughness: 0.45, metalness: gift.exclusive ? 0.6 : 0.1, emissive: 0x000000 });
+    this.ribbon = new THREE.MeshStandardMaterial({ color: gift.exclusive ? 0xffd86a : ribbon, roughness: 0.3, metalness: 0.5, emissive: gift.exclusive ? 0xffc040 : ribbon, emissiveIntensity: 0.25 });
     this.body = new THREE.Mesh(new THREE.BoxGeometry(s, s * 0.82, s), this.paper);
     this.body.position.y = s * 0.41;
     this.body.castShadow = true;
@@ -73,7 +78,7 @@ class GiftBox {
     this.bow.add(new THREE.Mesh(new THREE.SphereGeometry(s * 0.06, 10, 8), this.ribbon));
     this.bow.position.y = s * 0.08;
     this.lid.add(this.bow);
-    this.halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: halo(), color: gift.exclusive ? 0xffe7a0 : RIBBON[k], transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.55 }));
+    this.halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: halo(), color: gift.exclusive ? 0xffe7a0 : ribbon, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.55 }));
     this.halo.scale.setScalar(s * 3.2);
     this.halo.position.y = s * 0.5;
     this.halo.renderOrder = -1;
@@ -85,8 +90,8 @@ class GiftBox {
 
   /** Spot on the platform; the fifth gift onwards sits on top of the first ones. */
   place(index) {
-    const [x, z] = SPOTS[index % SPOTS.length];
-    this.base = new THREE.Vector3(x, Math.floor(index / SPOTS.length) * SIZE * 1.02, z);
+    const [x, z] = this.spots[index % this.spots.length];
+    this.base = new THREE.Vector3(x, Math.floor(index / this.spots.length) * SIZE * 1.02, z);
     this.group.position.copy(this.base);
   }
 
@@ -116,8 +121,11 @@ class GiftBox {
 
 /** All the presents on the platform. */
 export class GiftPile {
-  constructor(scene) {
+  /** spots: where boxes sit. shown: how many at most (more appear as these are opened). */
+  constructor(scene, { spots = SPOTS, shown = Infinity } = {}) {
     this.scene = scene;
+    this.spots = spots;
+    this.shown = shown;
     this.boxes = new Map();   // gift id -> GiftBox
     this.hover = null;
   }
@@ -126,9 +134,11 @@ export class GiftPile {
   set(list, skipId = null) {
     const keep = new Set(list.map((g) => g.id));
     for (const [id, box] of this.boxes) if (!keep.has(id)) { box.dispose(this.scene); this.boxes.delete(id); }
-    list.filter((g) => g.id !== skipId).forEach((g, i) => {
+    const waiting = list.filter((g) => g.id !== skipId);
+    for (const g of waiting.slice(this.shown)) { const box = this.boxes.get(g.id); if (box) { box.dispose(this.scene); this.boxes.delete(g.id); } }
+    waiting.slice(0, this.shown).forEach((g, i) => {
       let box = this.boxes.get(g.id);
-      if (!box) { box = new GiftBox(g, i); this.boxes.set(g.id, box); this.scene.add(box.group); }
+      if (!box) { box = new GiftBox(g, i, this.spots); this.boxes.set(g.id, box); this.scene.add(box.group); }
       else box.place(i);
     });
   }
@@ -180,7 +190,7 @@ export class GiftOpening {
     this.lidSpin = new THREE.Vector3(4 + Math.random() * 3, Math.random() * 4, 2 + Math.random() * 3);
     this.bowVel = new THREE.Vector3((Math.random() - 0.5) * 1.5, 3.2, 2.4);
     this.exclusive = result.skin?.rarity === 'exclusive';
-    const rar = result.skin?.rarity || result.crate?.rarity || result.charm?.rarity || 'common';
+    const rar = result.skin?.rarity || result.crate?.rarity || result.charm?.rarity || 'common';   // (a present's crate glows gold, like Money)
     this.color = new THREE.Color(this.exclusive ? 0xffe7a0 : (result.skin || result.crate || result.charm) ? RARITIES[rar].color : 0xf2d46a);
 
     // Move the box to the middle of the platform, in front of the operator, for the show
@@ -194,7 +204,11 @@ export class GiftOpening {
     const skinShown = result.skin?.id || (result.crate?.kind === 'gun' ? result.crate.skin : null);
     const gunShown = result.crate?.kind === 'gun' ? result.crate.weapon : showGun;
     const charmShown = result.charm?.id || (result.crate?.kind === 'charm' ? result.crate.charm : null);
-    if (skinShown) {
+    if (result.christmasCrate) {
+      const crate = makeCrateModel(true);
+      crate.scale.setScalar(1.15);
+      this.item.add(crate);
+    } else if (skinShown) {
       const gun = makeGunModel(gunShown, skinShown);
       gun.scale.multiplyScalar(1.5 * gun.userData.display);
       this.item.add(gun);

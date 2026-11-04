@@ -3,19 +3,21 @@
 
 import crypto from 'node:crypto';
 import { CRATE } from '../shared/skins.js';
-import { SHOP, shopDay, shopDayStart, dailyShop, limitedNow, rollMystery, crateItems } from '../shared/shop.js';
+import { SHOP, SHOP_GUNS, shopDay, shopDayStart, dailyShop, limitedNow, rollMystery, crateItems } from '../shared/shop.js';
+import { CHRISTMAS, christmasOn, christmasCrateItems } from '../shared/christmas.js';
 import { ownsSkin, ownsCharm } from './profile.js';
 
 const ownedAll = (row, skin) => Array.isArray(row.owned_skins) && row.owned_skins.includes(skin);
 
 /** What the shop shows this account now (prices for packs already partly owned are reduced). */
-export function shopState(row, now = Date.now()) {
+export function shopState(row, now = Date.now(), eventNow = now) {
   const day = shopDay(now);
   const daily = dailyShop(day).map((it) => ({ ...it, ...priceFor(row, it) }));
   const limited = limitedNow(now).map((it) => ({ ...it, owned: ownedAll(row, it.skin) }));
   return {
     now, day, resetsAt: shopDayStart(day + 1), daily, limited,
     crate: { price: CRATE.price, refund: CRATE.refund, odds: CRATE.odds, charmChance: CRATE.charmChance, contents: crateItems() },
+    christmasCrate: christmasOn(eventNow) ? { ...CHRISTMAS.crate, contents: christmasCrateItems(), until: CHRISTMAS.themeUntil - (eventNow - now) } : null,
     rules: { prices: SHOP.prices, packPrice: SHOP.packPrice, packGuns: SHOP.packGuns },
   };
 }
@@ -46,14 +48,23 @@ export function purchase(row, id, now = Date.now()) {
   return { add: missing.map((g) => `${g}:${it.skin}`), price, skin: it.skin, guns: missing };
 }
 
-/** Open the crate for an account row: { result, money delta, entries to add }. */
-export function openCrate(row) {
-  const r = rollMystery((n) => crypto.randomInt(n));
+/** What a draw from a crate means for an account: the result, and the entries to add (nothing but the refund if it's a duplicate). */
+function settle(row, r, crate) {
   if (r.kind === 'charm') {
     const duplicate = ownsCharm(row, r.charm);
-    return { result: { ...r, duplicate, refund: duplicate ? CRATE.refund : 0, price: CRATE.price }, skins: [], charms: duplicate ? [] : [r.charm] };
+    return { result: { ...r, duplicate, refund: duplicate ? crate.refund : 0, price: crate.price }, skins: [], charms: duplicate ? [] : [r.charm] };
   }
   const duplicate = ownsSkin(row, r.weapon, r.skin);
-  return { result: { ...r, duplicate, refund: duplicate ? CRATE.refund : 0, price: CRATE.price }, skins: duplicate ? [] : [`${r.weapon}:${r.skin}`], charms: [] };
+  return { result: { ...r, duplicate, refund: duplicate ? crate.refund : 0, price: crate.price }, skins: duplicate ? [] : [`${r.weapon}:${r.skin}`], charms: [] };
+}
+
+/** Open the crate for an account row: { result, money delta, entries to add }. */
+export function openCrate(row) {
+  return settle(row, rollMystery((n) => crypto.randomInt(n)), CRATE);
+}
+
+/** Open the Christmas crate (also opened by the presents): a Christmas skin on a random gun, or a Christmas charm. */
+export function rollChristmasCrate(row, rand = (n) => crypto.randomInt(n)) {
+  return settle(row, rollMystery(rand, SHOP_GUNS, CHRISTMAS.crate, christmasCrateItems()), CHRISTMAS.crate);
 }
 

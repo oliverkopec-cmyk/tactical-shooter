@@ -11,6 +11,7 @@ import { Accounts } from './accounts.js';
 import { sharedCodeVersion } from './sharedVersion.js';
 import { Admin } from './admin.js';
 import { Gifts } from './gifts.js';
+import { Christmas } from './christmas.js';
 import { Moderation } from './moderation.js';
 
 // Local secrets (e.g. DATABASE_URL) can live in a .env file, which git ignores.
@@ -40,6 +41,7 @@ const rooms = new RoomManager(io, accounts.progression, accounts.social);
 const social = accounts.social;
 const admin = new Admin({ db, accounts, rooms, social });
 const gifts = new Gifts({ db, accounts });
+const christmas = new Christmas({ db, accounts });
 const moderation = new Moderation({ db, accounts, io });
 accounts.moderation = moderation;   // suspended and banned accounts can't log in
 const SHARED_VERSION = sharedCodeVersion();
@@ -55,6 +57,7 @@ io.on('connection', (socket) => {
   const reply = (ack, payload) => { if (typeof ack === 'function') ack(payload); };
   accounts.trackOnline(socket);
   gifts.sendPending(socket);   // unopened gifts wait in the menu as presents
+  christmas.sendState(socket);
 
   socket.on('createRoom', (ack) => {
     const me = socket.data.account.id;
@@ -117,6 +120,10 @@ io.on('connection', (socket) => {
   socket.on('adminFindPlayer', safely((q) => gifts.findPlayers(socket, q)));
   socket.on('giftClaim', safely((id) => gifts.claim(socket, id)));
   socket.on('giftList', safely(async () => ({ gifts: await gifts.pendingFor(socket.data.account.id) })));
+  socket.on('christmasClaim', safely((day) => christmas.claim(socket, day)));
+  socket.on('christmasState', safely(async () => ({ christmas: await christmas.stateFor(socket.data.account.id) })));
+  socket.on('christmasDevDate', safely((date) => christmas.devDate(date)));
+  socket.on('christmasDevReset', safely(() => christmas.devReset(socket)));
 
   // ---- chat, reports and the owner's moderation tools (the owner-only ones re-check the caller on the server)
   socket.on('chat', (req, ack) => reply(ack, moderation.chat(socket, obj(req))));

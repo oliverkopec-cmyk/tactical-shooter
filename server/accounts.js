@@ -13,7 +13,9 @@ import { sanitizeSettings } from '../shared/settings.js';
 import { profileOf, configureProfile, ownsSkin, equippedSkinsOf, equippedOperatorsOf, devToolsEnabled, ownsCharm, equippedCharmsOf } from './profile.js';
 import { OPERATORS as OPERATOR_DEFS } from '../shared/operators.js';
 import { SKINS, CRATE } from '../shared/skins.js';
-import { shopState, purchase, openCrate } from './shop.js';
+import { shopState, purchase, openCrate, rollChristmasCrate } from './shop.js';
+import { CHRISTMAS, christmasOn } from '../shared/christmas.js';
+import { christmasNow } from './christmas.js';
 import { WEAPONS } from '../shared/weapons.js';
 import { OPERATORS } from '../shared/operators.js';
 import { ownedOperatorIds } from '../shared/account.js';
@@ -248,7 +250,7 @@ export class Accounts {
     // ---------------------------------------------------------------- the shop (server/shop.js)
 
     // What is on sale now (the same for everyone), with this account's prices and what it owns
-    r.get('/shop', authed(async (row, _req, res) => res.json(shopState(row))));
+    r.get('/shop', authed(async (row, _req, res) => res.json(shopState(row, Date.now(), christmasNow()))));
 
     // Buy a daily item or a Limited skin. The server checks it is on sale now and what it costs; Money only.
     r.post('/shop/buy', authed(async (account, req, res) => {
@@ -263,7 +265,7 @@ export class Accounts {
           [row.id, buy.price, JSON.stringify(buy.add)],
         );
         if (!rows.length) return { status: 402, body: { error: 'Not enough Money.', account: profileOf(row) } };
-        return { status: 200, body: { account: profileOf(rows[0]), bought: { skin: buy.skin, guns: buy.guns, price: buy.price }, shop: shopState(rows[0]) } };
+        return { status: 200, body: { account: profileOf(rows[0]), bought: { skin: buy.skin, guns: buy.guns, price: buy.price }, shop: shopState(rows[0], Date.now(), christmasNow()) } };
       });
       if (out.status === 200) this.refreshSocketLoadout(await this.progression.load(account.id));
       res.status(out.status).json(out.body);
@@ -281,6 +283,36 @@ export class Accounts {
           [row.id, CRATE.price, result.refund, JSON.stringify(skins), JSON.stringify(charms)],
         );
         if (!rows.length) return { status: 402, body: { error: 'Not enough Money.', account: profileOf(row) } };
+        return { status: 200, body: { account: profileOf(rows[0]), result } };
+      });
+      if (out.status === 200) this.refreshSocketLoadout(await this.progression.load(account.id));
+      res.status(out.status).json(out.body);
+    }));
+
+    // Buy a Christmas crate (only during the event): it goes to the Christmas inventory, unopened.
+    r.post('/crates/christmas/buy', authed(async (account, _req, res) => {
+      if (!christmasOn(christmasNow())) return res.status(410).json({ error: 'The Christmas crate has gone.' });
+      const { rows } = await this.db.query(
+        'UPDATE accounts SET money = money - $2, christmas_crates = christmas_crates + 1 WHERE id = $1 AND money >= $2 RETURNING *',
+        [account.id, CHRISTMAS.crate.price],
+      );
+      if (rows.length) return res.json({ account: profileOf(rows[0]) });
+      const row = (await this.db.query('SELECT * FROM accounts WHERE id = $1', [account.id])).rows[0];
+      res.status(402).json({ error: `Not enough Money: the crate costs ${CHRISTMAS.crate.price.toLocaleString()}.`, account: row ? profileOf(row) : undefined });
+    }));
+
+    // Open one Christmas crate from the inventory. Crates you already have can be opened after the event too.
+    r.post('/crates/christmas/open', authed(async (account, _req, res) => {
+      const out = await this.progression.withLock(account.id, async () => {
+        const row = (await this.db.query('SELECT * FROM accounts WHERE id = $1', [account.id])).rows[0];
+        if (!row) return { status: 404, body: { error: 'Account not found.' } };
+        if (!(row.christmas_crates > 0)) return { status: 400, body: { error: 'You have no Christmas crates.', account: profileOf(row) } };
+        const { result, skins, charms } = rollChristmasCrate(row);
+        const { rows } = await this.db.query(
+          'UPDATE accounts SET money = money + $2, owned_skins = owned_skins || $3::jsonb, owned_charms = owned_charms || $4::jsonb, christmas_crates = christmas_crates - 1 WHERE id = $1 AND christmas_crates > 0 RETURNING *',
+          [row.id, result.refund, JSON.stringify(skins), JSON.stringify(charms)],
+        );
+        if (!rows.length) return { status: 400, body: { error: 'You have no Christmas crates.', account: profileOf(row) } };
         return { status: 200, body: { account: profileOf(rows[0]), result } };
       });
       if (out.status === 200) this.refreshSocketLoadout(await this.progression.load(account.id));

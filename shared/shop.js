@@ -108,15 +108,15 @@ export const crateItems = () => ({ skins: crateContents(), charms: charmCrateCon
  * Draw from the crate. `randInt(n)` must return a whole number in 0..n-1 (the server passes a secure one).
  * Returns { kind: 'gun', rarity, weapon, skin } or { kind: 'charm', rarity, charm }.
  */
-export function rollMystery(randInt, guns = Object.keys(WEAPONS)) {
+export function rollMystery(randInt, guns = Object.keys(WEAPONS), crate = CRATE, items = crateItems()) {
   const roll = randInt(10000);
   let acc = 0, rarity = 'legendary';
-  for (const [r, p] of Object.entries(CRATE.odds)) {
+  for (const [r, p] of Object.entries(crate.odds)) {
     acc += Math.round(p * 10000);
     if (roll < acc) { rarity = r; break; }
   }
-  const { skins, charms } = crateItems();
-  const charm = charms[rarity].length && randInt(10000) < Math.round(CRATE.charmChance * 10000);
+  const { skins, charms } = items;
+  const charm = charms[rarity].length && randInt(10000) < Math.round(crate.charmChance * 10000);
   if (charm) return { kind: 'charm', rarity, charm: charms[rarity][randInt(charms[rarity].length)] };
   return { kind: 'gun', rarity, weapon: guns[randInt(guns.length)], skin: skins[rarity][randInt(skins[rarity].length)] };
 }

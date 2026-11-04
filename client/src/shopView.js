@@ -6,7 +6,7 @@
 import { SKINS, RARITIES, CRATE_RARITIES } from '../../shared/skins.js';
 import { CHARMS } from '../../shared/charms.js';
 import { WEAPONS } from '../../shared/weapons.js';
-import { getShop, buyShopItem, devMoney } from './account.js';
+import { getShop, buyShopItem, buyChristmasCrate, devMoney } from './account.js';
 import { ShopCards } from './shopCards.js';
 
 const $ = (id) => document.getElementById(id);
@@ -35,7 +35,7 @@ export class ShopView {
     this.message = '';
     this.messageError = false;
     this.confirming = null;    // the item id whose price button is asking "sure?"
-    this.showContents = false;
+    this.showContents = {};    // which crates have their contents opened out
     this.root = $('shop-wrap');
     this.root.addEventListener('click', (e) => this.onClick(e));
     this.root.addEventListener('mouseleave', () => { if (this.confirming) { this.confirming = null; this.updateButtons(); } });
@@ -59,6 +59,12 @@ export class ShopView {
     if (this.visible) this.render();
   }
 
+  /** The Christmas dates changed something: forget the shop so the crate comes or goes. */
+  christmasChanged() {
+    if (!this.data) return;
+    if (this.visible) this.load(); else this.data = null;
+  }
+
   /** The account changed (Money, owned skins): redraw prices and OWNED labels without reloading the 3D. */
   accountChanged() {
     if (this.visible && this.data) this.updateButtons();
@@ -80,21 +86,23 @@ export class ShopView {
       <div class="shop-cards">${rest.map((it) => this.cardHtml(it)).join('')}</div>
       ${d.limited.length ? `<div class="shop-section"><h3>Limited</h3><span class="muted">Only for a few days, then gone for good. Owned on every gun.</span></div>
       <div class="shop-cards">${d.limited.map((it) => this.cardHtml(it, true)).join('')}</div>` : ''}
+      ${d.christmasCrate ? `<div class="shop-section"><h3>Christmas crate</h3><span class="shop-timer">Gone in <b data-until="${d.christmasCrate.until}">${countdown(d.christmasCrate.until - Date.now() - this.clockOffset)}</b></span></div>
+      ${this.crateHtml('christmas', d.christmasCrate, 'Christmas Crate', 'Goes to your Christmas inventory, ready to open in the Christmas tab')}` : ''}
       <div class="shop-section"><h3>Crate</h3><span class="muted">Every crate skin on any gun, and every charm</span></div>
-      ${this.crateHtml()}
+      ${this.crateHtml('crate', d.crate, 'The Crate', 'A skin on a random gun, or a charm')}
       <p id="shop-msg" class="${this.messageError ? 'error' : 'shop-ok'}">${esc(this.message)}</p>
       ${a.devTools ? '<div class="dev-box"><span class="muted small-note">Local test database only.</span> <button type="button" data-dev-money>+10,000 Money</button></div>' : ''}`;
     // Every card's 3D view
     const views = [...this.root.querySelectorAll('canvas[data-view]')].map((canvas) => {
       const it = this.item(canvas.dataset.view);
-      return it === 'crate' ? { canvas, crate: true, guns: [] } : { canvas, skin: it.skin, guns: it.guns === undefined ? ['rifle'] : it.guns };
+      return it === 'crate' || it === 'christmas' ? { canvas, crate: it, guns: [] } : { canvas, skin: it.skin, guns: it.guns === undefined ? ['rifle'] : it.guns };
     });
     this.cards.setCards(views);
     this.updateButtons();
   }
 
   item(id) {
-    if (id === 'crate') return 'crate';
+    if (id === 'crate' || id === 'christmas') return id;
     return this.data.daily.find((x) => x.id === id) || this.data.limited.find((x) => x.id === id);
   }
 
@@ -134,8 +142,8 @@ export class ShopView {
 
   buyButton(it) { return `<button type="button" class="sc-price" data-buy="${it.id}"></button>`; }
 
-  crateHtml() {
-    const c = this.data.crate;
+  /** A crate's card, odds and contents. `key` is what the buttons name it by: 'crate' or 'christmas'. */
+  crateHtml(key, c, title, sub) {
     const odds = CRATE_RARITIES.map((r) => `
       <div class="odds-row"><span style="color:${r.color}">● ${r.name}</span><b>${Math.round(c.odds[r.id] * 100)}%</b></div>`).join('');
     const contents = CRATE_RARITIES.map((r) => `
@@ -143,17 +151,17 @@ export class ShopView {
       <div class="crate-skins">${c.contents.skins[r.id].map((id) => `<span class="crate-skin" style="--rar:${r.color}">${esc(SKINS[id].name)} skin</span>`).join('')}
       ${c.contents.charms[r.id].map((id) => `<span class="crate-skin charm" style="--rar:${r.color}">${esc(CHARMS[id].name)} charm</span>`).join('')}</div>`).join('');
     return `
-      <div class="shop-crate">
-        <div class="shop-card crate-card-big" data-card="crate" style="--rar:#f0b43c">
-          <div class="sc-view"><canvas data-view="crate"></canvas></div>
-          <div class="sc-info"><div class="sc-name">The Crate</div><div class="sc-sub muted">A skin on a random gun, or a charm</div>
-            <button type="button" class="sc-price" data-open-crate></button></div>
+      <div class="shop-crate${key === 'christmas' ? ' christmas' : ''}">
+        <div class="shop-card crate-card-big" data-card="${key}" style="--rar:#f0b43c">
+          <div class="sc-view"><canvas data-view="${key}"></canvas></div>
+          <div class="sc-info"><div class="sc-name">${esc(title)}</div><div class="sc-sub muted">${esc(sub)}</div>
+            <button type="button" class="sc-price" data-open-crate="${key}"></button></div>
         </div>
         <div class="crate-odds">
           <div class="detail-sub">Odds</div>${odds}
           <p class="muted small-note">First the rarity, then a charm (${Math.round(c.charmChance * 100)}%) or a skin on a random gun (${Math.round((1 - c.charmChance) * 100)}%). Anything you already own gives back ${money(c.refund)} Money (half the price).</p>
-          <button type="button" class="ghost small" data-toggle-contents>${this.showContents ? 'Hide' : 'Show'} everything inside</button>
-          <div class="crate-contents${this.showContents ? '' : ' hidden'}">${contents}</div>
+          <button type="button" class="ghost small" data-toggle-contents="${key}">${this.showContents[key] ? 'Hide' : 'Show'} everything inside</button>
+          <div class="crate-contents${this.showContents[key] ? '' : ' hidden'}">${contents}</div>
         </div>
       </div>`;
   }
@@ -173,12 +181,12 @@ export class ShopView {
       b.classList.toggle('short', !owned && a.money < price);
       b.innerHTML = owned ? 'OWNED' : this.confirming === it.id ? `Buy for 💰 ${money(price)}?` : `💰 ${money(price)}${price < (it.fullPrice || it.price) ? ` <s>${money(it.fullPrice || it.price)}</s>` : ''}`;
     }
-    const open = this.root.querySelector('[data-open-crate]');
-    if (open) {
-      const price = d.crate.price;
+    for (const open of this.root.querySelectorAll('[data-open-crate]')) {
+      const key = open.dataset.openCrate, price = key === 'christmas' ? d.christmasCrate?.price ?? 0 : d.crate.price;
       open.classList.toggle('short', a.money < price);
-      open.classList.toggle('confirm', this.confirming === 'crate');
-      open.innerHTML = this.confirming === 'crate' ? `Open for 💰 ${money(price)}?` : `Open · 💰 ${money(price)}`;
+      open.classList.toggle('confirm', this.confirming === key);
+      const verb = key === 'christmas' ? 'Buy' : 'Open';
+      open.innerHTML = this.confirming === key ? `${verb} for 💰 ${money(price)}?` : `${verb} · 💰 ${money(price)}`;
     }
   }
 
@@ -207,16 +215,18 @@ export class ShopView {
     const el = $('shop-reset');
     if (el) el.textContent = countdown(this.data.resetsAt - now);
     for (const s of this.root.querySelectorAll('[data-until]')) s.textContent = countdown(Number(s.dataset.until) - now);
-    if (now >= this.data.resetsAt) { this.data = null; this.load(); }   // a new day: a new shop
+    if (now >= this.data.resetsAt || (this.data.christmasCrate && now >= this.data.christmasCrate.until)) { this.data = null; this.load(); }   // a new day: a new shop
   }
 
   // ---------------------------------------------------------------- buying
 
   async onClick(e) {
-    if (e.target.closest('[data-toggle-contents]')) {
-      this.showContents = !this.showContents;
-      this.root.querySelector('.crate-contents')?.classList.toggle('hidden', !this.showContents);
-      e.target.closest('[data-toggle-contents]').textContent = `${this.showContents ? 'Hide' : 'Show'} everything inside`;
+    const toggle = e.target.closest('[data-toggle-contents]');
+    if (toggle) {
+      const key = toggle.dataset.toggleContents;
+      this.showContents[key] = !this.showContents[key];
+      toggle.closest('.crate-odds').querySelector('.crate-contents').classList.toggle('hidden', !this.showContents[key]);
+      toggle.textContent = `${this.showContents[key] ? 'Hide' : 'Show'} everything inside`;
       return;
     }
     if (e.target.closest('[data-dev-money]')) {
@@ -227,10 +237,15 @@ export class ShopView {
     }
     const crate = e.target.closest('[data-open-crate]');
     if (crate) {
-      if (this.confirming !== 'crate') { this.confirming = 'crate'; return this.updateButtons(); }
+      const key = crate.dataset.openCrate;
+      if (this.confirming !== key) { this.confirming = key; return this.updateButtons(); }
       this.confirming = null;
       this.updateButtons();
-      return this.onOpenCrate();
+      if (key !== 'christmas') return this.onOpenCrate();
+      const res = await buyChristmasCrate();
+      if (res.account) this.setAccount(res.account);
+      this.say(res.error || `Added to your Christmas inventory (you have ${res.account.christmasCrates}). Open it in the Christmas tab.`, !!res.error);
+      return this.updateButtons();
     }
     const buy = e.target.closest('[data-buy]');
     if (!buy || buy.disabled || this.busy) return;

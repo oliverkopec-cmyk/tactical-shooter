@@ -39,6 +39,7 @@ const SCHEMA = `
   ALTER TABLE accounts ADD COLUMN IF NOT EXISTS equipped_operators JSONB NOT NULL DEFAULT '{}';
   ALTER TABLE accounts ADD COLUMN IF NOT EXISTS owned_charms JSONB NOT NULL DEFAULT '[]';
   ALTER TABLE accounts ADD COLUMN IF NOT EXISTS equipped_charms JSONB NOT NULL DEFAULT '{}';
+  ALTER TABLE accounts ADD COLUMN IF NOT EXISTS christmas_crates INTEGER NOT NULL DEFAULT 0;
   CREATE TABLE IF NOT EXISTS friendships (
     id         BIGSERIAL PRIMARY KEY,
     requester  BIGINT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
@@ -70,6 +71,12 @@ const SCHEMA = `
     PRIMARY KEY (gift_id, account_id)
   );
   CREATE INDEX IF NOT EXISTS gift_claims_account_idx ON gift_claims (account_id);
+  CREATE TABLE IF NOT EXISTS christmas_claims (
+    account_id  BIGINT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    day         INTEGER NOT NULL,
+    claimed_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (account_id, day)
+  );
   CREATE TABLE IF NOT EXISTS chat_log (
     id             BIGSERIAL PRIMARY KEY,
     account_id     BIGINT,
