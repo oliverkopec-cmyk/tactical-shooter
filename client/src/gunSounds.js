@@ -233,10 +233,12 @@ export class GunSounds {
     if (inside) cutoff *= 0.6;
     if (through) cutoff *= 0.3;
     if (!clear) cutoff *= 0.15;
+    const loud = env.loudness ?? 1;                 // a suppressor: much quieter, and the sharp top of the sound is gone
+    if (loud < 1) cutoff = Math.min(cutoff, 2600);
     const t = ctx.currentTime + Math.min(0.4, d / 343);
     const rate = 1 + (Math.random() * 2 - 1) * s.pitchVar;
     const out = ctx.createGain();
-    out.gain.value = s.volume * (pos ? 1 : 0.8) * (clear ? 1 : 0.6) * (through ? 0.75 : 1);
+    out.gain.value = s.volume * (pos ? 1 : 0.8) * (clear ? 1 : 0.6) * (through ? 0.75 : 1) * loud;
     const lp = ctx.createBiquadFilter();
     lp.type = 'lowpass'; lp.frequency.value = Math.max(300, cutoff); lp.Q.value = 0.5;
     const panner = ctx.createStereoPanner();

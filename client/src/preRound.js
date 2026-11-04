@@ -266,7 +266,7 @@ export class PreRound {
     const isMine = op.id === s.myOp && s.myConfirmed;
     const utility = isMine ? s.myUtility : (this.pendingUtility && op.utilities.includes(this.pendingUtility) ? this.pendingUtility : op.utilities[0]);
     const sig = JSON.stringify([op.id, locked, taken, isMine, utility, skins[op.weapons.primary], skins[op.weapons.secondary], charms[op.weapons.primary], charms[op.weapons.secondary], this.view]);
-    this.preview?.setLook({ team: op.team, operatorId: op.id, weaponId: op.weapons.primary, skinId: skins[op.weapons.primary] || null, charmId: charms[op.weapons.primary] || null });
+    this.preview?.setLook({ team: op.team, operatorId: op.id, weaponId: op.weapons.primary, skinId: skins[op.weapons.primary] || null, charmId: charms[op.weapons.primary] || null, attachments: this.hooks.getAccount()?.equippedAttachments?.[op.weapons.primary] || null });
     if (sig === this.sig.details) return;
     this.sig.details = sig;
     const bars = (n) => `<span class="pr-bars">${[1, 2, 3].map((i) => `<i class="${i <= n ? 'on' : ''}"></i>`).join('')}</span>`;
@@ -399,7 +399,7 @@ export class PreRound {
     const res = kind === 'skin' ? await equipSkin(gunId, id) : await equipCharm(gunId, id);
     if (res.error) return this.hooks.toast(res.error);
     this.hooks.setAccount(res.account);
-    this.hooks.onSkinsChanged(res.account.equippedSkins || {}, res.account.equippedCharms || {});
+    this.hooks.onSkinsChanged(res.account.equippedSkins || {}, res.account.equippedCharms || {}, res.account.equippedAttachments || {});
     this.hooks.refreshLook();
     menuAudio.select();
   }

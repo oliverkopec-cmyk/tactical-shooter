@@ -45,7 +45,7 @@ export class KillcamRecorder {
     const w = killer.weapon?.id;
     return {
       killer: killerId, name: killer.member.name, op: killer.operator,
-      weapon: w, skin: killer.member.skins?.[w] || null, charm: killer.member.charms?.[w] || null,
+      weapon: w, skin: killer.member.skins?.[w] || null, charm: killer.member.charms?.[w] || null, attachments: killer.member.attachments?.[w] || null,
       health: Math.max(0, Math.round(killer.health)), team: killer.member.team,
       trail: rel(this.trails.get(killerId)),
       victimTrail: rel(this.trails.get(victimId)),

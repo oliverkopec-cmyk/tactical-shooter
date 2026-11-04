@@ -2,7 +2,23 @@
 
 A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite on the client, Node.js + Socket.IO on an authoritative server. One Node process serves both the game client and the realtime server, so the whole thing deploys as a single Render web service.
 
-## Status: Stage O (more detailed characters)
+## Status: Stage P (weapon attachments)
+
+**The gun workshop** (`client/src/gunWorkshop.js`): clicking a gun in the Operators tab opens it large in 3D (drag to turn, scroll to zoom) with its slots: sight, muzzle, grip, magazine, skin and charm. Everything is free, each change shows on the gun at once, and each gun saves its own set to the account (`accounts.equipped_attachments`, `PUT /api/equip/attachment`). Other players see them in matches. The rules are in `shared/attachments.js`, the file to tune.
+
+| Slot | Options | What it changes |
+|---|---|---|
+| Sight | Iron sights (1.3x), red dot (1.4x), holographic (1.35x), 1.5x, 2x, 2.5x, and the marksman rifle's own 3.2x | Zoom, and what you see when aiming: a dot, a ring and dot, or a scope view with its own reticle and size. Scopes hide the gun while aiming |
+| Muzzle | None, suppressor, flash hider, compensator, muzzle brake | Suppressor: 66% quieter, almost no flash, less damage at range, bots hear it from less far. Flash hider: 65% less flash. Compensator: 45% less side recoil, more flash. Brake: 40% less first-shot kick, more flash |
+| Grip | None, vertical, angled | Vertical: 22% less vertical recoil. Angled: aims down sights 25% faster |
+| Magazine | Standard, extended | 34% more rounds (shotguns +2), 18% slower reload, 14% slower to aim |
+
+- **Only where it makes sense** (`ON_MODEL`): SMGs stop at 1.5x, shotguns at holographic, pistols at a red dot and have no grip, shotguns have no grip or suppressor, the revolver and the shield take no attachments.
+- **Who decides what:** magazine size, reload time, damage over range and aiming speed run through `gunFor` in `shared/weapons.js`, on the server and in the client's prediction alike, so they can't be faked. A request that doesn't fit the gun is refused. Recoil and flash are client side, like all gun feel (`gunTuning(id, att)` in `shared/gunConfig.js`).
+- **Stat bars** (`shared/gunStats.js`): hovering an option compares it with what is fitted; otherwise the bars compare the gun as it comes with how you've set it up.
+- **What changed on guns with nothing fitted:** a gun keeps the sight it came with, but stock guns no longer have a random muzzle device on them, and SMGs and LMGs no longer have a built-in foregrip, since they had no effect. What you see fitted now always does something. Sight zoom is tidied up: red dots went from 1.6x to 1.4x so that a 1.5x scope is more zoom, and the stock scope from 2.4x to 2.5x.
+
+### Earlier: Stage O (more detailed characters)
 
 The player models are rebuilt from many small shapes in code, with no external assets (`client/src/avatarModel.js`), and posed by a new animation system (`RemotePlayer.poseBody` in `client/src/avatars.js`). The first-person hands (`client/src/hands.js`) are unchanged.
 
@@ -493,18 +509,6 @@ Six new operators, bought with Money in the Operators tab (the original eight an
 
 Written down so they aren't forgotten (see Status for what is built). They are built one at a time, one PR each, and the next one starts once the previous is confirmed. Server memory must stay low enough for Render's 512 MB plan.
 
-### Stage P - Weapon attachments
-- In the Operators tab, clicking an operator's gun opens a gun workshop: the gun appears large in 3D, drag to rotate it and scroll to zoom.
-- Attachment slots, each shown on the gun as you change it:
-  - Sight: iron sights, red dot, holographic, 1.5x, 2x and 2.5x (only on guns where it makes sense)
-  - Muzzle: none, suppressor (quieter, less damage at range), flash hider (less flash), compensator (less side recoil), muzzle brake (less first-shot kick)
-  - Grip: none, vertical grip (less vertical recoil), angled grip (faster aim down sights)
-  - Magazine: standard, extended (more ammo, slower reload and aim)
-  - Skin and charm (as now)
-- Show what each attachment changes using the stat bars (before and after).
-- Each gun saves its own attachments to the account. Other players see them in matches.
-- Sights change the zoom and the view when aiming down sights.
-
 ### Stage Q - Aegis shield bash and downed state
 - Aegis can bash with the shield (melee key while the shield is up). A bash on an enemy knocks them down into a "downed" state.
 - Downed players fall to the ground and can only crawl slowly; they can't shoot or use gadgets. They bleed out after 20 seconds unless revived, with the timer on their screen and a downed icon to their team.
@@ -543,6 +547,8 @@ shared/            Code used by BOTH client and server
   constants.js     tuning values, key bit flags, team colours
   movementConfig.js  MOVEMENT TUNING: speeds, acceleration, strafing, stances, aiming, head bob, weapon sway
   map.js           map geometry (axis-aligned boxes), spawns, objective
+  attachments.js   weapon attachments: what fits where and what each changes
+  gunStats.js      the gun workshop's stat bars
   christmas.js     Christmas event: every date and rule (Sydney time)
   christmasSkins.js the 7 limited and 10 crate Christmas skins
   terrain.js       hills and slopes for detailed maps: the smooth ground surface everything stands on and shoots at
@@ -631,6 +637,7 @@ client/
   src/destruction.js  instanced wall panels, charges, explosions
   src/christmasRoom.js the Christmas room behind the Christmas tab
   src/menuChristmas.js snow and lights on the rooftop at Christmas
+  src/gunWorkshop.js the gun workshop screen
   src/avatarModel.js the player bodies, built from shapes, in full and low detail
   src/operatorLooks.js what each operator wears
   src/map.js       renders the shared map, lighting

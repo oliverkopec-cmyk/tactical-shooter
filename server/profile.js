@@ -8,6 +8,7 @@ import { WEAPONS } from '../shared/weapons.js';
 import { OPERATORS } from '../shared/operators.js';
 import { isOwner, isAdmin, isTester, isStaff } from './roles.js';
 import { CHARMS, charmsFromLevel } from '../shared/charms.js';
+import { cleanAttachments } from '../shared/attachments.js';
 
 // Developer switches (see Accounts): UNLOCK_ALL_SKINS=1 unlocks every skin, and on a local
 // test database there is a button that adds Money so the shop can be tried.
@@ -80,6 +81,16 @@ export function equippedCharmsOf(row) {
   return out;
 }
 
+/** { weaponId: { sight, muzzle, grip, mag } }, with anything no longer allowed on that gun dropped. */
+export function equippedAttachmentsOf(row) {
+  const out = {};
+  for (const [weapon, raw] of Object.entries(row.equipped_attachments || {})) {
+    const att = WEAPONS[weapon] ? cleanAttachments(WEAPONS[weapon], raw) : null;
+    if (att) out[weapon] = att;
+  }
+  return out;
+}
+
 /** { attack, defense, menu }: the operators the account chose to play and to show in the menu. */
 export function equippedOperatorsOf(row) {
   const owned = new Set(ownedOperatorIds(row.owned_operators));
@@ -120,6 +131,7 @@ export function profileOf(row) {
     equippedSkins: equippedSkinsOf(row),
     ownedCharms: ownedCharmsOf(row),
     equippedCharms: equippedCharmsOf(row),
+    equippedAttachments: equippedAttachmentsOf(row),
     equippedOperators: equippedOperatorsOf(row),
     christmasCrates: row.christmas_crates || 0,
     skinsUnlocked: unlockAll,

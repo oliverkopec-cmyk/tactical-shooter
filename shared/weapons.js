@@ -3,6 +3,7 @@
 // the client can predict shots while the server stays authoritative.
 
 import { KEY, WALK_SPEED, ADS, RAPPEL } from './constants.js';
+import { applyAttachments, attachmentKey } from './attachments.js';
 
 // A gun is used by at most 2 operators (see operators.js).
 // Fields:
@@ -266,8 +267,18 @@ WEAPONS.breakwater = gun({
 export const SWAP_TIME = 0.4;   // seconds before a newly drawn weapon can fire
 
 /** A weapon state holds the drawn gun plus the stowed one in `other` (slot 0 = primary, 1 = secondary). */
-export function createWeaponState(primaryId = 'rifle', secondaryId = 'sidekick') {
-  const p = WEAPONS[primaryId] || WEAPONS.rifle, s = WEAPONS[secondaryId] || WEAPONS.sidekick;
+// A gun as a player has it, with their attachments applied (shared/attachments.js). atts: { gunId: attachments }, or nothing.
+const fitted = new Map();
+export function gunFor(id, atts) {
+  const w = WEAPONS[id], att = atts?.[id];
+  if (!w || !att) return w;
+  const key = `${id}|${attachmentKey(att)}`;
+  if (!fitted.has(key)) fitted.set(key, applyAttachments(w, att));
+  return fitted.get(key);
+}
+
+export function createWeaponState(primaryId = 'rifle', secondaryId = 'sidekick', atts = null) {
+  const p = gunFor(primaryId, atts) || WEAPONS.rifle, s = gunFor(secondaryId, atts) || WEAPONS.sidekick;
   return {
     id: p.id, ammo: p.magSize, reserve: p.reserve, cooldown: 0, reload: 0, bloom: 0, trigger: false,
     slot: 0, other: { id: s.id, ammo: s.magSize, reserve: s.reserve },
@@ -283,7 +294,7 @@ export function copyWeaponState(ws) {
  * input.wsel (1 = primary, 2 = secondary) is the slot the player wants drawn;
  * changing it swaps guns, which takes SWAP_TIME before the new one can fire.
  */
-export function stepWeapon(ws, input, dt) {
+export function stepWeapon(ws, input, dt, atts = null) {
   if (input.wsel && ws.other && input.wsel - 1 !== ws.slot) {
     const stowed = { id: ws.id, ammo: ws.ammo, reserve: ws.reserve };
     ws.id = ws.other.id; ws.ammo = ws.other.ammo; ws.reserve = ws.other.reserve;
@@ -294,7 +305,7 @@ export function stepWeapon(ws, input, dt) {
     ws.cooldown = SWAP_TIME;
     ws.trigger = true;   // a held trigger doesn't fire a semi-automatic gun the moment it is drawn
   }
-  const w = WEAPONS[ws.id];
+  const w = gunFor(ws.id, atts);
   const keys = input.keys | 0;
   const firing = (keys & KEY.FIRE) !== 0;
   if (w.shield) { ws.cooldown = Math.max(0, ws.cooldown - dt); ws.reload = 0; ws.trigger = firing; return false; }   // a shield never fires
@@ -344,6 +355,8 @@ export function shieldCover(ws, s) {
 
 /** Walking speed multiplier for the gun that is drawn. */
 export const gunMobility = (ws) => WEAPONS[ws?.id]?.mobility ?? 1;
+/** How long aiming down sights takes with the gun that is drawn, 1 being normal. */
+export const gunAimTime = (ws, atts) => gunFor(ws?.id, atts)?.aimTime ?? 1;
 
 // ---------------------------------------------------------------- stat bars (menus)
 

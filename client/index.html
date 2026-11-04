@@ -98,6 +98,15 @@
       <div class="menu-hint muted">Drag to turn your operator. Change who stands here in the Operators tab.</div>
     </section>
 
+    <!-- The gun workshop: opened by clicking a gun in the Operators tab -->
+    <div id="workshop" class="hidden">
+      <canvas id="ws-canvas"></canvas>
+      <div class="ws-head"><div><h2 id="ws-title"></h2><span id="ws-kind" class="muted"></span></div><button type="button" id="ws-close" class="primary">Done</button></div>
+      <div class="ws-left card"><div id="ws-tabs" class="ws-tabs"></div><div id="ws-options" class="ws-options"></div></div>
+      <div class="ws-right card"><div id="ws-stats-title" class="detail-sub"></div><div id="ws-stats"></div></div>
+      <div class="ws-hint muted">Drag to turn · Scroll to zoom</div>
+    </div>
+
     <section id="tab-christmas" class="tab-panel hidden">
       <div class="side-col left xmas-col">
         <div class="card xmas-inv">
@@ -241,8 +250,9 @@
     <div id="crosshair">
       <i class="ch-top"></i><i class="ch-bottom"></i><i class="ch-left"></i><i class="ch-right"></i><i class="ch-dot"></i>
     </div>
-    <div id="scope" class="hidden"><div class="scope-lens"><i class="sc-h"></i><i class="sc-v"></i><i class="sc-dot"></i></div></div>
+    <div id="scope" class="hidden"><div class="scope-lens"><i class="sc-h"></i><i class="sc-v"></i><i class="sc-dot"></i><i class="sc-chev"></i><i class="sc-tick a"></i><i class="sc-tick b"></i></div></div>
     <div id="red-dot" class="hidden"></div>
+    <div id="holo-ring" class="hidden"><i></i></div>
     <div id="hitmarker"><i></i><i></i><i></i><i></i></div>
     <div id="damage-indicator"><i></i></div>
     <div id="drone-overlay" class="hidden"></div>

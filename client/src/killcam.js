@@ -5,6 +5,7 @@
 import { getEyePosition } from '../../shared/movement.js';
 import { LEAN_ROLL } from '../../shared/constants.js';
 import { RemotePlayer } from './avatars.js';
+import { loudnessOf } from '../../shared/attachments.js';
 
 const lerp = (a, b, k) => a + (b - a) * k;
 const lerpAngle = (a, b, k) => { let d = (b - a) % (Math.PI * 2); if (d > Math.PI) d -= Math.PI * 2; if (d < -Math.PI) d += Math.PI * 2; return a + d * k; };
@@ -60,11 +61,11 @@ export class Killcam {
     }
     // The killer's gun, firing on the recorded shots
     g.viewModel.visible = true;
-    g.viewModel.setWeapon(d.weapon, d.skin, d.charm);
+    g.viewModel.setWeapon(d.weapon, d.skin, d.charm, null, d.attachments);
     while (this.nextShot < d.shots.length && d.shots[this.nextShot].t <= this.time) {
       const shot = d.shots[this.nextShot++];
-      g.viewModel.fire(d.weapon);
-      g.audio.shot(d.weapon, null, null);
+      g.viewModel.fire(d.weapon, d.attachments);
+      g.audio.shot(d.weapon, null, null, { loudness: loudnessOf(d.attachments) });
       const from = [g.camera.position.x, g.camera.position.y - 0.12, g.camera.position.z];
       for (const end of shot.ends) g.effects.tracer(from, end);
     }

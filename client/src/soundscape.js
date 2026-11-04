@@ -1,4 +1,4 @@
-import { WEAPONS } from '../../shared/weapons.js';
+import { WEAPONS, gunFor } from '../../shared/weapons.js';
 import { gunTuning } from '../../shared/gunConfig.js';
 import { RELOAD_STEPS } from './gunSounds.js';
 
@@ -84,8 +84,8 @@ export class Soundscape {
   }
 
   /** Schedule a reload's sounds over the gun's reload time (at your own ears, or at pos for someone else). Returns the timers. */
-  reloadSequence(weaponId, pos) {
-    const w = WEAPONS[weaponId];
+  reloadSequence(weaponId, pos, atts = null) {
+    const w = gunFor(weaponId, atts);
     if (!w || w.shield) return [];
     const steps = RELOAD_STEPS[gunTuning(weaponId).sound.reload] || RELOAD_STEPS.mag;
     return steps.map(([f, name]) => setTimeout(() => this.foley(name, pos, 16), f * w.reloadTime * 1000));
@@ -155,7 +155,7 @@ export class Soundscape {
     o.vy = s.vy;
 
     const reloading = l.weapon.reload > 0;
-    if (reloading && !o.wasReloading) o.timers = this.reloadSequence(l.weapon.id, null);
+    if (reloading && !o.wasReloading) o.timers = this.reloadSequence(l.weapon.id, null, l.attachments);
     if (!reloading && o.wasReloading && l.weapon.ammo <= o.ammo) o.timers?.forEach(clearTimeout);   // stopped before it finished (switched guns)
     o.wasReloading = reloading;
     o.ammo = l.weapon.ammo;
@@ -180,7 +180,7 @@ export class Soundscape {
       }
       st.wasGround = r.onGround;
       st.vy = r.vy;
-      if (r.reloading && !st.wasReloading) st.timers = this.reloadSequence(r.weaponId, [p.x, p.y + 1.1, p.z]);
+      if (r.reloading && !st.wasReloading) st.timers = this.reloadSequence(r.weaponId, [p.x, p.y + 1.1, p.z], r.attachments);
       if (!r.reloading && st.wasReloading && st.reloadId !== r.weaponId) st.timers?.forEach(clearTimeout);
       st.reloadId = r.weaponId;
       st.wasReloading = r.reloading;

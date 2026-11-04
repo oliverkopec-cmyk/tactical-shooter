@@ -62,3 +62,4 @@ export const removeFriend = (id) => call('POST', 'friends/remove', { id });
 
 /** Equip a charm on a gun (charm null = take it off). Returns { account } or { error }. */
 export const equipCharm = (weapon, charm) => call('PUT', 'equip/charm', { weapon, charm });
+export const equipAttachment = (weapon, slot, value) => call('PUT', 'equip/attachment', { weapon, slot, value });

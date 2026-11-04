@@ -49,6 +49,7 @@ export class OpPreview {
     this.avatar.setOperator(look.operatorId);
     this.avatar.skins = { [look.weaponId]: look.skinId };
     this.avatar.charms = { [look.weaponId]: look.charmId };
+    this.avatar.attachments = look.attachments ? { [look.weaponId]: look.attachments } : {};
     this.avatar.weaponId = null;   // rebuild the gun with this skin and charm
     if (this.avatar.shield) { this.avatar.shieldMount.clear(); this.avatar.shield = null; }
     this.avatar.setWeapon(look.weaponId);

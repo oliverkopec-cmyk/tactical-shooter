@@ -25,6 +25,7 @@ export function createPlayerState(spawn) {
     fireDelay: 0,  // > 0 while recovering from a sprint: no shooting yet
     speedMul: 1,   // operator speed rating
     gunMul: 1,     // mobility of the gun that is drawn (set from the weapon before each step)
+    aimMul: 1,     // how long that gun takes to aim, 1 being normal (attachments change it)
     slow: 1,       // temporary slow (barbed wire, stun), set by the server
     // vault: while vaultT > 0 the body follows a hop from (vax,vay,vaz) to (vbx,vby,vbz) over a top at vtop
     vaultT: 0, vax: 0, vay: 0, vaz: 0, vbx: 0, vby: 0, vbz: 0, vtop: 0,
@@ -201,7 +202,7 @@ export function stepPlayer(s, input, dt, world) {
   s.fireDelay = Math.max(0, (s.fireDelay || 0) - dt);
   const sprinting = !!(keys & KEY.SPRINT) && fwd > 0 && s.crouch < 0.5 && !lying && !firing && !aiming && s.fireDelay <= 0;
   s.sprinting = sprinting;
-  s.ads = Math.max(0, Math.min(1, (s.ads || 0) + (aiming && !sprinting ? dt : -dt) / ADS.time));
+  s.ads = Math.max(0, Math.min(1, (s.ads || 0) + (aiming && !sprinting ? dt : -dt) / (ADS.time * (s.aimMul ?? 1))));
   const baseSpeed = sprinting ? SPRINT_SPEED : WALK_SPEED;
   // Strafing and walking backwards are slower than forwards
   let dirMul = 1;
@@ -424,7 +425,7 @@ function stepRappel(s, keys, rapPressed, dt, world) {
   s.sprinting = false;
   s.crouch = 0; s.prone = 0; s.lean = 0;
   const from = [s.x, s.y, s.z, s.rapSide];
-  s.ads = Math.max(0, Math.min(1, (s.ads || 0) + ((keys & KEY.AIM) ? dt : -dt) / ADS.time));   // you can aim on a rope
+  s.ads = Math.max(0, Math.min(1, (s.ads || 0) + ((keys & KEY.AIM) ? dt : -dt) / (ADS.time * (s.aimMul ?? 1))));   // you can aim on a rope
   const flipping = (keys & KEY.FLIP) !== 0;
   s.rapFlip = Math.max(0, Math.min(1, (s.rapFlip || 0) + (flipping ? 1 : -1) * dt * RAPPEL.flipSpeed));
   if (rapPressed) { letGo(s, r, false); return; }

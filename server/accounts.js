@@ -10,9 +10,10 @@ import bcrypt from 'bcrypt';
 import express from 'express';
 import { usernameError, passwordError } from '../shared/account.js';
 import { sanitizeSettings } from '../shared/settings.js';
-import { profileOf, configureProfile, ownsSkin, equippedSkinsOf, equippedOperatorsOf, devToolsEnabled, ownsCharm, equippedCharmsOf } from './profile.js';
+import { profileOf, configureProfile, ownsSkin, equippedSkinsOf, equippedOperatorsOf, devToolsEnabled, ownsCharm, equippedCharmsOf, equippedAttachmentsOf } from './profile.js';
 import { OPERATORS as OPERATOR_DEFS } from '../shared/operators.js';
 import { SKINS, CRATE } from '../shared/skins.js';
+import { SLOTS, optionsFor, cleanAttachments } from '../shared/attachments.js';
 import { shopState, purchase, openCrate, rollChristmasCrate } from './shop.js';
 import { CHRISTMAS, christmasOn } from '../shared/christmas.js';
 import { christmasNow } from './christmas.js';
@@ -39,7 +40,7 @@ function readCookie(header, name) {
 }
 
 /** What a match needs to know about a player's equipped skins and operators. */
-const loadoutOf = (row) => ({ skins: equippedSkinsOf(row), charms: equippedCharmsOf(row), operators: equippedOperatorsOf(row), owned: ownedOperatorIds(row.owned_operators), opMatches: row.stats?.opMatches || {} });
+const loadoutOf = (row) => ({ skins: equippedSkinsOf(row), charms: equippedCharmsOf(row), attachments: equippedAttachmentsOf(row), operators: equippedOperatorsOf(row), owned: ownedOperatorIds(row.owned_operators), opMatches: row.stats?.opMatches || {} });
 
 export class Accounts {
   constructor(db) {
@@ -208,6 +209,24 @@ export class Accounts {
       const equipped = { ...equippedCharmsOf(found.row) };
       if (charm === null) delete equipped[weapon]; else equipped[weapon] = charm;
       const { rows } = await this.db.query('UPDATE accounts SET equipped_charms = $2 WHERE id = $1 RETURNING *', [found.row.id, JSON.stringify(equipped)]);
+      this.refreshSocketLoadout(rows[0]);
+      res.json({ account: profileOf(rows[0]) });
+    });
+
+    // Fit an attachment on a gun (value: null puts the gun's own back). Only what is allowed on that gun gets through.
+    r.put('/equip/attachment', async (req, res) => {
+      const found = await this.fromCookie(req.headers.cookie);
+      if (!found) return res.status(401).json({ error: 'Not logged in.' });
+      const { weapon, slot, value } = req.body || {};
+      if (!WEAPONS[weapon]) return res.status(400).json({ error: 'Unknown gun.' });
+      if (!SLOTS.includes(slot)) return res.status(400).json({ error: 'Unknown slot.' });
+      if (value !== null && !optionsFor(WEAPONS[weapon])[slot].includes(value)) return res.status(400).json({ error: 'That doesn\'t fit this gun.' });
+      const equipped = { ...equippedAttachmentsOf(found.row) };
+      const att = { ...equipped[weapon] };
+      if (value === null) delete att[slot]; else att[slot] = value;
+      const clean = cleanAttachments(WEAPONS[weapon], att);
+      if (clean) equipped[weapon] = clean; else delete equipped[weapon];
+      const { rows } = await this.db.query('UPDATE accounts SET equipped_attachments = $2 WHERE id = $1 RETURNING *', [found.row.id, JSON.stringify(equipped)]);
       this.refreshSocketLoadout(rows[0]);
       res.json({ account: profileOf(rows[0]) });
     });

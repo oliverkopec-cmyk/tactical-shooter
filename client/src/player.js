@@ -8,7 +8,7 @@ import {
 import { stepDrone, copyDroneState, droneEye, DRONE_KEYS } from '../../shared/drone.js';
 import { createPlayerState, copyPlayerState, stepPlayer, getEyePosition, weaponInput, rightVec } from '../../shared/movement.js';
 import {
-  WEAPONS, createWeaponState, copyWeaponState, stepWeapon, currentSpread, shotDirections, gunMobility,
+  WEAPONS, createWeaponState, copyWeaponState, stepWeapon, currentSpread, shotDirections, gunMobility, gunAimTime, gunFor,
 } from '../../shared/weapons.js';
 
 import { Recoil } from './recoil.js';
@@ -115,7 +115,7 @@ export class LocalPlayer {
   }
 
   get weaponDef() {
-    return WEAPONS[this.weapon.id];
+    return gunFor(this.weapon.id, this.attachments);
   }
 
   // Keys work with or without pointer lock, so the game stays playable in
@@ -303,10 +303,11 @@ export class LocalPlayer {
       return;
     }
     this.state.gunMul = gunMobility(this.weapon);
+    this.state.aimMul = gunAimTime(this.weapon, this.attachments);
     stepPlayer(this.state, input, input.dt, this.collisionWorld());
     const wi = weaponInput(this.state, input);
     const ammoBefore = this.weapon.ammo;
-    const fired = stepWeapon(this.weapon, wi, input.dt);
+    const fired = stepWeapon(this.weapon, wi, input.dt, this.attachments);
     if (!live) return;
     // Pulling the trigger on an empty gun: a dry click (once per press)
     const pull = (wi.keys & KEY.FIRE) !== 0;
@@ -323,7 +324,7 @@ export class LocalPlayer {
     const dirs = shotDirections(w, input.yaw, input.pitch, spread, input.seq);
     this.onShot?.({ origin: [eye.x, eye.y, eye.z], dirs, weaponId: w.id });
 
-    this.recoil.fire(w.id, { ads: s.ads || 0, crouch: Math.max(s.crouch || 0, s.prone || 0) });
+    this.recoil.fire(w.id, { ads: s.ads || 0, crouch: Math.max(s.crouch || 0, s.prone || 0) }, this.attachments?.[w.id]);
   }
 
   resetRecoil() { this.recoil.reset(); }

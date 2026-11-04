@@ -1,6 +1,7 @@
 // First-person weapon view model: simple box guns drawn in their own pass so
 // they never clip into walls, with bob, recoil kick, reload dip and muzzle flash.
 
+import { attachmentKey } from '../../shared/attachments.js';
 import * as THREE from 'three';
 import { WEAPONS } from '../../shared/weapons.js';
 import { FEEL } from '../../shared/constants.js';
@@ -168,11 +169,11 @@ export class ViewModel {
    * sideShield: { id, skin, charm } when the other weapon is a ballistic shield (Aegis with the pistol
    * out): it stays in view, held to the side. A drawn shield is all there is in the hands.
    */
-  setWeapon(id, skinId = null, charmId = null, sideShield = null) {
+  setWeapon(id, skinId = null, charmId = null, sideShield = null, att = null) {
     const shield = !!WEAPONS[id]?.shield;
     const sh = shield ? { id, skin: skinId, charm: charmId } : sideShield;
     const shieldKey = sh ? `${sh.id}|${sh.skin || ''}|${sh.charm || ''}` : '';
-    const key = `${id}|${skinId || ''}|${charmId || ''}|${shieldKey}`;
+    const key = `${id}|${skinId || ''}|${charmId || ''}|${shieldKey}|${attachmentKey(att)}`;
     if (key === this.weaponKey) return;
     const previous = this.weaponKey && this.weaponId !== id ? this.weaponId : null;   // only a different gun gets the draw animation
     this.weaponKey = key;
@@ -193,7 +194,7 @@ export class ViewModel {
         this.scene.add(this.shieldHolder);
       }
     }
-    this.gun = shield ? emptyHands() : makeGunModel(id, skinId);
+    this.gun = shield ? emptyHands() : makeGunModel(id, skinId, att);
     if (!shield) attachCharm(this.gun, charmId);
     this.gun.position.set(...this.gun.userData.hold);
     this.holder.add(this.gun);
@@ -213,8 +214,8 @@ export class ViewModel {
    * A shot: the gun is thrown back and tipped up by its own kick and springs back (stiffness and damping per gun,
    * so a pistol snaps up and back while a shotgun shoves hard and settles), the flash bursts and a casing flies out.
    */
-  fire(weaponId) {
-    const rc = gunTuning(weaponId).recoil, sp = this.spring;
+  fire(weaponId, att = null) {
+    const rc = gunTuning(weaponId, att).recoil, sp = this.spring;
     const aimed = 1 - this.ads * 0.55, w = Math.sqrt(rc.gunSpring) * 1.5, rnd = () => Math.random() * 2 - 1;
     sp.k = rc.gunSpring; sp.c = rc.gunDamping;
     sp.vBack += rc.gunBack * w * aimed;
