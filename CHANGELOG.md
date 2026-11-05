@@ -6,6 +6,19 @@ the list from the menu.
 
 Format: `## <id> · <date> · <title>`, then one bullet per change. The id has to be unique and is what the game remembers.
 
+## M-Q · 2026-11-05 · Christmas, new ranks, new characters, attachments and shield bash
+- Christmas is coming: from 20 November to 2 January (Sydney time) there's a colourful Christmas tab with a cozy fireplace room, a countdown and a snowy rooftop.
+- A new present under the tree every day: Money, Christmas charms or Christmas crates, and from 18 to 24 December a limited skin you can't get any other way. Crates wait in your Christmas inventory until you open them. Everything you get stays yours after the event.
+- Winning a match now pays an extra 800 Money, and there's no daily Money cap any more. There's still no win bonus in matches with bots.
+- New ranks with no tiers: Bronze, Silver, Gold, Platinum, Diamond and Champion, each with its own emblem. Every climb takes 200 points, and Champion takes 500. You keep your rank and how far through it you were.
+- A new Limited rarity for skins that are only around for a short time.
+- Every character has been rebuilt with much more detail, and every operator now looks different. Arms and legs move properly when walking, running, crouching, crawling and climbing. Hitboxes are still the same.
+- Weapon attachments, all free: click a gun in the Operators tab to open the gun workshop. Fit sights, suppressors and other muzzle parts, grips and extended magazines, and compare the stat bars before you choose. Other players see what you've fitted.
+- Aegis can bash: press melee with the shield up to knock an enemy down, every 3 seconds. It doesn't work through walls.
+- Downed players can only crawl, and bleed out after 20 seconds. Any damage from an enemy finishes them.
+- Hold J next to a downed teammate for 4 seconds to revive them with 20 health. The Medic's stim dart revives them from range.
+- Bots can bash, revive and finish off downed players too. The kill feed shows "DOWNED" and "Revived by".
+
 ## 2L · 2026-11-04 · Two new maps
 - New map: Hillside Villa, a two-storey villa on a hill with a winding drive, gardens, a pool and a brick core. Attackers can start at the bottom of the drive and fight their way up.
 - New map: Pinecrest Lodge, a timber lodge in the pine woods above its own car park, with stone steps, a balcony, a big stone fireplace and a woodshed.

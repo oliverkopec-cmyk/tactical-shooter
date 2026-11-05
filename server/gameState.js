@@ -6,7 +6,7 @@
 
 import { getMap, findOpening } from '../shared/map.js';
 import { createPlayerState, stepPlayer, weaponInput } from '../shared/movement.js';
-import { createWeaponState, stepWeapon, gunMobility, gunAimTime, shieldCover } from '../shared/weapons.js';
+import { WEAPONS, createWeaponState, stepWeapon, gunMobility, gunAimTime, shieldCover } from '../shared/weapons.js';
 import { UTILITIES, ABILITY_STATS } from '../shared/utilities.js';
 import { MIN_ROUNDS_TO_COUNT } from './progression.js';
 import { OPERATORS, defaultOperator, operatorsFor, speedMultiplier, damageMultiplier } from '../shared/operators.js';
@@ -20,7 +20,7 @@ import { aimDirection } from '../shared/weapons.js';
 import { raycastWorld } from '../shared/raycast.js';
 import {
   SNAPSHOT_RATE, MAX_INPUT_DT, MAX_TIME_BUDGET, KEY_MASK, MAX_HEALTH, BASIC_CHARGES, PHASE, CAPTURE_TIME,
-  SPOT_DURATION_MS, PING_COOLDOWN_MS, MELEE, BARRICADE, RUNOUT, KEY, INTRO_STEP,
+  SPOT_DURATION_MS, PING_COOLDOWN_MS, MELEE, BARRICADE, RUNOUT, KEY, INTRO_STEP, DOWNED,
 } from '../shared/constants.js';
 import { PoseHistory, resolveShot } from './combat.js';
 import { Destruction } from './destruction.js';
@@ -31,6 +31,7 @@ import { VOICE_LINES, VOICE_COOLDOWN, PING_TYPES, PING } from '../shared/voiceLi
 import { RoundManager } from './rounds.js';
 import { Gadgets } from './abilities.js';
 import { Placing } from './placing.js';
+import { DownedPlayers } from './downed.js';
 import { PLACE_SLOW } from '../shared/placing.js';
 
 const TICK_RATE = 60;
@@ -51,6 +52,7 @@ export class GameState {
     this.rounds = new RoundManager(this);
     this.gadgets = new Gadgets(this);
     this.placing = new Placing(this);   // Stage 27: placing things takes time
+    this.downed = new DownedPlayers(this);   // Stage Q: knocked down, bleeding out, revived
     this.players = new Map(); // id -> ServerPlayer
     this.history = new PoseHistory();
     this.drones = new Map();   // id -> { id, owner, state, hp, alive }
@@ -104,6 +106,9 @@ export class GameState {
       camView: -1,            // index of the camera a defender is watching, or -1
       camId: null,
       stunUntil: 0,
+      downed: null,           // { until, by, progress, reviver } while knocked down
+      reviving: null,         // the id of the teammate this player is reviving
+      bashReadyAt: 0,
       placedHeavy: null,
       spawned: true,          // attackers have no body during prep
       spawnChoice: 1,         // which outside entry point (1-3) they appear at
@@ -155,7 +160,7 @@ export class GameState {
   /** Discrete actions that aren't part of the movement input stream. */
   handleAction(id, type) {
     const p = this.players.get(id);
-    if (!p) return;
+    if (!p || p.downed) return;   // knocked down: no gadgets, no melee
     if (type === 'breach') this.destruction.useBreach(id, p);
     else if (type === 'reinforce') this.destruction.startReinforce(id, p);
     else if (type === 'droneNext') this.cycleDrone(p);
@@ -513,7 +518,11 @@ export class GameState {
     if (!p.alive || p.spawned === false || p.camView >= 0 || (phase !== PHASE.PREP && phase !== PHASE.ACTION)) return;
     if (now < (p.meleeReadyAt || 0)) return;
     p.meleeReadyAt = now + MELEE.cooldown * 1000;
-    this.emitAll('melee', { id });
+    // Melee with a drawn shield is a bash (Stage Q). It has its own cooldown; while that runs the shield can still
+    // knock out walls and gadgets, but it doesn't do anything to people.
+    const shieldUp = !!WEAPONS[p.weapon.id]?.shield && (p.state.prone || 0) < 0.5;
+    const bash = shieldUp && now >= p.bashReadyAt;
+    this.emitAll('melee', { id, bash: bash || undefined });
 
     const eye = getEyePosition(p.state, this.world);
     const origin = [eye.x, eye.y, eye.z];
@@ -525,50 +534,64 @@ export class GameState {
       const dir = v.map((c) => c / dist);
       if (dir[0] * aim[0] + dir[1] * aim[1] + dir[2] * aim[2] < MELEE.cone) return null;
       const wall = raycastWorld(this.world, origin, dir, dist);
-      return wall && wall.t < dist - 0.2 ? null : dist;
+      return wall && wall.t < dist - 0.2 ? null : dist;   // this is also what stops a bash going through a wall
     };
 
     let best = null;
     for (const [qid, q] of this.players) {
       if (qid === id || !q.alive || q.spawned === false || q.member.team === p.member.team) continue;
-      for (const h of [1.45, 0.95]) {
-        const d = inFront([q.state.x, q.state.y + h, q.state.z], MELEE.reach + 0.35);
+      for (const h of q.downed ? [0.3] : [1.45, 0.95]) {
+        const d = inFront([q.state.x, q.state.y + h, q.state.z], MELEE.reach + (q.downed ? 0.6 : 0.35));
         if (d !== null && (!best || d < best.d)) best = { id: qid, d };
       }
     }
+    if (best && shieldUp && !bash) { this.io.to(id).emit('actionError', { msg: 'Your shield bash is recharging.' }); best = null; }
+    if (bash && (best || !this.meleeThings(id, p, origin, aim, inFront))) this.startBashCooldown(id, p, now);
     if (best) {
       // A ballistic shield turned towards the swing takes it
       const q = this.players.get(best.id);
       if (shieldFaces(q, p.state.x, p.state.z)) { this.emitAll('shieldHit', { pos: [round2(q.state.x), round2(q.state.y + 1.1), round2(q.state.z)] }); return; }
-      this.applyDamage(best.id, id, MELEE.damage, { weapon: 'melee', from: [p.state.x, p.state.z] });
+      if (bash && !q.downed) this.downed.knockDown(best.id, q, id);
+      else this.applyDamage(best.id, id, MELEE.damage, { weapon: 'melee', from: [p.state.x, p.state.z] });
       return;
     }
+    if (!bash) this.meleeThings(id, p, origin, aim, inFront);
+  }
+
+  startBashCooldown(id, p, now) {
+    p.bashReadyAt = now + DOWNED.bashCooldownMs;
+    this.io.to(id).emit('bashCd', { ms: DOWNED.bashCooldownMs });
+  }
+
+  /** A swing that met nobody: cameras, claymores, barricades and soft walls. Returns whether it hit one of them. */
+  meleeThings(id, p, origin, aim, inFront) {
     if (p.member.team === 'attack') {
       for (const c of [...this.gadgets.cameras.values()]) {
-        if (inFront(c.pos, MELEE.reach + 0.4) !== null) { this.gadgets.destroyCamera(c.id); return; }
+        if (inFront(c.pos, MELEE.reach + 0.4) !== null) { this.gadgets.destroyCamera(c.id); return true; }
       }
     }
     for (const c of [...this.gadgets.claymores.values()]) {
-      if (c.team !== p.member.team && inFront(c.pos, MELEE.reach + 0.3) !== null) { this.gadgets.destroyClaymore(c.id); return; }
+      if (c.team !== p.member.team && inFront(c.pos, MELEE.reach + 0.3) !== null) { this.gadgets.destroyClaymore(c.id); return true; }
     }
-    if (this.canBreakWalls(p)) {
-      const wall = raycastWorld(this.world, origin, aim, MELEE.reach);
-      // Aiming at a barricade, even where it already has a hole: the swing is judged against the opening itself
-      const opening = findOpening(this.map, origin, aim, MELEE.reach);
-      const barricade = opening && this.gadgets.barricadeAt(opening.id);
-      const planeT = barricade ? (opening.fixed - origin[opening.axis === 'x' ? 2 : 0]) / aim[opening.axis === 'x' ? 2 : 0] : 0;
-      if (barricade && (!wall || wall.box.kind === 'barricade' || wall.t >= planeT - 0.1)) {
-        this.gadgets.meleeBarricade(barricade.id, origin.map((v, k) => v + aim[k] * planeT));
-      } else if (wall?.box.kind === 'armor') {
-        this.gadgets.hitArmor(wall.box.armorId, 'melee', id);
-      } else if (wall?.box.kind === 'barricade') {
-        this.gadgets.meleeBarricade(wall.box.barricadeId, wall.point);
-      } else if (wall?.box.kind === 'panel') {
-        // Each melee hit knocks out one wall panel. Reinforced walls shrug it off.
-        if (this.world.isReinforcedPanel(wall.box.id)) this.io.to(id).emit('actionError', { msg: 'Reinforced walls can\'t be broken by melee.' });
-        else this.destruction.destroy([wall.box.id]);
-      }
+    if (!this.canBreakWalls(p)) return false;
+    const wall = raycastWorld(this.world, origin, aim, MELEE.reach);
+    // Aiming at a barricade, even where it already has a hole: the swing is judged against the opening itself
+    const opening = findOpening(this.map, origin, aim, MELEE.reach);
+    const barricade = opening && this.gadgets.barricadeAt(opening.id);
+    const planeT = barricade ? (opening.fixed - origin[opening.axis === 'x' ? 2 : 0]) / aim[opening.axis === 'x' ? 2 : 0] : 0;
+    if (barricade && (!wall || wall.box.kind === 'barricade' || wall.t >= planeT - 0.1)) {
+      this.gadgets.meleeBarricade(barricade.id, origin.map((v, k) => v + aim[k] * planeT));
+      return true;
     }
+    if (wall?.box.kind === 'armor') { this.gadgets.hitArmor(wall.box.armorId, 'melee', id); return true; }
+    if (wall?.box.kind === 'barricade') { this.gadgets.meleeBarricade(wall.box.barricadeId, wall.point); return true; }
+    if (wall?.box.kind === 'panel') {
+      // Each melee hit knocks out one wall panel. Reinforced walls shrug it off.
+      if (this.world.isReinforcedPanel(wall.box.id)) this.io.to(id).emit('actionError', { msg: 'Reinforced walls can\'t be broken by melee.' });
+      else this.destruction.destroy([wall.box.id]);
+      return true;
+    }
+    return false;
   }
 
   // ---------------------------------------------------------------- who has seen whom
@@ -623,6 +646,7 @@ export class GameState {
   rosterFor(team) {
     return [...this.players.values()].map((p) => ({
       id: p.member.id, team: p.member.team, alive: p.alive,
+      dn: p.downed && (team === 'spectator' || p.member.team === team) ? 1 : undefined,   // teammates see who is downed
       op: this.canSee(team, p) ? p.operator : null,
     }));
   }
@@ -694,6 +718,7 @@ export class GameState {
       p.spottedUntil = 0;
       p.stunUntil = 0;
       p.shockUntil = 0;
+      p.downed = null; p.reviving = null; p.bashReadyAt = 0;
       p.camView = -1;
       p.outT = 0; p.inT = 0; p.detected = false; p.runoutSent = '';
       p.opConfirmed = false;
@@ -933,7 +958,7 @@ export class GameState {
         } else {
           input.keys = maskKeys(input.keys, p.member.team, phase, p.camView >= 0);
           if (p.placing) input.keys &= ~KEY.FIRE;   // placing something: hands full, no shooting
-          if (input.keys & KEY.INTERACT) p.interactAt = wallNow;
+          if (input.keys & KEY.INTERACT && !p.downed) p.interactAt = wallNow;
           // Defenders can't leave the building during prep
           const solid = phase === PHASE.PREP && p.member.team === 'defense' ? this.world.barrierView : this.world;
           p.state.gunMul = gunMobility(p.weapon);
@@ -949,6 +974,7 @@ export class GameState {
     }
 
     this.placing.update(wallNow);
+    this.downed.update(wallNow, realDt, phase);
     this.rounds.update(wallNow, realDt);
     this.updateRunOut(realDt, phase);
     this.gadgets.update(realDt, wallNow);
@@ -1083,6 +1109,7 @@ export class GameState {
 
   kill(victimId, victim, killerId, weaponId, head) {
     victim.alive = false;
+    victim.downed = null; victim.state.downed = 0;
     this.reveal(opposite(victim.member.team), victimId);   // a kill shows the other team who it was
     this.rosterDirty = true;
     victim.queue.length = 0;
@@ -1092,7 +1119,7 @@ export class GameState {
     this.emitAll('kill', { killer: killerId, victim: victimId, weapon: weaponId, head });
     // Then the victim gets a replay of the last seconds from the killer's eyes (after the kill, so their client knows they died)
     const killerP = this.players.get(killerId);
-    if (killerP && killerId !== victimId) this.io.to(victimId).emit('killcam', this.killcam.build(Date.now(), killerId, killerP, victimId, victim));
+    if (killerP && killerId !== victimId && weaponId !== 'bleedout') this.io.to(victimId).emit('killcam', this.killcam.build(Date.now(), killerId, killerP, victimId, victim));
     victim.deaths++;
     const killer = this.players.get(killerId);
     if (killer && killerId !== victimId) {
@@ -1127,6 +1154,10 @@ export class GameState {
         sh: shieldCover(w, s) || undefined,   // what a ballistic shield covers (shown even before the operator is known)
         pl: p.placing || undefined,   // placing something: 1 kneeling at the floor, 2 reaching forward (Stage 27)
         det: p.detected ? 1 : undefined,
+        // knocked down: seconds left to bleed out, how far a revive has got (0 to 1), who is doing it (Stage Q)
+        dn: p.downed ? Math.max(0.1, round2((p.downed.until - Date.now()) / 1000)) : undefined,
+        rv: p.downed?.reviver ? round2(p.downed.progress / DOWNED.reviveMs) : undefined,
+        rb: p.downed?.reviver || undefined,
       });
     }
     const cap = { p: Math.min(1, this.rounds.capture / CAPTURE_TIME), c: this.rounds.contested };
@@ -1144,7 +1175,9 @@ export class GameState {
     for (const team of ['attack', 'defense']) {
       // Detected defenders are marked for the attackers only
       forTeam[team] = { df: this.mode === 'defuser' ? this.defuser.view(team, t) : undefined, t, players: players.map((e) => {
-        const shown = this.canSee(team, this.players.get(e.id)) ? e : { ...e, o: undefined, w: undefined };
+        const q = this.players.get(e.id);
+        let shown = this.canSee(team, q) ? e : { ...e, o: undefined, w: undefined };
+        if (e.dn && q.member.team !== team) shown = { ...shown, dn: 1, rv: undefined, rb: undefined };   // the other side sees them on the floor, not how long they have
         return team === 'attack' || !e.det ? shown : { ...shown, det: undefined };
       }), cap, drones, grenades };
     }

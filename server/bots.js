@@ -13,11 +13,12 @@
 // Movement uses the shared walking grid in server/nav.js. Difficulty sets reaction time, aim settling,
 // head aim, turn speed and hearing; Normal and Hard share the same movement and tactics.
 
-import { PHASE, KEY, MAX_INPUT_DT, INTRO_STEP, ACTION_MS } from '../shared/constants.js';
+import { PHASE, KEY, MAX_INPUT_DT, INTRO_STEP, ACTION_MS, DOWNED } from '../shared/constants.js';
 import { ABILITY_STATS } from '../shared/utilities.js';
 import { OPERATORS, operatorsFor } from '../shared/operators.js';
 import { WEAPONS, aimDirection, shieldCover } from '../shared/weapons.js';
 import { getEyePosition, findRope, eyeHeight, bodyHeight } from '../shared/movement.js';
+import { rayPlayer } from '../shared/raycast.js';
 import { raycastWorld } from '../shared/raycast.js';
 import { loudnessOf } from '../shared/attachments.js';
 import { inObjectiveZone } from '../shared/rules.js';
@@ -102,6 +103,11 @@ export class BotBrains {
         }
       }
       if (this.brains.has(payload.killer)) this.brains.get(payload.killer).relocate = Date.now();   // move after a kill
+    } else if (event === 'downed') {
+      // Their whole side learns who knocked a teammate down, and where
+      const victim = g.players.get(payload.id), by = g.players.get(payload.by);
+      if (victim && by) this.contact(victim.member.team, payload.by, [by.state.x, by.state.y, by.state.z], false, 4000);
+      this.noise(payload.pos, 25, by?.member.team ?? null, 'bash');
     }
   }
 
@@ -147,8 +153,8 @@ export class BotBrains {
       if (b.round !== g.rounds.round) this.newRound(b, p);
       if (g.rounds.phase === PHASE.INTRO) { this.intro(b, id, p, now); continue; }
       if (!p.alive) continue;
-      if (now >= (b.nextThink || 0)) { b.nextThink = now + THINK_MS; this.think(b, id, p, now); }
-      const keys = this.steer(b, id, p, now, dt);
+      if (!p.downed && now >= (b.nextThink || 0)) { b.nextThink = now + THINK_MS; this.think(b, id, p, now); }
+      const keys = p.downed ? this.crawl(b, p, now) : this.steer(b, id, p, now, dt);
       if (!Number.isFinite(b.yaw) || !Number.isFinite(b.pitch)) { b.yaw = p.state.yaw || 0; b.pitch = 0; b.yawVel = 0; b.pitchVel = 0; }
       // One input per tick (split if the tick was long), exactly like a client would send. rt = now: a bot has no
       // network delay, so its shots are checked against where players are now (not rewound into the past).
@@ -178,6 +184,94 @@ export class BotBrains {
       prog: null, bestDist: Infinity, bestAt: 0, bestKey: '', detour: null, rpBad: null, pushing: false,
     });
     b.yaw = p.state.yaw; b.pitch = 0; b.yawVel = 0; b.pitchVel = 0;
+  }
+
+  // ---------------------------------------------------------------- knocked down, and those who are (Stage Q)
+
+  /** A nav-grid goal for a player's position that doesn't change with every small move, so the route is only worked out when it matters. */
+  goBody(b, s) {
+    const nav = this.nav, n = nav.ready ? nav.nearest(s.x, s.y, s.z) : -1;
+    if (n >= 0) b.goal = { key: `node:${n}`, x: nav.x[n], y: nav.y[n], z: nav.z[n], r: 0.5, point: true };
+    else b.goal = { key: key3([s.x, s.y, s.z]), x: s.x, y: s.y, z: s.z, r: 0.5, point: true };
+  }
+
+  /** A downed bot: all it can do is crawl towards the nearest teammate still on their feet. */
+  crawl(b, p, now) {
+    b.target = null; b.hold = false; b.look = null; b.cover = null; b.bash = false; b.keysOnce = 0;
+    if (now >= (b.nextCrawl || 0)) {
+      b.nextCrawl = now + 500;
+      let mate = null, best = Infinity;
+      for (const q of this.game.players.values()) {
+        if (q === p || !q.alive || q.downed || q.spawned === false || q.member.team !== p.member.team) continue;
+        const d = Math.hypot(q.state.x - p.state.x, q.state.y - p.state.y, q.state.z - p.state.z);
+        if (d < best) { best = d; mate = q; }
+      }
+      if (mate && best > 1) { this.goBody(b, mate.state); this.route(b, p); } else { b.goal = null; b.way = null; }
+      // Rubbing along a corner: shuffle sideways for a moment
+      const moved = Math.hypot(p.state.x - (b.crawlX ?? 99999), p.state.z - (b.crawlZ ?? 99999));
+      b.crawlX = p.state.x; b.crawlZ = p.state.z;
+      if (b.way && moved < 0.12) { b.crawlSide = Math.random() < 0.5 ? KEY.LEFT : KEY.RIGHT; b.crawlSideUntil = now + 900; }
+    }
+    const way = b.way;
+    if (!way || Math.hypot(way.x - p.state.x, way.z - p.state.z) < 0.15) return 0;
+    b.yaw = yawTo(way.x - p.state.x, way.z - p.state.z);
+    b.pitch = 0;
+    return now < (b.crawlSideUntil || 0) ? b.crawlSide : KEY.FORWARD;
+  }
+
+  /**
+   * Teammates on the floor. The nearest bot on its feet goes over and holds the key; a Medic with a dart and a clear
+   * look uses that from where it stands. Staying alive comes first: nobody starts a revive with an enemy in their face.
+   * Otherwise, an enemy known to be on the floor close by is worth going over to finish.
+   */
+  helpDowned(b, id, p, now) {
+    const g = this.game, s = p.state, team = p.member.team;
+    if (b.lookDown) { b.look = null; b.lookDown = false; }   // done looking at the last one
+    if (s.rap || b.cover?.reload) return;
+    const medic = OPERATORS[p.operator]?.ability?.id === 'stimPistol' && p.ability?.charges > 0;
+    let mate = null, best = Infinity;
+    for (const q of g.players.values()) {
+      if (q === p || !q.downed || q.member.team !== team) continue;
+      const d = Math.hypot(q.state.x - s.x, q.state.y - s.y, q.state.z - s.z);
+      if (d < best) { best = d; mate = q; }
+    }
+    if (mate) {
+      const dart = medic && this.tryDart(b, id, p, mate, best, now);
+      if (dart) return;
+      const fighting = b.target && !b.target.drone && !g.players.get(b.target.id)?.downed;
+      const closer = [...g.players.values()].some((q) => q !== p && q.alive && !q.downed && q.spawned !== false && q.member.team === team
+        && Math.hypot(q.state.x - mate.state.x, q.state.y - mate.state.y, q.state.z - mate.state.z) < best - 1);
+      if (best < 30 && !fighting && !closer) {
+        const flat = Math.hypot(mate.state.x - s.x, mate.state.z - s.z);
+        if (flat < DOWNED.reviveRange - 0.6 && g.downed.canRevive({ ...p, interactAt: now }, mate, now)) {
+          b.hold = true; b.goal = null; b.way = null;
+          b.look = [mate.state.x, mate.state.y + 0.3, mate.state.z];
+          b.lookDown = true;
+        } else this.goBody(b, mate.state);
+        return;
+      }
+    }
+    if (b.target || b.hold) return;
+    for (const c of this.contactsFor(team, b.eye)) {
+      if (c.d < 15 && g.players.get(c.id)?.downed) { this.goBody(b, g.players.get(c.id).state); return; }
+    }
+  }
+
+  /** A Medic with a clear look at a downed teammate: turn to them and fire once the dart would land. Returns true while it is doing that. */
+  tryDart(b, id, p, mate, dist, now) {
+    const g = this.game;
+    if (dist > ABILITY_STATS.stim.range) return false;
+    const e = b.eye, at = [mate.state.x, mate.state.y + 0.25, mate.state.z];
+    const v = at.map((c, i) => c - e[i]), d = Math.hypot(...v);
+    const wall = raycastWorld(g.world, e, v.map((c) => c / d), d);
+    if (wall && wall.t < d - 0.2) return false;
+    if (b.target && !b.target.drone) return false;   // a fight comes first
+    b.look = at;
+    b.lookDown = true;
+    b.hold = false; b.goal = null; b.way = null;
+    const aim = aimDirection(p.state.yaw, p.state.pitch);
+    if (rayPlayer(e, aim, mate.state, d + 1)) g.handleAction(id, 'ability');
+    return true;
   }
 
   // ---------------------------------------------------------------- operator select
@@ -237,7 +331,9 @@ export class BotBrains {
         }
         if (!clear) continue;
         this.contact(team, qid, [qs.x, qs.y, qs.z], true);
-        if (!best || dist < best.dist) best = { id: qid, dist, drone: false };
+        // Whoever can still shoot back comes first; someone on the floor is finished off when nobody else is near
+        const score = dist + (q.downed ? 12 : 0);
+        if (!best || score < best.score) best = { id: qid, dist, score, drone: false };
       }
       // Defenders also shoot drones they can see close by
       if (!best && team === 'defense') {
@@ -316,6 +412,12 @@ export class BotBrains {
     // ---- utility, ability, melee
     if (phase === PHASE.ACTION && !blind) this.useGadgets(b, id, p, now);
     if (b.target && !b.target.drone && b.target.dist < 1.6 && now > b.reactAt) g.handleAction(id, 'melee');
+    // Aegis: an enemy close by gets the shield. Keep it up, walk them down and bash when in reach (else draw the pistol)
+    b.bash = false;
+    if (phase === PHASE.ACTION && b.target && !b.target.drone && WEAPONS[OPERATORS[p.operator]?.weapons.primary]?.shield && now >= p.bashReadyAt && !g.players.get(b.target.id)?.downed && b.target.dist < 9) {
+      b.bash = true;
+      if (WEAPONS[p.weapon.id]?.shield && b.target.dist < 2.3 && now > b.reactAt) g.handleAction(id, 'melee');
+    }
 
     // ---- a barricade in the way: smash it
     if (phase === PHASE.ACTION && !b.target && (b.wantMove || b.stuckT > 0.3) && !p.state.rap && now > (b.nextMelee || 0)) {
@@ -347,6 +449,7 @@ export class BotBrains {
       if (b.cover) b.goal = { key: key3(b.cover.pos), x: b.cover.pos[0], y: b.cover.pos[1], z: b.cover.pos[2], r: 0.4, point: true };
       else if (team === 'attack') this.actionAttacker(b, id, p, now);
       else this.actionDefender(b, id, p, now);
+      this.helpDowned(b, id, p, now);
     } else b.goal = null;
     // A detour after being stuck: walk to a nearby spot first, then carry on with the plan
     if (b.detour) {
@@ -398,6 +501,7 @@ export class BotBrains {
     const q = g.players.get(t.id);
     if (!q) return null;
     const s = q.state;
+    if (q.downed) return [s.x, s.y + 0.2, s.z, s.y + 0.2];   // flat on the floor: aim at the body
     // A raised ballistic shield: go for the feet; lowered to aim, for the head
     const cover = shieldCover(q.weapon, s);
     if (cover === 1) return [s.x, s.y + 0.25, s.z, s.y + 0.25];
@@ -964,8 +1068,8 @@ export class BotBrains {
 
     // Aegis: the shield can't shoot, so a fight means drawing the pistol; the shield goes back up 3 s after it
     if (WEAPONS[OPERATORS[p.operator]?.weapons.primary]?.shield) {
-      if (t && !drone) b.pistolUntil = now + 3000;
-      b.wsel = now < (b.pistolUntil || 0) ? 2 : 1;
+      if (t && !drone && !b.bash) b.pistolUntil = now + 3000;
+      b.wsel = b.bash || now >= (b.pistolUntil || 0) ? 1 : 2;
     } else b.wsel = 0;
 
     // Shoot: bursts at range to keep the spread down, a steady stream up close; tap semi-automatics
@@ -998,6 +1102,11 @@ export class BotBrains {
       }
       if (b.pushing && p.member.team === 'attack' && !b.cover) move = move && (b.lastDist ?? 10) > 3.5;      // pushing the site: keep walking in while shooting
       else if ((b.lastDist ?? 10) < 9 || b.cover) move = !!b.cover;
+      // Going in for a bash: straight at them, no dancing about
+      if (b.bash) {
+        const q = g.players.get(t.id);
+        if (q) { moveYaw = yawTo(q.state.x - s.x, q.state.z - s.z); move = true; keys &= ~(KEY.LEFT | KEY.RIGHT); }
+      }
     }
     if (move) {
       const rel = wrap(moveYaw - b.yaw);

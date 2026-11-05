@@ -38,8 +38,8 @@ import { Soundscape } from './soundscape.js';
 import { Chat } from './chat.js';
 import { findOpening } from '../../shared/map.js';
 import { OPERATORS } from '../../shared/operators.js';
-import { TEAM_COLORS } from '../../shared/constants.js';
-import { UTILITIES } from '../../shared/utilities.js';
+import { TEAM_COLORS, DOWNED } from '../../shared/constants.js';
+import { UTILITIES, ABILITY_STATS } from '../../shared/utilities.js';
 import { settings, onSettingsChange } from './settings.js';
 import { quality, pixelRatioFor, PRESETS, DISTANCES, SHADOWS, EFFECT_LEVELS } from './graphics.js';
 import { DRONE } from '../../shared/drone.js';
@@ -242,11 +242,12 @@ export class Game {
       for (const c of centers) this.effects.debris(c, 0x3f7a2e, 2);
       if (centers.length) this.sound.woodBreak(centers[0]);
     });
-    network.on('melee', ({ id }) => {
+    network.on('melee', ({ id, bash }) => {
       const r = this.remotes.get(id);
       if (!r) return;
       r.swing();
-      this.sound.melee([r.pose.x, r.pose.y + 1.2, r.pose.z]);
+      if (bash) this.sound.at('shieldBash', [r.pose.x, r.pose.y + 1.2, r.pose.z], 30);
+      else this.sound.melee([r.pose.x, r.pose.y + 1.2, r.pose.z]);
     });
     network.on('siteVotes', (v) => { this.siteVotes = v; });
     network.on('siteChosen', ({ site }) => { this.siteIndex = site; });
@@ -438,7 +439,7 @@ export class Game {
       onDry: (id) => this.audio.dry(id),
       renderTime: () => this.network.renderTime(),
       canFireUnlocked: () => this.lockFailed,
-      mask: (keys) => (this.preRound.open ? 0 : maskKeys(keys, this.myTeam, this.round.phase, !!this.local?.viewLocked) & (this.placing ? ~KEY.FIRE : ~0)),   // no input while a pre-round screen is open; no shooting while placing
+      mask: (keys) => (this.preRound.open ? 0 : maskKeys(keys, this.myTeam, this.round.phase, !!this.local?.viewLocked) & (this.placing || this.handsFull ? ~KEY.FIRE : ~0)),   // no input while a pre-round screen is open; no shooting while placing
       collisionWorld: () => (this.myTeam === 'defense' && this.round.phase === PHASE.PREP ? this.world.barrierView : this.world),
       onDigit: (n) => this.pickSpawn(n),
       onAction: (type) => {
@@ -653,6 +654,7 @@ export class Game {
     const move = `${k('forward')}${k('left')}${k('back')}${k('right')}`;
     const tail = `${k('scoreboard')} scoreboard · ${k('toggleHint')} hide`;
     if (!this.local.alive) return `Click to switch teammate · ${tail}`;
+    if (this.local.state.downed) return `${keyFor('forward')}/${keyFor('back')}/${keyFor('left')}/${keyFor('right')} crawl · ${tail}`;
     if (watching) return `${k('camView')} next camera · mouse pans the feed · you can't move while watching`;
     const zap = OPERATORS[this.loadout.op]?.ability?.id === 'shockDrone' ? ` · ${k('ability')} taser` : '';   // Wasp
     if (inDrone) return `Drone: ${move} drive · ${k('sprint')} fast · ${k('jump')} hop · ${k('fire')} ping enemy${zap} · ${k('droneNext')} switch · 1/2/3 spawn point · ${k('loadout')} loadout · ${k('scoreboard')} scoreboard`;
@@ -797,6 +799,8 @@ export class Game {
       this.hpById[p.id] = p.alive ? p.hp : 0;
       if (p.id === this.network.id) {
         this.local?.reconcile(p, myDrone);
+        this.downedInfo = p.dn ? { left: p.dn, frac: p.rv || 0, by: p.rb ? this.members.get(p.rb)?.name || 'A teammate' : null } : null;
+        this.handsFull = !!p.pl;   // placing something or reviving: no shooting (the server is the judge of it)
         if (typeof p.hp === 'number' && this.local?.alive) this.health = p.hp;
       } else {
         const r = this.remotes.get(p.id);
@@ -843,6 +847,27 @@ export class Game {
       this.sound.at('stim', at, 20);
     });
     network.on('healed', ({ health }) => { this.health = health; this.ui.flashHeal(); });
+    // Stage Q: Aegis's bash and being knocked down
+    on('bashCd', ({ ms }) => { this.bashCdEnd = performance.now() + ms; });
+    on('downed', ({ id, by, pos }) => {
+      const name = (who) => this.members.get(who) || { name: '?', team: 'attack' };
+      const myId = this.network.id;
+      this.ui.addKill({ killer: name(by), victim: name(id), weapon: 'downed', mine: by === myId || id === myId });
+      this.sound.at('bodyDown', pos, 30);
+      if (id !== myId || !this.local) { if (by === myId) this.audio.beep(180, 0.12, 0.28, 'square'); return; }
+      this.local.setDowned(true);
+      this.placing = null;
+      this.heldPlace = null;
+      this.exitCam();
+      this.shake = Math.max(this.shake, 0.8);
+    });
+    on('revived', ({ id, by, pos }) => {
+      const name = (who) => this.members.get(who) || { name: '?', team: 'attack' };
+      const myId = this.network.id;
+      this.ui.addRevive({ who: name(id), by: name(by), mine: by === myId || id === myId });
+      this.sound.at('revived', pos, 25);
+      if (id === myId && this.local) { this.local.setDowned(false); this.downedInfo = null; }
+    });
     // Interceptor: a grenade shot down
     on('intercepted', ({ from, pos }) => { this.effects.arc(from, pos, 0xffb070, 0.1); this.effects.puff(pos, 0xffd27a, 0.25); this.sound.at('intercept', pos, 30); });
   }
@@ -942,12 +967,14 @@ export class Game {
     if (victimAvatar) victimAvatar.alive = false; // hide now rather than at the next snapshot
     if (victim === myId && this.local) {
       this.local.die();
+      this.local.setDowned(false);
+      this.downedInfo = null;
       this.placing = null;
     this.heldPlace = null;
       this.exitCam();
       this.health = 0;
       const s = this.local.state;
-      this.enterSpectate(`Eliminated by ${name(killer).name}`, { x: s.x, y: s.y, z: s.z, yaw: this.local.aimYaw });
+      this.enterSpectate(weapon === 'bleedout' ? 'You bled out' : `Eliminated by ${name(killer).name}`, { x: s.x, y: s.y, z: s.z, yaw: this.local.aimYaw });
       if (this.pendingKillcam) { const k = this.pendingKillcam; this.pendingKillcam = null; this.startKillcam(k); }
     }
   }
@@ -1295,16 +1322,43 @@ export class Game {
     else this.ui.setPlaceRing(null);
     // Kneel for floor items: the view eases down, and back up when done
     const pose = this.placing && aim ? aim.pose : null;
-    const want = pose === 'floor' ? 0.42 : 0;
+    const want = pose === 'floor' || (this.handsFull && !this.placing) ? 0.42 : 0;
     local.kneel = (local.kneel || 0) + (want - (local.kneel || 0)) * Math.min(1, dt * 8);
-    this.placePose = this.placing ? { pose: pose || 'wall', frac: Math.min(1, (t - this.placing.start) / this.placing.ms) } : null;
+    this.placePose = this.placing ? { pose: pose || 'wall', frac: Math.min(1, (t - this.placing.start) / this.placing.ms) } : this.handsFull ? { pose: 'floor', frac: 0.5 } : null;   // reviving looks like working at the floor
+  }
+
+  /** Teammates on the floor near me: who I could revive, who I am reviving, and the Medic's dart. */
+  reviveTargets(local) {
+    if (!local.alive || local.state.downed || local.droneState || this.camView || this.round.phase !== PHASE.ACTION) return {};
+    const s = local.state;
+    let near = null, best = DOWNED.reviveRange, reviving = null;
+    for (const r of this.remotes.values()) {
+      if (!r.alive || !r.downed || r.team !== this.myTeam) continue;
+      if (r.revivedBy === this.network.id) reviving = r;
+      const d = Math.hypot(r.pose.x - s.x, r.pose.z - s.z);
+      if (d < best && Math.abs(r.pose.y - s.y) < 1.5) { best = d; near = r; }
+    }
+    if (reviving) return { reviving, prompt: '' };
+    if (near) return { prompt: `Hold ${keyFor('interact')} to revive ${near.name}` };
+    // The Medic's stim dart reaches much further
+    if (OPERATORS[this.loadout.op]?.ability?.id === 'stimPistol' && this.loadout.ability?.charges > 0) {
+      const e = getEyePosition(s, this.world), eye = [e.x, e.y, e.z], dir = aimDirection(local.aimYaw, local.aimPitch);
+      const wall = raycastWorld(this.world, eye, dir, ABILITY_STATS.stim.range);
+      const far = wall ? wall.t : ABILITY_STATS.stim.range;
+      for (const r of this.remotes.values()) {
+        if (r.alive && r.downed && r.team === this.myTeam && rayPlayer(eye, dir, r.pose, far)) return { prompt: `Press ${keyFor('ability')} to revive ${r.name} with a dart` };
+      }
+    }
+    return {};
   }
 
   updateGadgetHud(now) {
     const local = this.local;
     const attack = this.myTeam === 'attack';
     let prompt = '';
-    if (local.alive) {
+    const down = this.reviveTargets(local);
+    if (down.prompt) prompt = down.prompt;
+    else if (local.alive && !local.state.downed) {
       const eye = getEyePosition(local.state, this.world);
       const reach = attack ? CHARGE_REACH : REINFORCE_REACH;
       const hit = raycastWorld(this.world, [eye.x, eye.y, eye.z], aimDirection(local.aimYaw, local.aimPitch), reach);
@@ -1324,20 +1378,20 @@ export class Game {
       }
     }
     // Defenders in prep: aiming at a bare doorway or window offers a barricade
-    if (!prompt && !attack && local.alive && this.round.phase === PHASE.PREP && !this.placing && this.barricadesLeft > 0) {
+    if (!prompt && !attack && local.alive && !local.state.downed && this.round.phase === PHASE.PREP && !this.placing && this.barricadesLeft > 0) {
       const eye = getEyePosition(local.state, this.world);
       const o = findOpening(this.mapDef, [eye.x, eye.y, eye.z], aimDirection(local.aimYaw, local.aimPitch), BARRICADE.reach);
       if (o && !this.gadgets.hasBarricade(o.id)) prompt = `Hold ${keyFor('barricade')} to barricade (${this.barricadesLeft} left)`;
     }
     // Defuser mode: what the carrier or a defender can do here
-    if (!prompt && this.mode === 'defuser' && local.alive && this.round.phase === PHASE.ACTION) {
+    if (!prompt && this.mode === 'defuser' && local.alive && !local.state.downed && this.round.phase === PHASE.ACTION) {
       const site = this.siteIndex !== null ? this.mapDef.sites[this.siteIndex] : null;
       const inZone = site && Math.hypot(local.state.x - site.x, local.state.z - site.z) <= site.zoneRadius && Math.abs(local.state.y - site.y) < 2.2;
       if (this.myTeam === 'attack' && this.df?.c === this.network.id && !this.df.p) prompt = inZone ? `Hold ${keyFor('interact')} (stand still) to plant the defuser` : 'You carry the defuser: take it to the objective';
       else if (this.myTeam === 'defense' && this.df?.p && inZone) prompt = `Hold ${keyFor('interact')} (stand still) to disable the defuser`;
     }
     // Rope and vault prompts (action phase, nothing more important on screen)
-    if (!prompt && local.alive && this.round.phase === PHASE.ACTION && !this.camView && !this.placing) {
+    if (!prompt && local.alive && !local.state.downed && this.round.phase === PHASE.ACTION && !this.camView && !this.placing) {
       const st = local.state;
       if (st.rap) prompt = `${keyFor('forward')}/${keyFor('back')} climb · ${keyFor('left')}/${keyFor('right')} sideways · ${keyFor('jump')} at a window swings in · ${keyFor('flip')} flip · ${keyFor('rappel')} let go`;
       else if (st.vaultT > 0) prompt = '';
@@ -1352,6 +1406,7 @@ export class Game {
       label = this.defuserAct.kind === 'plant' ? 'Planting the defuser…' : 'Disabling the defuser…';
       if (performance.now() >= (this.nextTick || 0)) { this.nextTick = performance.now() + 450; this.audio.beep(this.defuserAct.kind === 'plant' ? 700 : 520, 0.05, 0.14, 'square'); }
     }
+    if (down.reviving) { progress = down.reviving.reviveFrac; label = `Reviving ${down.reviving.name}…`; }
     this.ui.setProgress(progress, label);
     this.updatePlacing(local);
     this.beepDefuser();
@@ -1360,6 +1415,10 @@ export class Game {
     const op = OPERATORS[this.loadout.op];
     const lines = [];
     const cfg = op?.ability, ab = this.loadout.ability;
+    if (cfg?.id === 'shieldDash') {
+      const cd = Math.ceil(Math.max(0, (this.bashCdEnd || 0) - performance.now()) / 1000);
+      lines.push({ key: keyFor('melee'), label: 'Shield bash', value: cd > 0 ? `recharging ${cd}s` : 'ready' });
+    }
     if (cfg && ab) {
       let value;
       if (cfg.cooldown) {
@@ -1380,7 +1439,7 @@ export class Game {
       lines.push({ key: keyFor('barricade'), label: 'Barricades', value: `${this.barricadesLeft}` });
       lines.push({ key: keyFor('camView'), label: 'Cameras', value: `${this.gadgets.cameras().length}` });
     }
-    this.ui.updateGadgets(op, lines, local.alive);
+    this.ui.updateGadgets(op, lines, local.alive && !local.state.downed);
 
     // Stun white-out
     const stunLeft = Math.max(0, (this.stunUntil - performance.now()) / 1000), total = this.stunMs / 1000;
@@ -1500,7 +1559,7 @@ export class Game {
       this.camera.rotation.set(0, sp.yaw, 0, 'YXZ');
     }
     const watching = !!this.camView && local.alive;
-    this.viewModel.visible = replaying || (local.alive && !inDrone && !noBody && !this.camView);
+    this.viewModel.visible = replaying || (local.alive && !inDrone && !noBody && !this.camView && !s.downed);
     this.gadgets.watchCamera(watching ? this.camView.rec.id : null);
     if (watching) this.applyCamView();
 
@@ -1524,7 +1583,8 @@ export class Game {
       watching ? '● CAMERA' : '● DRONE CAM',
       inDrone && this.droneJammed,
     );
-    this.ui.setLowHealth(local.alive && this.health > 0 && this.health <= 30);
+    this.ui.setLowHealth(local.alive && !s.downed && this.health > 0 && this.health <= 30);
+    this.ui.setDowned(local.alive && s.downed && this.downedInfo && !replaying ? { ...this.downedInfo, hint: `${keyFor('forward')}${keyFor('left')}${keyFor('back')}${keyFor('right')} to crawl · a teammate can revive you` } : null);
     this.ui.setHint(this.hintText(watching, inDrone));
     this.ui.renderBoard(this.boardOn || this.boardPinned, this.boardRows(), this.round.scores, document.pointerLockElement !== this.canvas);
 
