@@ -114,6 +114,15 @@ export const SPRINT_FIRE_DELAY = 0.25;
 // Bullets break planks one at a time (hp per plank); 3 melee hits break the whole barricade; breach charges and blasts destroy it at once.
 export const BARRICADE = { thickness: 0.12, planks: 7, gap: 0.32, hp: 35, channelMs: 1000, reach: 2.6, pool: 8, meleeHits: 3, blastExtra: 0.9 };
 export const MELEE = { reach: 2.1, cone: 0.5, damage: 45, cooldown: 0.8 };
+// Aegis's shield bash and being knocked down (Stage Q). Health while downed is 1, so any damage finishes the job.
+export const DOWNED = {
+  bleedMs: 20000,        // bleeding out, paused while a teammate is actually reviving
+  reviveMs: 4000,        // holding the interact key next to them
+  reviveHealth: 20,      // what a revived player comes back with
+  reviveRange: 2.2,      // metres (and a clear line: no reviving through walls)
+  crawlSpeed: 0.55,      // m/s; lying down normally is 1
+  bashCooldownMs: 3000,
+};
 
 // Operator gadgets
 export const SHIELD = { width: 1.9, height: 1.5, thickness: 0.14, distance: 1.1 };

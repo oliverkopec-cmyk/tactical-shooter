@@ -169,12 +169,13 @@ export class LocalPlayer {
       if (action === 'sprint') this.aimOn = false;                          // sprinting lowers the sights
       return;
     }
-    if (PLACE_ACTIONS.has(action) && !repeat) this.onPlaceKey?.(action, down);
+    if (PLACE_ACTIONS.has(action) && !repeat && !(down && this.state.downed)) this.onPlaceKey?.(action, down);
     if (!down && PLACE_ACTIONS.has(action)) { this.network.sendActionEnd(action); return; }
     if (!down || repeat || !this.alive) return;
+    if (this.state.downed) return;   // knocked down: nothing but crawling
     if (action === 'prone') this.proneOn = !this.proneOn;
     else if (action === 'primary' || action === 'secondary') {
-      if (!this.droneState && !this.viewLocked) this.wantSlot = action === 'primary' ? 1 : 2;
+      if (!this.droneState && !this.viewLocked && !this.state.downed) this.wantSlot = action === 'primary' ? 1 : 2;
     }
     else if (action === 'melee') {
       if (this.droneState || this.viewLocked || performance.now() < this.meleeReady) return;
@@ -363,6 +364,7 @@ export class LocalPlayer {
     const s = this.state;
     for (const key of ['x', 'y', 'z', 'vx', 'vy', 'vz', 'crouch', 'prone', 'lean', 'onGround', 'slow']) s[key] = serverState[key];
     s.ads = serverState.ad || 0;
+    s.downed = serverState.dn ? 1 : 0;
     const dash = serverState.ds;   // Aegis's shield charge, started by the server
     if (dash) { [s.dash, s.dashX, s.dashZ] = dash; } else s.dash = 0;
     s.fireDelay = serverState.fd || 0;
@@ -400,6 +402,14 @@ export class LocalPlayer {
       this.smoothing.x += dx; this.smoothing.y += dy; this.smoothing.z += dz;
       this.lastCorrection = err;
     }
+  }
+
+  /** Knocked down, or back up: every toggle starts again, so a revived player stands up rather than staying prone. */
+  setDowned(on) {
+    this.state.downed = on ? 1 : 0;
+    this.proneOn = false;
+    this.leanOn = 0;
+    this.aimOn = false;
   }
 
   die() {

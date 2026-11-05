@@ -21,6 +21,7 @@ const $ = (id) => document.getElementById(id);
 const KILL_NAMES = {
   melee: 'Melee', breach: 'Breach charge', fire: 'Fire', shock: 'Shock trap',
   zap: 'Shock drone', pellets: 'Pellets', shockWire: 'Shock wire',
+  downed: 'DOWNED', bleedout: 'Bled out',
 };
 
 export class UI {
@@ -658,12 +659,58 @@ export class UI {
     const v = document.createElement('span');
     v.className = victim.team; v.textContent = victim.name;
     for (const el of badgeEls(victim)) v.appendChild(el);
+    if (weapon === 'downed') w.classList.add('downed');
     li.append(k, w, v);
+    this.addFeedLine(li);
+  }
+
+  /** "Name · Revived by Other" in the kill feed. */
+  addRevive({ who, by, mine }) {
+    const li = document.createElement('li');
+    if (mine) li.classList.add('mine');
+    const a = document.createElement('span');
+    a.className = who.team; a.textContent = who.name;
+    for (const el of badgeEls(who)) a.appendChild(el);
+    const w = document.createElement('span');
+    w.className = 'weapon revived'; w.textContent = 'Revived by';
+    const b = document.createElement('span');
+    b.className = by.team; b.textContent = by.name;
+    for (const el of badgeEls(by)) b.appendChild(el);
+    li.append(a, w, b);
+    this.addFeedLine(li);
+  }
+
+  addFeedLine(li) {
     const feed = $('killfeed');
     feed.prepend(li);
     while (feed.children.length > 5) feed.lastChild.remove();
     setTimeout(() => li.classList.add('fade'), 6000);
     setTimeout(() => li.remove(), 6600);
+  }
+
+  /** The downed screen: { left: seconds, frac: revive progress, by: reviver's name, hint }, or null. */
+  setDowned(info) {
+    const el = $('downed');
+    const on = !!info;
+    if (on !== this.downedOn) {
+      this.downedOn = on;
+      el.classList.toggle('hidden', !on);
+      $('downed-vignette').classList.toggle('hidden', !on);
+      $('crosshair').classList.toggle('hidden-downed', on);
+      this.lastDowned = '';
+    }
+    if (!on) return;
+    const secs = Math.ceil(info.left);
+    const sub = info.by ? `${info.by} is reviving you` : info.hint;
+    const sig = `${secs}|${sub}`;
+    if (sig !== this.lastDowned) {
+      this.lastDowned = sig;
+      $('downed-time').textContent = info.by ? 'Hold on…' : `Bleeding out in ${secs}`;
+      $('downed-sub').textContent = sub;
+      el.classList.toggle('urgent', !info.by && secs <= 5);
+    }
+    $('downed-bar').classList.toggle('hidden', !info.by);
+    $('downed-fill').style.width = `${Math.round(Math.min(1, info.frac || 0) * 100)}%`;
   }
 
   /** op: operator config; lines: [{ key, label, value }] */
@@ -802,7 +849,7 @@ export class UI {
     const sig = JSON.stringify([mine, enemy]);
     if (sig === this.lastTopIcons) return;
     this.lastTopIcons = sig;
-    const draw = (list) => list.map((r) => `<span class="top-icon${r.alive ? '' : ' dead'}" title="${r.op ? escapeHtml(OPERATORS[r.op]?.name || '') : 'Unknown'}">${operatorIcon(r.op, 34, { dead: !r.alive })}${r.hp === undefined ? '' : `<span class="hp-bar"><i style="width:${Math.max(0, Math.min(100, r.hp))}%;background:hsl(${Math.round(Math.max(0, Math.min(100, r.hp)) * 1.2)} 80% 48%)"></i></span>`}</span>`).join('');
+    const draw = (list) => list.map((r) => `<span class="top-icon${r.alive ? '' : ' dead'}${r.dn ? ' downed' : ''}" title="${r.op ? escapeHtml(OPERATORS[r.op]?.name || '') : 'Unknown'}">${operatorIcon(r.op, 34, { dead: !r.alive })}${r.hp === undefined ? '' : `<span class="hp-bar"><i style="width:${Math.max(0, Math.min(100, r.hp))}%;background:hsl(${Math.round(Math.max(0, Math.min(100, r.hp)) * 1.2)} 80% 48%)"></i></span>`}</span>`).join('');
     $('top-icons-mine').innerHTML = draw(mine);
     $('top-icons-enemy').innerHTML = draw(enemy);
   }
