@@ -170,7 +170,7 @@ export class RoundManager {
   census(dt = 0) {
     const out = { attackersAlive: 0, defendersAlive: 0, attackersIn: 0, defendersIn: 0 };
     for (const p of this.game.players.values()) {
-      if (!p.alive) continue;
+      if (!p.alive || p.downed) continue;   // a downed player doesn't hold a site or keep the round going
       const inZone = inObjectiveZone(this.game.activeSite(), p.state);
       if (inZone) p.stats.objSecs += dt;     // time on the objective earns Money and counts for quests
       if (p.member.team === 'attack') { out.attackersAlive++; if (inZone) out.attackersIn++; }

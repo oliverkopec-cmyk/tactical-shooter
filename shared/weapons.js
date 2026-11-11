@@ -261,7 +261,7 @@ export const WEAPONS = {
 WEAPONS.breakwater = gun({
   id: 'breakwater', name: 'Breakwater shield', kind: 'Ballistic shield', model: 'shield', shield: true,
   color: 0x3a434d, accent: 0x2fd6b0, damage: 0, rpm: 60, magSize: 0, reserve: 0, reloadTime: 1, falloffStart: 1, falloffEnd: 2, mobility: 0.9,
-  desc: 'A full-height ballistic shield that stops every bullet and melee hit from the front; you look out through its viewport. It can\'t shoot: switch to your pistol to fire, and the shield moves to your side.',
+  desc: 'A full-height ballistic shield that stops every bullet and melee hit from the front; you look out through its viewport. It can\'t shoot: switch to your pistol to fire, and the shield moves to your side. Melee with it up is a bash that knocks an enemy down.',
 });
 
 export const SWAP_TIME = 0.4;   // seconds before a newly drawn weapon can fire
@@ -349,7 +349,7 @@ export function shieldCover(ws, s) {
   if (!ws) return 0;
   const drawn = WEAPONS[ws.id]?.shield, side = !drawn && ws.other && WEAPONS[ws.other.id]?.shield;
   if (!drawn && !side) return 0;
-  if ((s.prone || 0) > 0.5 || s.sprinting || s.vaultT > 0) return 0;
+  if ((s.prone || 0) > 0.5 || s.sprinting || s.vaultT > 0 || s.downed) return 0;
   return drawn ? 1 : 2;
 }
 

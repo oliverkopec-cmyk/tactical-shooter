@@ -139,9 +139,35 @@ function makeMarker(fill = '#ff2a2a') {
   return sprite;
 }
 
+/** A teammate on the floor: a red circle with a white cross, always visible, even through walls. */
+function makeDownedIcon() {
+  const size = 64;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  ctx.beginPath();
+  ctx.arc(32, 32, 27, 0, Math.PI * 2);
+  ctx.fillStyle = '#e02434';
+  ctx.fill();
+  ctx.lineWidth = 5;
+  ctx.strokeStyle = 'rgba(0,0,0,0.75)';
+  ctx.stroke();
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(26, 15, 12, 34);
+  ctx.fillRect(15, 26, 34, 12);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, depthWrite: false, transparent: true, sizeAttenuation: false }));
+  sprite.scale.set(0.05, 0.05, 1);
+  sprite.renderOrder = 21;
+  return sprite;
+}
+let downedIcon = null;   // one texture shared by everyone; each player gets their own sprite only if they need it
+
 export class RemotePlayer {
   constructor(scene, { id, name, team, skins, charms, attachments }, isTeammate) {
     this.id = id;
+    this.isTeammate = isTeammate;
     this.skins = skins || {};   // gun skins this player has equipped: { weaponId: skinId }
     this.charms = charms || {}; // charms hanging from their guns: { weaponId: charmId }
     this.attachments = attachments || {}; // what is fitted to their guns: { weaponId: attachments }
@@ -327,6 +353,10 @@ export class RemotePlayer {
     // How far through the reload (0 to 1). w.reload counts the seconds left.
     if (s.w) this.reloadFrac = this.reloading ? Math.max(0, 1 - s.w.reload / (gunFor(s.w.id, this.attachments)?.reloadTime || 2.4)) : -1;
     this.placing = s.pl || 0;
+    this.downed = !!s.dn;       // knocked down (Stage Q): dn is the seconds left to bleed out (for their team; 1 for the others)
+    this.downedLeft = s.dn || 0;
+    this.reviveFrac = s.rv || 0;
+    this.revivedBy = s.rb || null;
     // (the menu's stand-in poses carry no id and no shield state: a shield is shown raised there)
     this.cover = 'id' in s ? s.sh || 0 : WEAPONS[this.weaponId]?.shield ? 1 : 0;
     if (this.cover) this.ensureShield();
@@ -360,6 +390,13 @@ export class RemotePlayer {
     this.marker.visible = this.spotted && this.alive;
     this.glow.visible = this.detected && this.alive;
     this.carryMark.visible = this.carrier && this.alive;
+    if (this.downed && this.isTeammate && !this.downedMark) {
+      downedIcon ||= makeDownedIcon();
+      this.downedMark = downedIcon.clone();
+      this.downedMark.userData.shared = true;   // the picture is shared: not ours to dispose of
+      this.root.add(this.downedMark);
+    }
+    if (this.downedMark) this.downedMark.visible = this.downed && this.isTeammate && this.alive;
     const buf = this.buffer;
     if (!buf.length) return;
     let a = buf[0], b = buf[0];
@@ -409,6 +446,7 @@ export class RemotePlayer {
     this.markerPhase = (this.markerPhase || 0) + dt * 5;
     this.marker.position.y = top + 0.75 + Math.sin(this.markerPhase) * 0.05;
     this.carryMark.position.y = top + 0.75 + Math.sin(this.markerPhase) * 0.05;
+    if (this.downedMark) this.downedMark.position.y = top + 0.65 + Math.sin(this.markerPhase * 0.7) * 0.04;
   }
 
   /** Pose the body for this frame, from where the hands and feet need to be. */
@@ -496,7 +534,7 @@ export class RemotePlayer {
     this.gunMount.position.set(gx + swayX + 0.05 * vault, gy, gz);
     const rx = lerp(p.pitch + lie, -0.34, sprint) + strike * 0.5 + 0.03 * kick + 0.28 * reloadTilt - 0.4 * vault - 0.5 * rap * (1 - this.rapFlip);
     this.gunMount.rotation.set(rx, 0.62 * sprint + 0.14 * reloadTilt, -0.26 * sprint + 0.42 * reloadTilt);
-    this.gunMount.visible = place < 0.5;
+    this.gunMount.visible = place < 0.5 && !this.downed;
     this.gunMount.updateMatrix();
 
     // ---------------------------------------------------------------- the hands
@@ -540,6 +578,15 @@ export class RemotePlayer {
       right.lerp(vA.set(ix + 0.085, iy + 0.03, iz + 0.015), place);
       left.lerp(vA.set(ix - 0.085, iy + 0.03, iz + 0.015), place);
     } else this.placeItem.visible = false;
+
+    // Knocked down: the gun is gone and the arms drag the body along, one hand over the other
+    this.downedAmt = (this.downedAmt || 0) + ((this.downed ? 1 : 0) - (this.downedAmt || 0)) * Math.min(1, dt * 9);
+    if (this.downedAmt > 0.01) {
+      const reach = Math.sin(phase * 0.9) * 0.14 * Math.min(1, speed / 0.2);
+      // (lying down, this frame's up is along the floor and its back is up off the floor)
+      right.lerp(vA.set(0.27, shoulderY + 0.26 + reach, 0.02), this.downedAmt);
+      left.lerp(vA.set(-0.27, shoulderY + 0.26 - reach, 0.02), this.downedAmt);
+    }
 
     // On a rope the left hand holds it above the head; hopping over something it plants on the obstacle
     if (rap > 0.01 && this.rapFlip < 0.5) left.lerp(vA.set(-0.06, shoulderY + 0.28 + Math.sin(this.rapPhase) * 0.05, -0.34), rap);

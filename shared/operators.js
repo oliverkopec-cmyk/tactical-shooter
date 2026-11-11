@@ -75,7 +75,7 @@ export const OPERATORS = {
   aegis: {   // (Blackbeard, and how shield operators work)
     name: 'Aegis', team: 'attack', color: 0x2fd6b0, weapons: { primary: 'breakwater', secondary: 'anvil' }, utilities: ['claymore', 'flash'], speed: 2, armor: 2, price: 3500,
     ability: { id: 'shieldDash', name: 'Shield charge', charges: 3, cooldown: 8,
-      desc: 'With the shield up, dash a few metres forward, smashing through soft walls and barricades in the way. Breaking through leaves you dazed for a moment.' },
+      desc: 'With the shield up, dash a few metres forward, smashing through soft walls and barricades in the way. Breaking through leaves you dazed for a moment. With the shield up, melee is a bash that knocks an enemy down (every 3 s).' },
   },
   recruit_atk: {
     name: 'Recruit', team: 'attack', color: 0xb0b6bd, weapons: { primary: 'rifle', secondary: 'sidekick' }, utilities: ['frag', 'smoke'], speed: 2, armor: 2, unique: false,
@@ -131,7 +131,7 @@ export const OPERATORS = {
   medic: {   // (Doc)
     name: 'Medic', team: 'defense', color: 0xff5d6c, weapons: { primary: 'syringe', secondary: 'trowel' }, utilities: ['claymore', 'smoke'], speed: 1, armor: 3, price: 3000,
     ability: { id: 'stimPistol', name: 'Stim pistol', charges: 3,
-      desc: 'Fire a stim dart: +40 health to the teammate under your crosshair (up to 30 m), or to yourself. It can go up to 140, which drains back to 100 slowly.' },
+      desc: 'Fire a stim dart: +40 health to the teammate under your crosshair (up to 30 m), or to yourself. It can go up to 140, which drains back to 100 slowly. A dart also revives a downed teammate from range.' },
   },
   interceptor: {   // (Jäger)
     name: 'Interceptor', team: 'defense', color: 0xf0783c, weapons: { primary: 'livewire', secondary: 'peep' }, utilities: ['frag', 'smoke'], speed: 3, armor: 1, price: 3000,

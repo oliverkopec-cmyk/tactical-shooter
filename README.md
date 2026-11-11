@@ -2,7 +2,22 @@
 
 A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite on the client, Node.js + Socket.IO on an authoritative server. One Node process serves both the game client and the realtime server, so the whole thing deploys as a single Render web service.
 
-## Status: Stage P (weapon attachments)
+## Status: Stage Q (Aegis shield bash and downed state)
+
+**Shield bash:** Aegis's melee key with the shield up (`GameState.melee`). An enemy within reach goes down instead of taking damage. It has a 3 second cooldown, shown on the HUD (`DOWNED.bashCooldownMs` in `shared/constants.js`, the numbers to tune). It can't go through walls, and a shield facing it stops it. A bash at thin air uses up the cooldown; one that hits a wall or gadget doesn't, and while it's recharging the shield still knocks those out but does nothing to people. With the pistol out, melee is an ordinary hit.
+
+**Downed** (`server/downed.js`):
+
+- **On the floor:** they crawl at 0.55 m/s (`s.downed` in `shared/movement.js`, on both client and server) and can't shoot, reload, switch guns, aim or use gadgets. Their health is 1, so any damage from an enemy finishes them through the normal damage code.
+- **Bleeding out:** 20 seconds, with the time on their screen. If nobody finishes them, the kill goes to whoever knocked them down. Teammates see a red cross over them through walls and on their icon at the top. Enemies see them on the floor, without the time left.
+- **Reviving:** hold the interact key (J by default) within 2.2 m with a clear line, for 4 seconds; they come back with 20 health. Letting go starts it over. The reviver kneels, moves slowly and can't shoot. The bleed-out clock waits while a revive is under way.
+- **Medic:** a stim dart revives a downed teammate from up to 30 m and uses one dart.
+- **The round:** a downed player doesn't hold or contest the site, or count as standing, so a round ends when the last one on a side goes down. A new round clears it all.
+- **Kill feed:** "Name DOWNED Name" and "Name Revived by Name".
+
+**Bots** (`server/bots.js`): an Aegis bot keeps its shield up and walks in on an enemy within 9 m to bash them, otherwise it draws its pistol. A downed bot crawls towards the nearest teammate on their feet. The nearest teammate goes over and holds the key unless they are in a fight; a Medic with a clear look uses a dart. Bots shoot whoever can still shoot back first, and finish a downed enemy once nobody else is near.
+
+### Earlier: Stage P (weapon attachments)
 
 **The gun workshop** (`client/src/gunWorkshop.js`): clicking a gun in the Operators tab opens it large in 3D (drag to turn, scroll to zoom) with its slots: sight, muzzle, grip, magazine, skin and charm. Everything is free, each change shows on the gun at once, and each gun saves its own set to the account (`accounts.equipped_attachments`, `PUT /api/equip/attachment`). Other players see them in matches. The rules are in `shared/attachments.js`, the file to tune.
 
@@ -524,13 +539,7 @@ Six new operators, bought with Money in the Operators tab (the original eight an
 
 Written down so they aren't forgotten (see Status for what is built). They are built one at a time, one PR each, and the next one starts once the previous is confirmed. Server memory must stay low enough for Render's 512 MB plan.
 
-### Stage Q - Aegis shield bash and downed state
-- Aegis can bash with the shield (melee key while the shield is up). A bash on an enemy knocks them down into a "downed" state.
-- Downed players fall to the ground and can only crawl slowly; they can't shoot or use gadgets. They bleed out after 20 seconds unless revived, with the timer on their screen and a downed icon to their team.
-- Teammates revive by holding a key for 4 seconds next to them; revived players come back with 20 health. Enemies can finish them with any damage. The Medic's healing pistol revives a downed teammate from range.
-- Shield bash has a 3-second cooldown and can't down someone through walls. Bots can bash, revive and finish downed players.
-- "DOWNED" and "Revived by [name]" show in the kill feed.
-- The last stage also adds one `CHANGELOG.md` entry covering Stages M to Q, so players see them all in "What's new".
+Nothing is planned right now: Stages F to Q are built.
 
 ## Run locally
 

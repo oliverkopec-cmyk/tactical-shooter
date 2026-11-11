@@ -81,7 +81,7 @@ export class Defuser {
     // Pick up a dropped defuser
     if (this.dropped && !this.planted) {
       for (const [id, p] of players) {
-        if (p.member.team !== 'attack' || !p.alive || p.spawned === false) continue;
+        if (p.member.team !== 'attack' || !p.alive || p.downed || p.spawned === false) continue;
         if (Math.hypot(p.state.x - this.dropped[0], p.state.z - this.dropped[2]) <= DEFUSER.pickupReach && Math.abs(p.state.y - this.dropped[1]) < 1.6) {
           this.carrier = id;
           this.dropped = null;
