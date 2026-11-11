@@ -55,6 +55,9 @@ const SOUNDS = {
   // Stage E operators
   shieldPing: { wave: 'triangle', freq: 2400, freq2: 1500, filter: 'lowpass', cutoff: 6000, dur: 0.14, gain: 0.45 },
   shieldDash: { noise: true, filter: 'lowpass', cutoff: 900, q: 0.7, dur: 0.3, gain: 0.8 },
+  shieldBash: { noise: true, filter: 'lowpass', cutoff: 620, q: 1.1, dur: 0.16, gain: 0.95 },
+  bodyDown: { noise: true, filter: 'lowpass', cutoff: 320, q: 0.8, dur: 0.24, gain: 0.85 },
+  revived: { wave: 'sine', freq: 520, freq2: 880, dur: 0.26, gain: 0.32 },
   pelletThunk: { wave: 'square', freq: 520, freq2: 180, filter: 'lowpass', cutoff: 2200, dur: 0.09, gain: 0.4 },
   hammerSmash: { noise: true, filter: 'lowpass', cutoff: 1500, q: 0.9, dur: 0.32, gain: 1.0 },
   armorHit: { wave: 'square', freq: 260, freq2: 120, filter: 'lowpass', cutoff: 1600, dur: 0.12, gain: 0.55 },

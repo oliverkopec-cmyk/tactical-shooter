@@ -302,6 +302,8 @@ button.ghost { background: transparent; }
 #killfeed .attack { color: var(--attack); font-weight: 600; }
 #killfeed .defense { color: var(--defense); font-weight: 600; }
 #killfeed .weapon { color: var(--muted); margin: 0 6px; font-size: 11px; text-transform: uppercase; }
+#killfeed .weapon.downed { color: #ff5a66; font-weight: 800; letter-spacing: 0.06em; }
+#killfeed .weapon.revived { color: #7be08c; text-transform: none; font-size: 12px; font-weight: 600; }
 
 #death-overlay {
   position: absolute;
@@ -886,6 +888,9 @@ button.small { font-size: 12px; padding: 4px 10px; margin-top: 6px; }
 .top-icon .hp-bar { display: block; width: 100%; height: 4px; border-radius: 2px; background: rgba(255,255,255,0.16); overflow: hidden; }   /* teammates only: green, yellow, red as health drops */
 .top-icon .hp-bar i { display: block; height: 100%; transition: width 0.15s, background 0.15s; }
 .top-icon.dead { filter: grayscale(0.7); }
+.top-icon.downed { position: relative; animation: top-icon-downed 0.8s infinite alternate; }
+.top-icon.downed::after { content: '+'; position: absolute; top: -4px; right: -4px; width: 16px; height: 16px; line-height: 15px; border-radius: 50%; background: #e02434; color: #fff; font-size: 14px; font-weight: 800; text-align: center; box-shadow: 0 0 0 1px rgba(0,0,0,0.6); }
+@keyframes top-icon-downed { from { box-shadow: 0 0 0 rgba(224, 36, 52, 0); } to { box-shadow: 0 0 12px rgba(224, 36, 52, 0.95); } }
 @media (max-width: 900px) { .top-icon svg { width: 26px; height: 26px; } }
 
 /* ---------------------------------------------------------------- stage 18: friends and parties */
@@ -968,6 +973,19 @@ button.small { font-size: 12px; padding: 4px 10px; margin-top: 6px; }
 #runout-text { font-size: 28px; font-weight: 800; letter-spacing: 0.1em; }
 #runout-sub { font-size: 13px; opacity: 0.85; margin-top: 2px; }
 #runout.detected { border-color: #ff3030; background: rgba(60, 0, 0, 0.82); color: #ff6a6a; animation: runout-pulse 0.7s infinite alternate; }
+/* Knocked down (Stage Q): the world goes dark and red at the edges, with the time left in the middle */
+#downed-vignette { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(ellipse at center, rgba(90, 0, 8, 0) 28%, rgba(90, 0, 8, 0.78) 100%); }
+#downed-vignette.hidden { display: none; }
+#downed { position: absolute; top: 26%; left: 50%; transform: translateX(-50%); min-width: 280px; max-width: calc(100vw - 32px); box-sizing: border-box; text-align: center; padding: 12px 26px 14px; border: 2px solid #e02434; border-radius: 10px; background: rgba(40, 0, 6, 0.78); color: #ffd9dc; pointer-events: none; }
+#downed.hidden { display: none; }
+#downed-title { font-size: 32px; font-weight: 800; letter-spacing: 0.16em; color: #ff5a66; }
+#downed-time { font-size: 20px; font-weight: 700; margin-top: 2px; font-variant-numeric: tabular-nums; }
+#downed-sub { font-size: 13px; opacity: 0.85; margin-top: 4px; }
+#downed-bar { height: 8px; margin-top: 8px; border-radius: 4px; background: rgba(255, 255, 255, 0.16); overflow: hidden; }
+#downed-bar.hidden { display: none; }
+#downed-bar i { display: block; height: 100%; width: 0; background: #7be08c; }
+#downed.urgent { animation: runout-pulse 0.5s infinite alternate; }
+#crosshair.hidden-downed { display: none; }
 @keyframes runout-pulse { from { box-shadow: 0 0 0 rgba(255, 40, 40, 0); } to { box-shadow: 0 0 26px rgba(255, 40, 40, 0.8); } }
 
 /* Ping wheel and voice lines */

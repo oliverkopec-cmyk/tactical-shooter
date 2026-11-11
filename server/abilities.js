@@ -480,7 +480,7 @@ export class Gadgets {
     for (const f of [...this.heals.values()]) {
       if (now >= f.until) { this.heals.delete(f.id); this.broadcast('gadgetRemove', 'heal', { id: f.id }); continue; }
       for (const q of this.game.players.values()) {
-        if (!q.alive || q.spawned === false || q.member.team !== f.team || q.health >= 100) continue;
+        if (!q.alive || q.downed || q.spawned === false || q.member.team !== f.team || q.health >= 100) continue;
         if (Math.hypot(q.state.x - f.pos[0], q.state.z - f.pos[2]) > H.radius || Math.abs(q.state.y - f.pos[1]) > 1.6) continue;
         q.health = Math.min(100, q.health + H.hps * dt);
       }
@@ -1295,8 +1295,9 @@ const ABILITIES = {
       if (h) { target = qid; maxT = h.t; }
     }
     const whoId = target ?? id, who = g.game.players.get(whoId);
-    if (who.health >= S.max) return g.error(id, target ? 'They are already fully stimmed.' : 'You are already fully stimmed.');
-    who.health = Math.min(S.max, who.health + S.heal);
+    if (who.downed) g.game.downed.revive(whoId, who, id);   // a dart gets a downed teammate back up, from range
+    else if (who.health >= S.max) return g.error(id, target ? 'They are already fully stimmed.' : 'You are already fully stimmed.');
+    else who.health = Math.min(S.max, who.health + S.heal);
     p.ability.charges--;
     g.game.emitAll('stim', { by: id, id: whoId, from: eye.map(r2), to: target ? eye.map((v, i) => r2(v + dir[i] * maxT)) : null });
     g.game.io.to(whoId).emit('healed', { health: Math.round(who.health) });

@@ -4,12 +4,13 @@
 import {
   PLAYER_RADIUS, STAND_HEIGHT, CROUCH_HEIGHT, PRONE_HEIGHT, STAND_EYE, CROUCH_EYE, PRONE_EYE, PRONE_EYE_FORWARD,
   VAULT, RAPPEL, STEP_HEIGHT, WALK_SPEED, SPRINT_SPEED, CROUCH_SPEED, PRONE_SPEED, MOVE,
-  CROUCH_TRANSITION, PRONE_TRANSITION, LEAN_SPEED, LEAN_OFFSET, KEY, SPRINT_FIRE_DELAY, ADS, DASH_SPEED,
+  CROUCH_TRANSITION, PRONE_TRANSITION, LEAN_SPEED, LEAN_OFFSET, KEY, SPRINT_FIRE_DELAY, ADS, DASH_SPEED, DOWNED,
 } from './constants.js';
 
 const EPS = 1e-4;
 const R = PLAYER_RADIUS;
 const MAX_PITCH = Math.PI / 2 - 0.01;
+const CRAWL_KEYS = KEY.FORWARD | KEY.BACK | KEY.LEFT | KEY.RIGHT;   // all a downed player can do
 
 export function createPlayerState(spawn) {
   return {
@@ -33,6 +34,7 @@ export function createPlayerState(spawn) {
     rap: 0, rapSide: 0, rapFlip: 0, rapPrev: 0, rapCd: 0, rapSpeed: 0,
     swing: -1,     // set to an opening id when the player just swung in through it (the server breaks its barricade)
     dash: 0, dashX: 0, dashZ: 0,   // Aegis's shield charge: seconds left and direction, set by the server
+    downed: 0,     // 1 while knocked down (Stage Q), set by the server: lying down, crawling and nothing else
   };
 }
 
@@ -150,7 +152,7 @@ function moveHorizontal(s, dx, dz, h, world) {
  * input: { keys: bitmask of KEY, yaw, pitch }
  */
 export function stepPlayer(s, input, dt, world) {
-  const keys = input.keys | 0;
+  const keys = s.downed ? (input.keys & CRAWL_KEYS) | KEY.PRONE : input.keys | 0;
   s.yaw = input.yaw;
   s.pitch = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, input.pitch));
 
@@ -207,7 +209,7 @@ export function stepPlayer(s, input, dt, world) {
   // Strafing and walking backwards are slower than forwards
   let dirMul = 1;
   if (len > 0) { const f = fwd / len; dirMul = f >= 0 ? lerp(MOVE.strafeMul, 1, f * f) : lerp(MOVE.strafeMul, MOVE.backMul, f * f); }
-  const speed = lerp(lerp(baseSpeed, CROUCH_SPEED, s.crouch), PRONE_SPEED, s.prone) * lerp(1, ADS.moveMul, s.ads)
+  const speed = s.downed ? DOWNED.crawlSpeed * dirMul : lerp(lerp(baseSpeed, CROUCH_SPEED, s.crouch), PRONE_SPEED, s.prone) * lerp(1, ADS.moveMul, s.ads)
     * dirMul * (s.speedMul ?? 1) * (s.gunMul ?? 1) * (s.slow ?? 1);
 
   // Lean (not while sprinting or lying down)
@@ -302,6 +304,7 @@ export function getEyePosition(s, world) {
 
 /** The input the weapon should see: no trigger while recovering from a sprint or in the air. */
 export function weaponInput(s, input) {
+  if (s.downed) return { ...input, keys: input.keys & ~(KEY.FIRE | KEY.RELOAD), wsel: 0 };   // knocked down: hands off the guns
   return s.fireDelay > 0 || (!s.onGround && !s.rap) || s.vaultT > 0 ? { ...input, keys: input.keys & ~KEY.FIRE } : input;   // you can shoot while hanging on a rope
 }
 
