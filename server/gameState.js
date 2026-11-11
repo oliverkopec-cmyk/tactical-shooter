@@ -37,6 +37,16 @@ import { PLACE_SLOW } from '../shared/placing.js';
 
 const TICK_RATE = 60;
 const MAX_QUEUED_INPUTS = 120;
+// One batch holds every frame since the last one: about 1/7 s, so 35 frames at 240 fps
+const MAX_BATCH_INPUTS = 64;
+// Inputs arrive in batches about 7 times a second. They are played out at the pace they were made, so other players
+// see smooth movement instead of a jump per batch. When they pile up (a batch came late), they are played a little
+// faster until the backlog is gone. Neither ever plays a player faster than real time: the time budget (below) still
+// decides how much may be simulated, exactly as before.
+const PACE_BACKLOG = 0.16;      // seconds of queued input that count as normal (one batch, plus a little)
+const PACE_CATCHUP = 2;         // extra speed per second of backlog above that
+const PACE_MAX = 1.5;           // never more than this times real time
+const PACE_CARRY = 0.1;         // the most pacing allowance that can build up while inputs are waiting
 const MAX_PITCH = Math.PI / 2;
 
 export class GameState {
@@ -930,7 +940,7 @@ export class GameState {
   queueInputs(id, batch) {
     const p = this.players.get(id);
     if (!p || !Array.isArray(batch)) return;
-    for (const raw of batch.slice(0, 30)) {
+    for (const raw of batch.slice(0, MAX_BATCH_INPUTS)) {
       const input = sanitizeInput(raw);
       if (!input || input.seq <= p.lastSeq) continue;
       if (!p.alive) { p.lastSeq = input.seq; continue; } // dead: acknowledge and drop
@@ -951,9 +961,14 @@ export class GameState {
     for (const [id, p] of this.players) {
       if (!p.alive) continue;
       p.timeBudget = Math.min(MAX_TIME_BUDGET, p.timeBudget + realDt);
-      while (p.alive && p.queue.length && p.queue[0].dt <= p.timeBudget + 1e-6) {
+      let queued = 0;
+      for (const q of p.queue) queued += q.dt;
+      const pace = Math.min(PACE_MAX, 1 + Math.max(0, queued - PACE_BACKLOG) * PACE_CATCHUP);
+      p.paceAllow = Math.min(PACE_CARRY, (p.paceAllow || 0) + realDt * pace);
+      while (p.alive && p.queue.length && p.queue[0].dt <= Math.min(p.timeBudget, p.paceAllow) + 1e-6) {
         const input = p.queue.shift();
         p.timeBudget -= input.dt;
+        p.paceAllow -= input.dt;
         const drone = phase === PHASE.PREP ? this.activeDroneOf(p) : null;
         if (drone) {
           // Piloting a drone: inputs steer it, the operator's body stays put.
@@ -974,6 +989,7 @@ export class GameState {
         }
         p.lastSeq = input.seq;
       }
+      if (!p.queue.length) p.paceAllow = Math.min(p.paceAllow, realDt);   // waiting for the next batch: no saving up
     }
 
     this.placing.update(wallNow);

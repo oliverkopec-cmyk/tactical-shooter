@@ -234,7 +234,7 @@ export class AdminPanel {
   async refresh() {
     const [online, matches] = await Promise.all([this.network.request('adminOnline'), this.network.request('adminMatches')]);
     if (online.error || matches.error) { this.message = online.error || matches.error; }
-    else { this.online = online.players; this.matches = matches.matches; }
+    else { this.message = ''; this.online = online.players; this.matches = matches.matches; }   // back after a dropped connection: clear the error
     if (this.visible) this.render();
   }
 

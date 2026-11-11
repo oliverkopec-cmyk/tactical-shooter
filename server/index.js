@@ -1,10 +1,10 @@
-// Entry point: serves the built client and runs the Socket.IO game server.
+// Entry point: serves the built client and runs the realtime game server (plain WebSockets, server/realtime.js).
 
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
-import { Server } from 'socket.io';
+import { Realtime } from './realtime.js';
 import { RoomManager } from './rooms.js';
 import { openDatabase } from './db.js';
 import { Accounts } from './accounts.js';
@@ -32,15 +32,8 @@ app.use('/api', accounts.router());
 app.use(staticFiles(DIST));
 
 const server = http.createServer(app);
-const io = new Server(server, {
-  // Same origin in production; Vite proxies in development.
-  pingInterval: 10000,
-  pingTimeout: 8000,
-  // Compress every message bigger than a few bytes (permessage-deflate, which browsers do natively). Snapshots
-  // repeat the same names and numbers all the time, so each connection's running dictionary makes them tiny. This
-  // is most of the bandwidth saving. Memory: about 300 KB per connected player.
-  perMessageDeflate: { threshold: 64 },
-});
+// The WebSocket is at /ws on the same host (Vite proxies it in development). It compresses messages like before.
+const io = new Realtime(server, { path: '/ws' });
 
 const rooms = new RoomManager(io, accounts.progression, accounts.social);
 const social = accounts.social;
@@ -50,6 +43,8 @@ const christmas = new Christmas({ db, accounts });
 const moderation = new Moderation({ db, accounts, io });
 accounts.moderation = moderation;   // suspended and banned accounts can't log in
 const SHARED_VERSION = sharedCodeVersion();
+// The in-match events a batch may carry (each is also handled below as an event of its own)
+const BATCH_EVENTS = new Set(['action', 'actionEnd', 'teamPing', 'pickOperator', 'pickUtility', 'voteSite', 'spawnChoice', 'refreshLook']);
 // Pages built from different shared code would mispredict movement: send them back to reload.
 // ('dev' is the Vite dev server, which always runs the current files.)
 io.use((socket, next) => {
@@ -178,8 +173,17 @@ io.on('connection', (socket) => {
     reply(ack, room ? room.start(socket.id) : { error: 'Not in a room.' });
   });
 
-  socket.on('inputs', (batch) => {
-    socket.data.room?.handleInputs(socket.id, batch);
+  // A match batch (Stage C1): the client sends one about 7 times a second while it has something to send, and nothing
+  // while dead, spectating or in the menus. Inputs first, then the in-match events in the order they happened, then
+  // the ping time to send straight back.
+  socket.on('batch', (b) => {
+    if (Array.isArray(b.i) && b.i.length) socket.data.room?.handleInputs(socket.id, b.i);
+    if (Array.isArray(b.a)) {
+      for (const ev of b.a.slice(0, 24)) {
+        if (Array.isArray(ev) && BATCH_EVENTS.has(ev[0])) socket.dispatch(ev[0], ev.length > 1 ? [ev[1]] : []);
+      }
+    }
+    if (typeof b.p === 'number') socket.emit('pong', b.p);
   });
 
   socket.on('action', (type) => {
@@ -204,7 +208,6 @@ io.on('connection', (socket) => {
   // Skins or charms changed on the loadout screen mid-match: everyone sees the new look
   socket.on('refreshLook', () => socket.data.room?.refreshLook(socket));
 
-  socket.on('netPing', (ack) => reply(ack));
   socket.on('leaveRoom', () => { socket.data.room?.remove(socket); socket.data.spectating?.removeSpectator(socket); });
   socket.on('disconnect', () => { socket.data.room?.remove(socket); socket.data.spectating?.removeSpectator(socket); });
 });

@@ -1,8 +1,31 @@
 # Breachline
 
-A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite on the client, Node.js + Socket.IO on an authoritative server. One Node process serves both the game client and the realtime server, so the whole thing deploys as a single Render web service.
+A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite on the client, Node.js on an authoritative server, talking over plain WebSockets. One Node process serves both the game client and the realtime server, so the whole thing deploys as a single Render web service.
 
-## Status: Stage Q (Aegis shield bash and downed state)
+## Status: Stage C1 (plain WebSockets instead of Socket.IO)
+
+The first step of moving from Render to Cloudflare (Stage C0, `cloudflare-test/`, showed the free plan can run it).
+Cloudflare speaks plain WebSockets and its free plan counts every message a player sends, so:
+
+- **Plain WebSockets** (`server/realtime.js`, `client/src/network.js`): one connection at `/ws`, JSON arrays, compressed
+  as before. `server/realtime.js` offers the rest of the server the same few calls it used from Socket.IO (`io.to(...).emit`,
+  `socket.on`, rooms, `disconnect`), so the game, social, admin and moderation code is unchanged. The protocol is
+  described at the top of that file. Socket.IO and socket.io-client are no longer used.
+- **Batches, about 7 a second** (`INPUT_SEND_RATE` in `shared/constants.js`, was 30): in a match the client sends one
+  message holding every input since the last one, the in-match events in order (actions, held keys let go, team pings,
+  operator, gadget, site and spawn picks, look changes) and, every 2 seconds, its ping. A batch only goes when there is
+  something in it: **dead, spectating or in the menus, nothing is sent** (the server's WebSocket pings every 25 seconds
+  are answered by the browser itself). Menu actions (create a room, chat, gifts, the admin tools...) still go at once,
+  with an answer.
+- **Smooth movement** (`server/gameState.js`): the server plays a player's batch out at the pace it was made instead of
+  all at once, catching up gently when a batch comes late, so others still see smooth movement. A player is still never
+  simulated faster than real time (the time budget is unchanged). In-match events wait for the next batch (at most
+  about 1/7 s).
+- **Same behaviour as before:** the version check (an old page reloads), login check, one connection per account
+  (a newer tab takes over), reconnecting after a dropped connection, and snapshots skipped for a backed-up connection.
+- The admin Matches panel now clears its "Server did not respond." once the connection is back.
+
+### Earlier: Stage Q (Aegis shield bash and downed state)
 
 **Shield bash:** Aegis's melee key with the shield up (`GameState.melee`). An enemy within reach goes down instead of taking damage. It has a 3 second cooldown, shown on the HUD (`DOWNED.bashCooldownMs` in `shared/constants.js`, the numbers to tune). It can't go through walls, and a shield facing it stops it. A bash at thin air uses up the cooldown; one that hits a wall or gadget doesn't, and while it's recharging the shield still knocks those out but does nothing to people. With the pistol out, melee is an ordinary hit.
 
@@ -548,7 +571,7 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:5173 in two tabs. Vite serves the client with hot reload and proxies `/socket.io` to the game server on port 3000.
+Open http://localhost:5173 in two tabs. Vite serves the client with hot reload and proxies the WebSocket (`/ws`) to the game server on port 3000.
 
 To run the production build the same way Render does:
 
@@ -599,7 +622,8 @@ shared/            Code used by BOTH client and server
   exclusiveSkins.js  the 40 gift-only Exclusive skins (effect, colours, particles)
   charms.js        the 30 gun charms, level rewards and the charm crate odds
 server/
-  index.js         Express static hosting + Socket.IO events
+  index.js         Express static hosting + the realtime events
+  realtime.js      the WebSocket server and our small protocol (Socket.IO's calls, without Socket.IO)
   bots.js          the bots' brains (server side)
   nav.js           the walking grid and distance fields bots move by
   killcam.js       the last 4.5 s of everyone's movement and shots, sent to a player who is killed
@@ -633,7 +657,7 @@ client/
   src/shopView.js  the Shop tab: featured, daily, Limited, the crate
   src/shopCards.js the shop's turning 3D cards (one shared renderer)
   src/graphics.js  the graphics setting (auto / high / low)
-  src/network.js   Socket.IO wrapper, server clock estimate
+  src/network.js   the WebSocket connection, match batches, server clock estimate
   src/game.js      Three.js scene and frame loop
   src/preRound.js  the location and loadout screens before each round (and the attackers' prep loadout)
   src/topMap.js    the top-down map plan on the location screen
@@ -701,7 +725,7 @@ There is no in-game way to become owner or admin. Roles are worked out on the se
 
 - Passwords are hashed with bcrypt; only the hash is stored.
 - Logging in creates a random session token. The browser keeps it in an `httpOnly` cookie (page scripts can't read it) and the database stores only its SHA-256 hash. Sessions last 90 days and every visit extends them.
-- The Socket.IO server refuses connections without a valid session, so every player in a room is a real account.
+- The realtime server refuses connections without a valid session, so every player in a room is a real account.
 - The client can only read its profile and save its own settings (cleaned and clamped by the server). Money, level, rank points and owned items are only ever changed by server code.
 - Polish Money is a placeholder: the column exists and is shown, but nothing can change it.
 - Log-in and sign-up are limited to 20 attempts per IP address per 10 minutes.

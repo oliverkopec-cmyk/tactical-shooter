@@ -379,7 +379,7 @@ export class Accounts {
 
   // ---------------------------------------------------------------- sockets
 
-  /** Socket.IO middleware: only logged-in browsers may connect. */
+  /** Connection middleware (server/realtime.js): only logged-in browsers may connect. */
   socketAuth() {
     return async (socket, next) => {
       try {
