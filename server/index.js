@@ -14,6 +14,8 @@ import { Gifts } from './gifts.js';
 import { Christmas } from './christmas.js';
 import { Moderation } from './moderation.js';
 import { staticFiles } from './staticFiles.js';
+import { createApi } from './api.js';
+import { httpApi } from './httpApi.js';
 
 // Local secrets (e.g. DATABASE_URL) can live in a .env file, which git ignores.
 try { process.loadEnvFile(); } catch { /* no .env file */ }
@@ -28,7 +30,7 @@ const accounts = new Accounts(db);
 const app = express();
 app.set('trust proxy', 1); // Render sits behind one proxy: lets req.ip / req.secure see the real client
 app.get('/healthz', (_req, res) => res.send('ok'));
-app.use('/api', accounts.router());
+app.use('/api', httpApi(createApi(accounts)));   // server/api.js: the same routes the Cloudflare Worker serves
 app.use(staticFiles(DIST));
 
 const server = http.createServer(app);

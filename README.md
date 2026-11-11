@@ -2,7 +2,39 @@
 
 A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite on the client, Node.js on an authoritative server, talking over plain WebSockets. One Node process serves both the game client and the realtime server, so the whole thing deploys as a single Render web service.
 
-## Status: Stage C1 (plain WebSockets instead of Socket.IO)
+## Status: Stage C2 (database driver, PBKDF2 passwords, the API on a Worker)
+
+The second step of moving from Render to Cloudflare. The game still runs on Render exactly as before; this adds the
+pieces the Cloudflare Worker needs and runs them on Render too.
+
+- **Neon's serverless driver** (`@neondatabase/serverless`, replacing `pg`): the Node server uses its `Pool` (over a
+  WebSocket) in `server/db.js`; the Worker sends one HTTP request per query (`server/dbHttp.js`). Same SQL, same
+  `db.query(sql, params) -> { rows }`, ids still come back as numbers. Locally, without `DATABASE_URL`, PGlite as before.
+- **PBKDF2 passwords** (`server/passwords.js`): new accounts get a PBKDF2-SHA256 hash (100,000 iterations, the most
+  Workers allow), stored as `pbkdf2_sha256$100000$salt$hash`. An existing account keeps its bcrypt hash until its next
+  successful log-in, which checks it (with `bcryptjs`, plain JavaScript) and stores a PBKDF2 hash in its place. A wrong
+  password changes nothing. `bcrypt` (native) is no longer used. **One way only:** code from before this stage can't
+  read the new hashes, so going back to it would lock out everyone who has logged in since.
+- **The API on a Worker** (`server/api.js`): every `/api` route now uses the web's standard Request and Response. The
+  Node server mounts it into Express (`server/httpApi.js`); the Worker (`worker/index.js`, `wrangler.jsonc`) calls it
+  directly. Same routes, same answers, same cookie. In the Worker, password checks run in a small Durable Object
+  (`Passwords`), because a plain Worker request on the free plan gets 10 ms of CPU and a check takes 17 ms (PBKDF2) or
+  176 ms (bcrypt) (Stage C0). A cron job deletes expired sessions every hour.
+- **In the Worker until later stages:** there are no game connections there yet, so friends all show as offline, there
+  are no live notifications (a friend request shows up on the next refresh), and the per-account lock and the log-in
+  rate limit only count within one Worker instance (the database statements still refuse to spend Money twice).
+  Stages C3 to C5 bring the game connections over.
+
+### Cloudflare: running the Worker locally
+`npm run worker:dev` runs it on http://localhost:8787. It needs `.dev.vars` (copy `.dev.vars.example`), with either:
+- **A Neon branch** (best: a copy of the live database that can be changed freely): in the Neon console open the project,
+  **Branches**, **Create branch** from `main`, then copy its connection string into `DATABASE_URL`. Delete the branch
+  when done.
+- **The local stand-in:** `npm run neon:local` (add `-- --old-account name:password` to make an account with an old
+  bcrypt hash) and the two lines from `.dev.vars.example`. It answers Neon's HTTP protocol from a PGlite in
+  `.data/neon-local`.
+
+### Earlier: Stage C1 (plain WebSockets instead of Socket.IO)
 
 The first step of moving from Render to Cloudflare (Stage C0, `cloudflare-test/`, showed the free plan can run it).
 Cloudflare speaks plain WebSockets and its free plan counts every message a player sends, so:
@@ -624,6 +656,10 @@ shared/            Code used by BOTH client and server
 server/
   index.js         Express static hosting + the realtime events
   realtime.js      the WebSocket server and our small protocol (Socket.IO's calls, without Socket.IO)
+  api.js           the HTTP API (/api/...) on web-standard Request/Response, shared with the Cloudflare Worker
+  httpApi.js       mounts api.js into Express
+  passwords.js     PBKDF2 password hashes, and upgrading old bcrypt ones
+  dbHttp.js        the database in the Cloudflare Worker (Neon over HTTP)
   bots.js          the bots' brains (server side)
   nav.js           the walking grid and distance fields bots move by
   killcam.js       the last 4.5 s of everyone's movement and shots, sent to a player who is killed
@@ -723,7 +759,7 @@ There is no in-game way to become owner or admin. Roles are worked out on the se
 
 ## Accounts
 
-- Passwords are hashed with bcrypt; only the hash is stored.
+- Passwords are hashed with PBKDF2-SHA256 (100,000 iterations); only the hash is stored. Older bcrypt hashes are replaced on the account's next log-in.
 - Logging in creates a random session token. The browser keeps it in an `httpOnly` cookie (page scripts can't read it) and the database stores only its SHA-256 hash. Sessions last 90 days and every visit extends them.
 - The realtime server refuses connections without a valid session, so every player in a room is a real account.
 - The client can only read its profile and save its own settings (cleaned and clamped by the server). Money, level, rank points and owned items are only ever changed by server code.

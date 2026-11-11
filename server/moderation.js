@@ -32,15 +32,18 @@ export function describeSpan(ms) {
 }
 
 export class Moderation {
-  constructor({ db, accounts, io }) {
+  /** background: run the hourly chat-log clean-up here (the Node server; not in the Worker). */
+  constructor({ db, accounts, io, background = true }) {
     this.db = db;
     this.accounts = accounts;
     this.io = io;
     this.lastChat = new Map();      // account id -> [times of recent messages]
     this.reportTimes = new Map();   // account id -> [times of recent reports]
     const sweep = () => this.db.query(`DELETE FROM chat_log WHERE created_at < now() - interval '${CHAT.retentionDays} days'`).catch((e) => console.error('Chat cleanup failed:', e.message));
-    sweep();
-    setInterval(sweep, 60 * 60 * 1000).unref();
+    if (background) {
+      sweep();
+      setInterval(sweep, 60 * 60 * 1000).unref();
+    }
   }
 
   owner(socket) { return isOwner(socket.data.account?.username); }

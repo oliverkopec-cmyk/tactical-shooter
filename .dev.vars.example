@@ -1,0 +1,12 @@
+# Copy to .dev.vars (git ignores it) for `npm run worker:dev`. Never commit real secrets.
+
+# Either a Neon database (best: a Neon branch, a copy of the live database you can test on safely)...
+# DATABASE_URL=postgresql://user:password@ep-something.region.aws.neon.tech/neondb?sslmode=require
+
+# ...or the local stand-in (run `node tools/neon-local.mjs` first):
+DATABASE_URL=postgres://local:local@localhost/breachline
+NEON_FETCH_ENDPOINT=http://localhost:4444/sql
+
+OWNER_USERNAME=
+ADMIN_USERNAMES=
+TESTER_USERNAMES=

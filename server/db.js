@@ -1,7 +1,8 @@
-// Database connection. Uses Postgres from DATABASE_URL (Neon / Supabase) when
-// it is set. Without it, falls back to PGlite (Postgres compiled to WebAssembly)
-// stored in .data/, so the game still runs locally with no setup. Both speak
-// the same SQL, so everything else only ever calls db.query(sql, params).
+// Database connection. Uses Neon Postgres from DATABASE_URL when it is set, through Neon's serverless driver
+// (Stage C2): its Pool over a WebSocket on the Node server, and one HTTP request per query in the Cloudflare
+// Worker (server/dbHttp.js). Without DATABASE_URL, falls back to PGlite (Postgres compiled to WebAssembly) stored
+// in .data/, so the game still runs locally with no setup. All speak the same SQL, so everything else only ever
+// calls db.query(sql, params) and gets { rows } back.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -171,14 +172,19 @@ export async function migrateRanks(query) {
   return rows.length;
 }
 
+// BIGINT ids come back as strings by default; they fit comfortably in a JS number.
+const BIGINT = 20;
+const parseBigint = (v) => (v === null ? null : Number(v));
+
 /** Returns { query(sql, params) -> { rows }, kind: 'postgres' | 'local' }. */
 export async function openDatabase() {
   let db;
   if (process.env.DATABASE_URL) {
-    const { default: pg } = await import('pg');
-    // BIGINT ids come back as strings by default; they fit comfortably in a JS number.
-    pg.types.setTypeParser(20, (v) => Number(v));
-    const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, max: 5, idleTimeoutMillis: 30000 });
+    const { Pool, neonConfig, types } = await import('@neondatabase/serverless');
+    const { default: WebSocket } = await import('ws');
+    neonConfig.webSocketConstructor = WebSocket;   // Node has no WebSocket the driver can use by itself
+    types.setTypeParser(BIGINT, parseBigint);
+    const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 5, idleTimeoutMillis: 30000 });
     pool.on('error', (err) => console.error('Database connection error:', err.message));
     db = { kind: 'postgres', query: (sql, params) => pool.query(sql, params) };
   } else {
