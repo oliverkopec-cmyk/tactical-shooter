@@ -10,7 +10,17 @@ export class Network {
     this.serverOffset = null; // estimate of (server clock - local clock) in ms
     this.ping = 0;
 
-    this.socket.on('snapshot', (snap) => this.trackClock(snap.t));
+    // Snapshots arrive trimmed and as changes only (server/snapshots.js): put each back together into the full
+    // picture before anything else sees it.
+    this.snapListeners = [];
+    this.snapState = null;
+    this.lastSnapAt = -1e9;
+    this.socket.on('snapshot', (msg) => {
+      this.lastSnapAt = performance.now();
+      const snap = this.decodeSnapshot(msg);
+      this.trackClock(snap.t);
+      for (const fn of this.snapListeners) fn(snap);
+    });
     setInterval(() => this.measurePing(), 2000);
   }
 
@@ -46,7 +56,30 @@ export class Network {
   }
 
   on(event, fn) {
-    this.socket.on(event, fn);
+    if (event === 'snapshot') this.snapListeners.push(fn);
+    else this.socket.on(event, fn);
+  }
+
+  /**
+   * A snapshot message -> { t, players, cap, df, drones, grenades }, as complete as if the whole thing had been sent.
+   * k: a full copy. Otherwise each player entry holds only what changed (null: the field has gone), and the other
+   * parts are only there when they changed. Every entry is a new object, since remote players keep them in a buffer.
+   */
+  decodeSnapshot(msg) {
+    if (msg.k || !this.snapState) this.snapState = { players: new Map(), cap: null, df: undefined, drones: [], grenades: [] };
+    const st = this.snapState;
+    const players = msg.p.map((d) => {
+      const prev = msg.k ? null : st.players.get(d.id);
+      const cur = prev ? { ...prev } : {};
+      for (const k in d) { if (d[k] === null) delete cur[k]; else cur[k] = d[k]; }
+      return cur;
+    });
+    st.players = new Map(players.map((p) => [p.id, p]));
+    if ('cap' in msg) st.cap = msg.cap;
+    if ('df' in msg) st.df = msg.df;
+    if ('dr' in msg) st.drones = msg.dr || [];
+    if ('gr' in msg) st.grenades = msg.gr || [];
+    return { t: msg.t, players, cap: st.cap, df: st.df, drones: st.drones, grenades: st.grenades };
   }
 
   request(event, payload) {
@@ -113,7 +146,8 @@ export class Network {
   }
 
   measurePing() {
-    if (!this.socket.connected) return;
+    // Only shown in a match: in the menus (no snapshots for a while) nothing is sent
+    if (!this.socket.connected || performance.now() - this.lastSnapAt > 3000) return;
     const start = performance.now();
     this.socket.volatile.emit('netPing', () => { this.ping = Math.round(performance.now() - start); });
   }

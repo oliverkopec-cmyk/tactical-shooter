@@ -8,9 +8,9 @@ export const ROOM_CODE_LENGTH = 4;
 export const MAX_NAME_LENGTH = 16;
 
 // Networking
-export const SNAPSHOT_RATE = 20;          // server -> client snapshots per second
+export const SNAPSHOT_RATE = 15;          // server -> client snapshots per second (each one only carries what changed)
 export const INPUT_SEND_RATE = 30;        // client -> server input batches per second
-export const INTERP_DELAY_MS = 100;       // remote players are rendered this far in the past
+export const INTERP_DELAY_MS = 120;       // remote players are rendered this far in the past (two snapshots at 15 a second, with room for a late one)
 export const MAX_INPUT_DT = 0.05;         // longest single simulation step accepted (s)
 export const MAX_TIME_BUDGET = 0.25;      // how far ahead of real time a client may simulate (s)
 

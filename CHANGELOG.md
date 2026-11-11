@@ -6,9 +6,14 @@ the list from the menu.
 
 Format: `## <id> · <date> · <title>`, then one bullet per change. The id has to be unique and is what the game remembers.
 
+## data-1 · 2026-11-11 · The game uses much less data
+- Matches now use about 100 times less internet data, so the server stays within its monthly limit. Players move just as smoothly.
+- The game loads faster: its files are compressed and kept by your browser between visits.
+- Christmas presents now start on 1 December, one a day until Christmas Eve. The Christmas tab, the countdown and the Christmas crate still open on 20 November.
+
 ## M-Q · 2026-11-05 · Christmas, new ranks, new characters, attachments and shield bash
 - Christmas is coming: from 20 November to 2 January (Sydney time) there's a colourful Christmas tab with a cozy fireplace room, a countdown and a snowy rooftop.
-- A new present under the tree every day: Money, Christmas charms or Christmas crates, and from 18 to 24 December a limited skin you can't get any other way. Crates wait in your Christmas inventory until you open them. Everything you get stays yours after the event.
+- From 1 December, a new present under the tree every day: Money, Christmas charms or Christmas crates, and from 18 to 24 December a limited skin you can't get any other way. Crates wait in your Christmas inventory until you open them. Everything you get stays yours after the event.
 - Winning a match now pays an extra 800 Money, and there's no daily Money cap any more. There's still no win bonus in matches with bots.
 - New ranks with no tiers: Bronze, Silver, Gold, Platinum, Diamond and Champion, each with its own emblem. Every climb takes 200 points, and Champion takes 500. You keep your rank and how far through it you were.
 - A new Limited rarity for skins that are only around for a short time.

@@ -3,7 +3,7 @@
 // reloads, and the feet step along the ground in the direction of travel.
 
 import * as THREE from 'three';
-import { TEAM_COLORS, LEAN_OFFSET, STAND_EYE, STAND_HEIGHT } from '../../shared/constants.js';
+import { TEAM_COLORS, LEAN_OFFSET, STAND_EYE, STAND_HEIGHT, SNAPSHOT_RATE } from '../../shared/constants.js';
 import { PRONE_BODY } from '../../shared/raycast.js';
 import { bodyHeight } from '../../shared/movement.js';
 import { makeGunModel, animateGun } from './weapons.js';
@@ -369,6 +369,10 @@ export class RemotePlayer {
     const present = s.alive !== false && !s.u;
     if (present && !this.alive) this.buffer.length = 0;
     this.alive = present;
+    // Nothing is sent while nobody moves: after a quiet spell, repeat the last pose just before this one, so a player
+    // who starts moving isn't drawn sliding over the whole gap
+    const last = this.buffer[this.buffer.length - 1];
+    if (last && t - last.t > 250) this.buffer.push({ t: t - 1000 / SNAPSHOT_RATE, s: last.s });
     this.buffer.push({ t, s });
     const cutoff = t - BUFFER_MS;
     while (this.buffer.length > 2 && this.buffer[0].t < cutoff) this.buffer.shift();

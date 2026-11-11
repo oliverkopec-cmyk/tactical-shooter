@@ -31,6 +31,7 @@ import { VOICE_LINES, VOICE_COOLDOWN, PING_TYPES, PING } from '../shared/voiceLi
 import { RoundManager } from './rounds.js';
 import { Gadgets } from './abilities.js';
 import { Placing } from './placing.js';
+import { SnapshotSender } from './snapshots.js';
 import { DownedPlayers } from './downed.js';
 import { PLACE_SLOW } from '../shared/placing.js';
 
@@ -46,6 +47,7 @@ export class GameState {
     this.destruction = new Destruction(this);
     this.mode = room.mode || 'standard';
     this.killcam = new KillcamRecorder();   // last few seconds of everyone, for the killcam
+    this.snapshots = new SnapshotSender(this);   // each player's trimmed copy of the snapshot (server/snapshots.js)
     this.bots = new BotBrains(this);        // drives any bot players (server/bots.js)
     this.withBots = room.hasBots;
     this.defuser = new Defuser(this);
@@ -142,6 +144,7 @@ export class GameState {
     }
     if (leaving) this.defuser.onGone(id, leaving);
     this.killcam.forget(id);
+    this.snapshots.forget(id);
     this.bots.forget(id);   // a leaving carrier drops the defuser
     this.players.delete(id);
     this.revealed.attack.delete(id);
@@ -1169,20 +1172,19 @@ export class GameState {
         x: s.x, y: s.y, z: s.z, vx: s.vx, vy: s.vy, vz: s.vz, yaw: s.yaw, pitch: s.pitch, g: s.onGround, jc: round2(s.jumpCd || 0),
       });
     }
-    // Each team gets its own copy: an enemy's operator and gun are left out until that team has seen them
+    // Each team may only know what it has seen: an enemy's operator and gun are left out until then, and detected
+    // defenders are marked for the attackers only. Each player, and each member of staff watching, then gets their
+    // own trimmed copy with only what changed (server/snapshots.js).
     const t = Date.now(), grenades = this.gadgets.snapshotGrenades();
-    const forTeam = {};
-    for (const team of ['attack', 'defense']) {
-      // Detected defenders are marked for the attackers only
-      forTeam[team] = { df: this.mode === 'defuser' ? this.defuser.view(team, t) : undefined, t, players: players.map((e) => {
-        const q = this.players.get(e.id);
-        let shown = this.canSee(team, q) ? e : { ...e, o: undefined, w: undefined };
-        if (e.dn && q.member.team !== team) shown = { ...shown, dn: 1, rv: undefined, rb: undefined };   // the other side sees them on the floor, not how long they have
-        return team === 'attack' || !e.det ? shown : { ...shown, det: undefined };
-      }), cap, drones, grenades };
-    }
-    for (const [id, p] of this.players) this.io.to(id).volatile.emit('snapshot', forTeam[p.member.team]);
-    if (this.room.spectators.size) this.io.to(this.room.spectatorChannel).volatile.emit('snapshot', { df: this.mode === 'defuser' ? this.defuser.view('spectator', t) : undefined, t, players, cap, drones, grenades });
+    const viewFor = (team, e) => {   // ('spectator' sees everything)
+      const q = this.players.get(e.id);
+      let shown = this.canSee(team, q) ? e : { ...e, o: undefined, w: undefined };
+      if (e.dn && team !== 'spectator' && q.member.team !== team) shown = { ...shown, dn: 1, rv: undefined, rb: undefined };   // the other side sees them on the floor, not how long they have
+      return team !== 'defense' || !e.det ? shown : { ...shown, det: undefined };
+    };
+    const tops = {};
+    const topsFor = (team) => (tops[team] ||= { cap, df: this.mode === 'defuser' ? this.defuser.view(team, t) : undefined, drones, grenades });   // team may be 'spectator'
+    this.snapshots.send(t, players, viewFor, topsFor);
   }
 
   /** Everything a client needs to (re)build the round. Hidden gadgets are filtered by team. */
