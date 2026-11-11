@@ -53,8 +53,8 @@ A Christmas event that turns itself on and off by date (`shared/christmas.js`, `
 
 | When (Sydney) | What happens |
 |---|---|
-| 20 November 00:00 | Christmas tab and room, snowy rooftop, countdown, Christmas crate and the first present begin |
-| 20 November to 17 December | One present a day: 50% Money (1,000-1,250), 30% a Christmas charm you don't have, 20% a Christmas crate (sent to the inventory) |
+| 20 November 00:00 | Christmas tab and room, snowy rooftop, countdown and Christmas crate begin (no presents yet) |
+| 1 to 17 December | One present a day (the first on 1 December): 50% Money (1,000-1,250), 30% a Christmas charm you don't have, 20% a Christmas crate (sent to the inventory) |
 | 18 to 24 December | One present a day: 1,500 Money and that day's limited skin, a different one each day |
 | 25 December 00:00 | The countdown says "Merry Christmas!" and stays that way until the end |
 | 3 January 00:00 | Theme, room, countdown, buying crates and unclaimed presents disappear. Everything players got stays owned |
@@ -112,6 +112,21 @@ The Shop tab is rebuilt (`client/src/shopView.js`, the rules in `shared/shop.js`
 Resolution never goes above the screen's own pixel ratio (a 200% choice on a normal screen is 100%). The **FPS counter** (also shows ping and unacked inputs) can be shown or hidden. **Anti-aliasing is chosen when the page loads**, so changing it shows a "Reload now" button. Everything else applies at once, in the menu's rooftop scene and in matches (`Game.applyGraphics()`); the table's numbers are in `PRESETS`, `DISTANCES`, `SHADOWS` and `EFFECT_LEVELS` in `graphics.js`.
 
 **What's new.** `CHANGELOG.md` in the repo root is bundled into the game when it is built (`client/src/whatsNew.js`). Each entry is `## <id> · <date> · <title>` followed by `- plain English bullets`. The first time an account logs in after an update, a pop-up shows the entries it hasn't seen (up to 5, or just the newest if it never saw any); closing it saves the newest id on the account (the `lastSeenUpdate` setting, so it follows the account to other devices). **What's new** in the top bar reopens the latest entries any time.
+
+### Network and bandwidth (keeping within Render's 5 GB a month)
+
+Render's Hobby workspace includes 5 GB of outbound traffic a month, and WebSocket traffic counts. Before this work a player received about 85 KB/s, about 300 MB an hour, nearly all of it snapshots. Now it is about 2-4 MB an hour (measured in 10-player matches of bots on Dockside, Villa and Lodge, both modes):
+
+- **Compression** (`perMessageDeflate` in `server/index.js`): every message over 64 bytes is compressed by the browser's built-in WebSocket compression, with a running dictionary per connection. About 300 KB of server memory per connected player.
+- **Each player gets their own trimmed snapshot** (`server/snapshots.js`, rebuilt by `decodeSnapshot` in `client/src/network.js`):
+    - Numbers are rounded: 4 decimals for your own player (0.0001 m is below the collision code's tolerance, so a rounded position is never inside a wall), 1 cm and 0.001 rad for everyone else, who is only drawn.
+    - Ammo, recoil, cooldowns, timers and the input number only go to the player they belong to. Others get the gun and how far through a reload. Health only goes to your own team.
+    - Only what changed is sent, and a field that goes away is sent as null. Nothing is sent when nothing changed (a heartbeat goes once a second), and a change in just your input number doesn't count. A full copy goes every 2 seconds.
+    - A snapshot is only queued when the connection can take it, and the next one is worked out from what was actually queued, so a skipped one never loses a change.
+    - Staff watching a match get the same treatment, seeing both teams.
+- **15 snapshots a second** (`SNAPSHOT_RATE`), down from 20. Remote players are drawn 120 ms in the past (`INTERP_DELAY_MS`, was 100), so a late snapshot still has room. After a quiet spell the last pose is repeated just before the new one, so nobody slides across the gap.
+- **Menus, dead players, pre-round screens:** dead players get only "dead" about themselves. While nothing moves (pre-round screens, round end), only the once-a-second heartbeat goes out. The ping measurement stops when no snapshots have come for 3 seconds (the menus).
+- **Game files** (`server/staticFiles.js`, `tools/precompress.mjs`, run by `npm run build`): Brotli and gzip copies are made at build time, and the smallest one the browser accepts is sent (1.4 MB of code becomes 335 KB). Files in `/assets` have a hash in their name and are cached for a year. `index.html` is checked each time, so a new version is picked up at once.
 
 ### Changelog: every merged pull request adds an entry
 Add an entry at the top of `CHANGELOG.md` in the same pull request (plain English, written for players, a new unique id like `2K`). It reaches players when the pull request is merged and deployed, because the file is built into the page.

@@ -6,6 +6,11 @@ the list from the menu.
 
 Format: `## <id> · <date> · <title>`, then one bullet per change. The id has to be unique and is what the game remembers.
 
+## data-1 · 2026-11-11 · The game uses much less data
+- Matches now use about 100 times less internet data, so the server stays within its monthly limit. Players move just as smoothly.
+- The game loads faster: its files are compressed and kept by your browser between visits.
+- Christmas presents now start on 1 December, one a day until Christmas Eve. The Christmas tab, the countdown and the Christmas crate still open on 20 November.
+
 ## 2L · 2026-11-04 · Two new maps
 - New map: Hillside Villa, a two-storey villa on a hill with a winding drive, gardens, a pool and a brick core. Attackers can start at the bottom of the drive and fight their way up.
 - New map: Pinecrest Lodge, a timber lodge in the pine woods above its own car park, with stone steps, a balcony, a big stone fireplace and a woodshed.

@@ -465,7 +465,7 @@ export class Menu {
     const el = $('xmas-dev'), show = !!this.getAccount()?.devTools && !!this.christmas;
     el.classList.toggle('hidden', !show);
     if (!show || el.childElementCount) return;
-    const dates = [['-', 'Choose a date...'], ['', 'Today'], ['2026-11-19T23:59:50', '19 Nov, 10 s before it starts'], ['2026-11-20T12:00:00', '20 Nov, first present'], ['2026-12-17T12:00:00', '17 Dec, last random day'], ['2026-12-18T12:00:00', '18 Dec, first skin day'], ['2026-12-24T23:59:50', '24 Dec, 10 s to Christmas'], ['2026-12-28T12:00:00', '28 Dec'], ['2027-01-02T23:59:50', '2 Jan, 10 s before the end']];
+    const dates = [['-', 'Choose a date...'], ['', 'Today'], ['2026-11-19T23:59:50', '19 Nov, 10 s before it starts'], ['2026-11-20T12:00:00', '20 Nov, event starts (no presents yet)'], ['2026-11-30T23:59:50', '30 Nov, 10 s before the first present'], ['2026-12-01T12:00:00', '1 Dec, first present'], ['2026-12-17T12:00:00', '17 Dec, last random day'], ['2026-12-18T12:00:00', '18 Dec, first skin day'], ['2026-12-24T23:59:50', '24 Dec, 10 s to Christmas'], ['2026-12-28T12:00:00', '28 Dec'], ['2027-01-02T23:59:50', '2 Jan, 10 s before the end']];
     el.innerHTML = `<span class="muted small-note">Local test database only: pretend it is</span>
       <select id="xmas-dev-date">${dates.map(([v, label]) => `<option value="${v}">${label}</option>`).join('')}</select>
       <button type="button" class="ghost small" id="xmas-dev-reset">Forget my presents</button>`;

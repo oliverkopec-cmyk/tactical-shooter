@@ -12,10 +12,10 @@ const DAY = 24 * 60 * 60 * 1000;
 const sydney = (date) => Date.parse(`${date}T00:00:00+11:00`);
 
 export const CHRISTMAS = {
-  themeFrom: sydney('2026-11-20'),    // the menu theme, countdown and crate start, and so do the presents
+  themeFrom: sydney('2026-11-20'),    // the menu theme, Christmas tab, countdown and crate start
   day: sydney('2026-12-25'),          // Christmas Day: the countdown reaches zero
   themeUntil: sydney('2027-01-03'),   // the end of 2 January: everything goes, and what you got stays yours
-  presentDays: 35,                    // the first present is 35 days before Christmas, the last on Christmas Eve
+  presentDays: 24,                    // the first present is 24 days before Christmas (1 December), the last on Christmas Eve
   skinDays: 7,                        // the last 7 presents hold a limited skin and skinMoney
   skinMoney: 1500,
   money: { min: 1000, max: 1250, step: 50 },
@@ -47,7 +47,7 @@ export function christmasCrateItems() {
 /** The menu theme, countdown and crate are on. */
 export const christmasOn = (now) => now >= CHRISTMAS.themeFrom && now < CHRISTMAS.themeUntil;
 
-/** Whole days until Christmas, counting today: 35 all day on 20 November, 1 on Christmas Eve, 0 or less from Christmas Day. */
+/** Whole days until Christmas, counting today: 35 all day on 20 November, 24 on 1 December, 1 on Christmas Eve, 0 or less from Christmas Day. */
 export const daysBefore = (now) => Math.ceil((CHRISTMAS.day - now) / DAY);
 
 /** The presents that have opened by now (a day number each, oldest first). Missed days stay open until the event ends. */

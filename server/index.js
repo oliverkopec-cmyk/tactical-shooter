@@ -13,6 +13,7 @@ import { Admin } from './admin.js';
 import { Gifts } from './gifts.js';
 import { Christmas } from './christmas.js';
 import { Moderation } from './moderation.js';
+import { staticFiles } from './staticFiles.js';
 
 // Local secrets (e.g. DATABASE_URL) can live in a .env file, which git ignores.
 try { process.loadEnvFile(); } catch { /* no .env file */ }
@@ -28,13 +29,17 @@ const app = express();
 app.set('trust proxy', 1); // Render sits behind one proxy: lets req.ip / req.secure see the real client
 app.get('/healthz', (_req, res) => res.send('ok'));
 app.use('/api', accounts.router());
-app.use(express.static(DIST));
+app.use(staticFiles(DIST));
 
 const server = http.createServer(app);
 const io = new Server(server, {
   // Same origin in production; Vite proxies in development.
   pingInterval: 10000,
   pingTimeout: 8000,
+  // Compress every message bigger than a few bytes (permessage-deflate, which browsers do natively). Snapshots
+  // repeat the same names and numbers all the time, so each connection's running dictionary makes them tiny. This
+  // is most of the bandwidth saving. Memory: about 300 KB per connected player.
+  perMessageDeflate: { threshold: 64 },
 });
 
 const rooms = new RoomManager(io, accounts.progression, accounts.social);
