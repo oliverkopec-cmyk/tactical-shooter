@@ -8,7 +8,7 @@
 //     it is and how far through a reload (for the animation). Health is only sent for your own team.
 //   - Only fields that changed are sent, and nothing at all if nothing changed (a heartbeat goes once a second).
 //     A field that disappears is sent as null. A full copy goes every 2 seconds anyway, so nothing can drift.
-//   - A snapshot is only queued when the connection can take it (like Socket.IO's volatile), and the baseline is what
+//   - A snapshot is only queued when the connection can take it (like Socket.IO's volatile used to), and the baseline is what
 //     was actually queued, so a skipped one never leaves a client missing a change.
 
 const KEYFRAME_MS = 2000;

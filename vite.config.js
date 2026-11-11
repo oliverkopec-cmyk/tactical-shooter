@@ -16,7 +16,7 @@ export default defineConfig(({ command }) => ({
     // Client imports ../shared
     fs: { allow: ['..'] },
     proxy: {
-      '/socket.io': { target: 'http://localhost:3000', ws: true },
+      '/ws': { target: 'ws://localhost:3000', ws: true },
       '/api': 'http://localhost:3000',
     },
   },

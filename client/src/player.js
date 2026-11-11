@@ -3,7 +3,7 @@
 // authoritative server snapshots.
 
 import {
-  KEY, MAX_INPUT_DT, INPUT_SEND_RATE, LEAN_ROLL, FEEL, WALK_SPEED,
+  KEY, MAX_INPUT_DT, LEAN_ROLL, FEEL, WALK_SPEED,
 } from '../../shared/constants.js';
 import { stepDrone, copyDroneState, droneEye, DRONE_KEYS } from '../../shared/drone.js';
 import { createPlayerState, copyPlayerState, stepPlayer, getEyePosition, weaponInput, rightVec } from '../../shared/movement.js';
@@ -77,7 +77,6 @@ export class LocalPlayer {
     this.seq = 0;
     this.pending = [];   // inputs sent but not yet acknowledged by the server
     this.outbox = [];    // inputs waiting for the next network send
-    this.sendTimer = 0;
     this.smoothing = { x: 0, y: 0, z: 0 }; // visual offset that hides small corrections
     this.droneSmoothing = { x: 0, y: 0, z: 0 }; // the same for the drone you're piloting
     // Camera feel (visual only): head bob in step with your footsteps, and a springy dip when you stop or land a vault
@@ -235,11 +234,8 @@ export class LocalPlayer {
     }
     this.tapped = 0;
 
-    this.sendTimer += frameDt;
-    if (this.sendTimer >= 1 / INPUT_SEND_RATE && this.outbox.length) {
-      this.sendTimer = 0;
-      this.network.sendInputs(this.outbox.splice(0, 30));
-    }
+    // The network sends them in batches, about 7 a second (client/src/network.js)
+    if (this.outbox.length) this.network.sendInputs(this.outbox.splice(0));
 
     // Recoil settles back toward the point of aim, slower while still firing.
     this.recoil.update(frameDt, this.weapon.id, firingHeld);
@@ -290,9 +286,9 @@ export class LocalPlayer {
     }
   }
 
-  /** Flush pending inputs first so the server judges the action with our latest aim. */
+  /** Inputs made so far go first in the batch, so the server judges the action with our latest aim. */
   sendAction(type) {
-    if (this.outbox.length) this.network.sendInputs(this.outbox.splice(0, 30));
+    if (this.outbox.length) this.network.sendInputs(this.outbox.splice(0));
     this.network.sendAction(type);
     this.onAction?.(type);
   }

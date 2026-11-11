@@ -6,6 +6,10 @@ the list from the menu.
 
 Format: `## <id> · <date> · <title>`, then one bullet per change. The id has to be unique and is what the game remembers.
 
+## C1 · 2026-11-11 · A lighter connection to the server
+- The game talks to the server in a new, lighter way, ready for its move to a new home. It sends far fewer messages, and nothing at all while you're in the menus or waiting to respawn.
+- Everything plays the same: other players still move smoothly.
+
 ## data-1 · 2026-11-11 · The game uses much less data
 - Matches now use about 100 times less internet data, so the server stays within its monthly limit. Players move just as smoothly.
 - The game loads faster: its files are compressed and kept by your browser between visits.
