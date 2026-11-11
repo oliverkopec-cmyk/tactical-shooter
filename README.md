@@ -34,6 +34,10 @@ pieces the Cloudflare Worker needs and runs them on Render too.
   bcrypt hash) and the two lines from `.dev.vars.example`. It answers Neon's HTTP protocol from a PGlite in
   `.data/neon-local`.
 
+To play through the Worker's API: run `npm run worker:dev`, then in another terminal
+`API_TARGET=http://localhost:8787 npm run dev`. The page at http://localhost:5173 then sends `/api` to the Worker and
+the game connection to the Node server. Give both the same database (`.dev.vars` and `.env`), so one login works for both.
+
 ### Earlier: Stage C1 (plain WebSockets instead of Socket.IO)
 
 The first step of moving from Render to Cloudflare (Stage C0, `cloudflare-test/`, showed the free plan can run it).
