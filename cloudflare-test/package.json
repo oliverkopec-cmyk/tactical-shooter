@@ -1,0 +1,19 @@
+{
+  "name": "breachline-c0-test",
+  "private": true,
+  "type": "module",
+  "description": "Stage C0: can Breachline run on Cloudflare Workers Free? A throwaway test Worker, not part of the game.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail --format pretty",
+    "bench": "node --expose-gc bench.mjs",
+    "load": "node load.mjs"
+  },
+  "dependencies": {
+    "bcryptjs": "3.0.3"
+  },
+  "devDependencies": {
+    "wrangler": "4.153.0"
+  }
+}

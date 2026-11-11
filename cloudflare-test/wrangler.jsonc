@@ -1,0 +1,17 @@
+// Stage C0 test Worker. Deploys as its own Worker ("breachline-c0-test"), separate from anything the game uses.
+// Delete it when the test is done: `npx wrangler delete` from this folder.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "breachline-c0-test",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-09-01",
+  // The game code reads process.env (TIME_SCALE, roles): nodejs_compat provides process.
+  "compatibility_flags": ["nodejs_compat"],
+  "durable_objects": {
+    "bindings": [{ "name": "MATCH", "class_name": "MatchTest" }]
+  },
+  // Workers Free only allows Durable Objects with the SQLite storage backend
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["MatchTest"] }],
+  // Invocation logs in the dashboard (CPU time and outcome per event). Sampled, to stay well inside the free log quota.
+  "observability": { "enabled": true, "head_sampling_rate": 0.05 }
+}
