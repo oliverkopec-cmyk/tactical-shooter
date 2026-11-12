@@ -16,9 +16,12 @@ export default defineConfig(({ command }) => ({
     // Client imports ../shared
     fs: { allow: ['..'] },
     proxy: {
-      '/ws': { target: 'ws://localhost:3000', ws: true },
+      // REALTIME_TARGET: another Node server for the main connection (default: the one npm run dev starts)
+      '/ws': { target: (process.env.REALTIME_TARGET || 'http://localhost:3000').replace(/^http/, 'ws'), ws: true },
       // API_TARGET=http://localhost:8787 sends the API to the Cloudflare Worker (npm run worker:dev) instead
       '/api': process.env.API_TARGET || 'http://localhost:3000',
+      // Cloudflare match rooms (Stage C3): only the Worker has them
+      '/room': { target: (process.env.API_TARGET || 'http://localhost:3000').replace(/^http/, 'ws'), ws: true },
     },
   },
 }));

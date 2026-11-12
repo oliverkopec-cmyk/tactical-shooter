@@ -103,6 +103,15 @@ ui.bindAuth({
 async function createRoom() {
   ui.homeError('');
   if (!(await network.ensureConnected())) return ui.homeError(outdated || 'Could not connect to the server.');
+  if (network.rooms === 'worker') {
+    // Rooms on Cloudflare (Stage C3): claim a code, then connect to that room's own Durable Object.
+    // (Bringing a party along comes with Stage C4.)
+    const made = await fetch('/api/rooms', { method: 'POST', credentials: 'same-origin' }).then((r) => r.json()).catch(() => ({}));
+    if (!made.ok) return ui.homeError(made.error || 'Could not create room.');
+    const res = await network.openRoom(made.code);
+    if (!res.ok) return ui.homeError(res.error || 'Could not create room.');
+    return;
+  }
   const res = await network.request('createRoom');
   if (!res.ok) return ui.homeError(res.error || 'Could not create room.');
 }
@@ -113,7 +122,7 @@ ui.bindHome({
     ui.homeError('');
     if (ui.code.length !== 4) return ui.homeError('Enter a 4-letter room code.');
     if (!(await network.ensureConnected())) return ui.homeError(outdated || 'Could not connect to the server.');
-    const res = await network.request('joinRoom', { code: ui.code });
+    const res = network.rooms === 'worker' ? await network.openRoom(ui.code) : await network.request('joinRoom', { code: ui.code });
     if (!res.ok) return ui.homeError(res.error || 'Could not join room.');
   },
 });
@@ -191,6 +200,14 @@ network.on('announcement', (a) => ui.showAnnouncement(a));
 network.on('matchSummary', (summary) => ui.showMatchSummary({ ...summary, name: account?.username, owner: !!account?.owner, tester: !!account?.tester, reportable: game.reportablePlayers() }));
 
 network.on('sessionReplaced', () => { replaced = true; });
+// A Cloudflare room's connection dropped (the main one may still be fine): back to the menu
+network.on('roomClosed', (why) => {
+  if (!room) return;
+  room = null;
+  game.stop();
+  ui.show('home');
+  ui.homeError(why === 'replaced' ? 'You joined that room from another tab, so this one left it.' : 'Disconnected from the room.');
+});
 // The owner warned us (while we were in the menu), or suspended or banned us (we are disconnected)
 network.on('warnings', ({ warnings: list }) => warnings.show(list));
 network.on('sanctioned', ({ message }) => { if (account) leaveAccount(message); });
@@ -218,6 +235,7 @@ function onOutdated() {
 
 network.on('disconnect', (reason) => {
   if (!account || reason === 'io client disconnect') return;
+  if (network.inCloudRoom) return;   // the menu connection dropped, but a Cloudflare room has its own: keep playing
   const message = replaced ? 'This account logged in from another tab or device, so this one was disconnected.'
     : room ? 'Disconnected from the server.' : '';
   replaced = false;
@@ -231,6 +249,7 @@ network.on('disconnect', (reason) => {
 
 getSession().then((res) => {
   ui.showStorageWarning(res.storage === 'local');
+  network.rooms = res.rooms === 'worker' ? 'worker' : 'node';   // the Cloudflare Worker's rooms are Durable Objects
   if (res.account) enterAccount(res.account);
   else {
     ui.show('auth');

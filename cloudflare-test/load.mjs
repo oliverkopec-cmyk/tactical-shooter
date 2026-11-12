@@ -15,7 +15,8 @@
 //            Worker still answers. Settles whether 20 incoming WebSocket messages count as 1 request on Free.
 //            Read the warning in README.md before running it.
 //
-// Other options: --clients 10 --rate 7 --seconds 300 --room <name> --no-bots --total 105000
+// Other options: --clients 10 --rate 7 --seconds 300 --room <name> --no-bots --map villa --total 105000
+//                --keepalive 10 (silent: one tiny message every 10 s) --rehome (silent: loop restarted from an alarm)
 
 const arg = (name, def) => {
   const i = process.argv.indexOf(`--${name}`);
@@ -31,6 +32,9 @@ const SECONDS = Number(arg('seconds', TEST === 'idle' ? 60 : TEST === 'silent' ?
 const TOTAL = Number(arg('total', 105_000));
 const ROOM = arg('room', `${TEST}-${Date.now().toString(36)}`);
 const FILL = !flag('no-bots');
+const MAP = arg('map', null);
+const KEEPALIVE = Number(arg('keepalive', 0));   // silent test: still send one tiny message every this many seconds
+const REHOME = flag('rehome');                  // ask the object to restart its loop from an alarm every 15 s   // e.g. villa: a detailed map, about twice the CPU of dockside
 const WS_BASE = BASE.replace(/^http/, 'ws');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -104,7 +108,7 @@ const progress = setInterval(() => {
 }, 15_000);
 
 if (TEST === 'play' || TEST === 'silent') {
-  send(open[0], { t: 'start', fill: FILL });
+  send(open[0], { t: 'start', fill: FILL, rehome: REHOME, ...(MAP ? { map: MAP } : {}) });
   await sleep(1500);
   console.log('Match:', JSON.stringify(open[0].started));
 }
@@ -121,6 +125,7 @@ if (TEST === 'play') {
   }
   await sleep(SECONDS * 1000);
 } else if (TEST === 'silent' || TEST === 'idle') {
+  if (KEEPALIVE > 0) for (const c of open) timers.push(setInterval(() => send(c, { t: 'x' }), KEEPALIVE * 1000));
   await sleep(SECONDS * 1000);
   const mid = (await getJson(`/room/${ROOM}/stats`)).body;
   console.log(`After ${SECONDS}s of silence: wakes ${mid.wakes - (before.wakes || 0)} (the stats request itself may wake it), ticks ${mid.ticks}, late ticks ${mid.lateTicks}, sockets open ${mid.current?.socketsOpen}, match running ${mid.current?.running}`);
@@ -160,7 +165,7 @@ console.log(JSON.stringify({
   durableObject: after.status === 200 ? {
     msgsInCounted: s.msgsIn, ticks: s.ticks, lateTicks: s.lateTicks, maxTickGapMs: s.maxTickGapMs,
     tickRatePerWindow: tickRates.length ? { min: +Math.min(...tickRates).toFixed(1), max: +Math.max(...tickRates).toFixed(1) } : null,
-    wakes: s.wakes, matchesStarted: s.matchesStarted, closeCodes: s.closeCodes, errors: s.errors, current: s.current,
+    wakes: s.wakes, alarms: s.alarms, rehome: s.rehome, matchesStarted: s.matchesStarted, closeCodes: s.closeCodes, errors: s.errors, current: s.current,
   } : { status: after.status, body: after.body },
 }, null, 2));
 

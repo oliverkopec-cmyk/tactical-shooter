@@ -34,8 +34,9 @@ export class RoomManager {
     throw new Error('No free room codes');
   }
 
-  createRoom() {
-    const room = new Room(this.io, this.generateCode(), () => this.rooms.delete(room.code), this.progression, this.social);
+  /** code: a Cloudflare match room passes its own (it is the Durable Object's name); otherwise a free one is made. */
+  createRoom(code = this.generateCode()) {
+    const room = new Room(this.io, code, () => this.rooms.delete(room.code), this.progression, this.social);
     this.rooms.set(room.code, room);
     return room;
   }

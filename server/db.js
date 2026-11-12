@@ -183,6 +183,11 @@ export async function openDatabase() {
     const { Pool, neonConfig, types } = await import('@neondatabase/serverless');
     const { default: WebSocket } = await import('ws');
     neonConfig.webSocketConstructor = WebSocket;   // Node has no WebSocket the driver can use by itself
+    if (process.env.NEON_FETCH_ENDPOINT) {
+      // Local testing with tools/neon-local.mjs (which only speaks HTTP): queries go there as HTTP requests
+      neonConfig.fetchEndpoint = process.env.NEON_FETCH_ENDPOINT;
+      neonConfig.poolQueryViaFetch = true;
+    }
     types.setTypeParser(BIGINT, parseBigint);
     const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 5, idleTimeoutMillis: 30000 });
     pool.on('error', (err) => console.error('Database connection error:', err.message));

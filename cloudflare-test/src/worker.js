@@ -15,18 +15,20 @@
 // CPU test kinds: pbkdf2 (n = iterations, max 100000), bcrypt (checks a cost-11 hash, like the game's passwords
 // today), spin (n = millions of loop steps).
 //
-// Messages from a client (JSON): {t:'start', fill:true} | {t:'in', b:[inputs...], p:<time>} | {t:'ping', p:<time>}
+// Messages from a client (JSON): {t:'start', fill:true, map:'villa', rehome:false} | {t:'in', b:[inputs...], p:<time>} | {t:'ping', p:<time>}
 //                                | {t:'x'} (does nothing: for counting) | {t:'stop'}
 // Messages to a client: JSON [event, payload], the same events the game sends today.
 
 import { DurableObject } from 'cloudflare:workers';
 import bcrypt from 'bcryptjs';
 import { GameState } from '../../server/gameState.js';
+import { MAP_IDS } from '../../shared/map.js';
 import { TestMatch } from './harness.js';
 
 // bcrypt of "breachline-test" at cost 11, the cost server/accounts.js uses today
 const BCRYPT_TEST_HASH = '$2b$11$S2HtOD1CYO3JO/8o6gSyOeOM3QsIN3/.MpQ5Ij24CyH/IXSK35vue';
 const SAVE_EVERY_MS = 10_000;
+const REHOME_MS = 15_000;          // with {t:'start', rehome:true}: restart the loop from an alarm this often
 const WINDOWS_KEPT = 90;          // 15 minutes of 10-second windows
 const LATE_TICK_MS = 40;          // a gap this long between ticks means the loop fell behind (60 Hz is 16.7 ms)
 const MAX_MESSAGE_BYTES = 64 * 1024;
@@ -214,8 +216,13 @@ export class MatchTest extends DurableObject {
       } else if (msg.t === 'ping') {
         ws.send(JSON.stringify(['pong', msg.p ?? null]));
       } else if (msg.t === 'start') {
+        if (typeof msg.map === 'string' && !match.running && MAP_IDS.includes(msg.map)) match.room.mapId = msg.map;
         const res = match.start({ fill: msg.fill !== false });
         if (res.ok && !res.already) this.stats.matchesStarted++;
+        // rehome: restart the loop from an alarm every REHOME_MS, so its CPU always belongs to a fresh invocation
+        this.rehome = !!msg.rehome;
+        this.stats.rehome = this.rehome;
+        if (this.rehome) await this.ctx.storage.setAlarm(Date.now() + REHOME_MS);
         ws.send(JSON.stringify(['started', { ...res, players: match.players, bots: match.bots, map: match.room.mapId }]));
       } else if (msg.t === 'stop') {
         match.stop();
@@ -225,6 +232,24 @@ export class MatchTest extends DurableObject {
       this.note(err.stack || err);
     }
     await this.save();
+  }
+
+  /**
+   * The 60 Hz loop is a setInterval, and Cloudflare charges a timer's CPU to the invocation that created it. One
+   * invocation may use 30 s of CPU, so a loop started by one message dies after 30 s of CPU (about 5 minutes of a
+   * busy match) unless it is restarted. The alarm restarts it here, inside a fresh invocation.
+   */
+  async alarm() {
+    this.stats.alarms = (this.stats.alarms || 0) + 1;
+    const game = this.match?.room.game;
+    if (!this.rehome || !this.match) return;
+    if (game?.timer) {
+      clearInterval(game.timer);
+      game.timer = setInterval(() => game.update(), 1000 / 60);
+    }
+    this.match.watchForEnd();
+    await this.save();
+    await this.ctx.storage.setAlarm(Date.now() + REHOME_MS);
   }
 
   async webSocketClose(ws, code) {

@@ -1,4 +1,4 @@
-// Breachline on Cloudflare Workers (the move from Render: stages C2 to C7). Stage C2: the HTTP API only.
+// Breachline on Cloudflare Workers (the move from Render: stages C2 to C7). So far: the HTTP API (C2), match rooms (C3).
 // Run locally:  npm run worker:dev    Deploy:  npm run worker:deploy    (see "Cloudflare" in README.md)
 // wrangler isn't a dependency (Render would download it on every build): the scripts fetch a fixed version.
 {
@@ -8,10 +8,18 @@
   // The shared server code uses node:crypto and reads its settings from process.env
   "compatibility_flags": ["nodejs_compat"],
   "durable_objects": {
-    "bindings": [{ "name": "PASSWORDS", "class_name": "Passwords" }]
+    "bindings": [
+      { "name": "PASSWORDS", "class_name": "Passwords" },
+      { "name": "MATCH_ROOMS", "class_name": "MatchRoom" }
+    ]
   },
   // Workers Free only allows Durable Objects with the SQLite storage backend
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Passwords"] }],
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["Passwords"] },
+    { "tag": "v2", "new_sqlite_classes": ["MatchRoom"] }
+  ],
+  // The fingerprint of shared/*.js, which pages send when they connect (tools/write-shared-version.mjs)
+  "build": { "command": "node tools/write-shared-version.mjs", "watch_dir": ["shared", "server", "worker"] },
   // Hourly clean-up of expired sessions
   "triggers": { "crons": ["17 * * * *"] },
   "observability": { "enabled": true, "head_sampling_rate": 0.1 }
