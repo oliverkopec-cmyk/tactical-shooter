@@ -1,9 +1,13 @@
-// Breachline on Cloudflare Workers (the move from Render: stages C2 to C7). So far: the HTTP API (C2), match rooms (C3), the central object (C4).
+// Breachline on Cloudflare Workers (the move from Render: stages C2 to C7). So far: the HTTP API (C2), match rooms (C3), the central object (C4), the game's files (C5).
 // Run locally:  npm run worker:dev    Deploy:  npm run worker:deploy    (see "Cloudflare" in README.md)
 // wrangler isn't a dependency (Render would download it on every build): the scripts fetch a fixed version.
 {
   "name": "breachline",
   "main": "worker/index.js",
+  // The built game (npm run build) is served from here. A request for a file that exists is answered without running
+  // the Worker, and Cloudflare doesn't count it against the free plan's requests. client/public/_headers sets the
+  // caching, client/public/.assetsignore leaves out Render's precompressed copies.
+  "assets": { "directory": "./dist", "binding": "ASSETS" },
   "compatibility_date": "2026-09-01",
   // The shared server code uses node:crypto and reads its settings from process.env
   "compatibility_flags": ["nodejs_compat"],
@@ -20,8 +24,9 @@
     { "tag": "v2", "new_sqlite_classes": ["MatchRoom"] },
     { "tag": "v3", "new_sqlite_classes": ["Central"] }
   ],
-  // The fingerprint of shared/*.js, which pages send when they connect (tools/write-shared-version.mjs)
-  "build": { "command": "node tools/write-shared-version.mjs", "watch_dir": ["shared", "server", "worker"] },
+  // Before every deploy (and in `wrangler dev`): build the game into dist/, and write the fingerprint of shared/*.js
+  // that pages send when they connect (tools/write-shared-version.mjs)
+  "build": { "command": "npm run build && node tools/write-shared-version.mjs", "watch_dir": ["shared", "server", "worker", "client/src"] },
   // Hourly clean-up of expired sessions
   "triggers": { "crons": ["17 * * * *"] },
   "observability": { "enabled": true, "head_sampling_rate": 0.1 }

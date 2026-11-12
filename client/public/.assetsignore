@@ -1,0 +1,4 @@
+# Not uploaded to Cloudflare (Stage C5): the Brotli and gzip copies tools/precompress.mjs makes for Render.
+# Cloudflare compresses responses itself.
+*.br
+*.gz
