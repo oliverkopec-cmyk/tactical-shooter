@@ -2,7 +2,41 @@
 
 A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite on the client, Node.js on an authoritative server, talking over plain WebSockets. One Node process serves both the game client and the realtime server, so the whole thing deploys as a single Render web service.
 
-## Status: Stage C2 (database driver, PBKDF2 passwords, the API on a Worker)
+## Status: Stage C3 (a Durable Object for each match room)
+
+The third step of moving from Render to Cloudflare. The game on Render is unchanged; the Cloudflare Worker can now run
+rooms and matches itself.
+
+- **One Durable Object per room code** (`worker/matchRoom.js`, class `MatchRoom`): the room's lobby and match, run by
+  the same code as on Render: `server/rooms.js`, `GameState`, bots, rounds, gadgets, chat, reports and the match
+  payout (written to Neon). The room's event handlers are now one shared file, `server/roomEvents.js`, used by both.
+- **Creating and joining:** `POST /api/rooms` claims a free 4-letter code (the code's object refuses one in use) and
+  the page connects to `/room/<CODE>/ws`. The Worker checks the login cookie and the page's version first, then hands
+  the connection to the room, which uses the same protocol as Render (`server/protocol.js`, shared).
+- **The page** (`client/src/network.js`, `client/src/main.js`): when `/api/session` says `rooms: 'worker'`, a room
+  gets its own connection, used for the lobby, the match and its batches; menus keep the main one. On Render nothing
+  changes.
+- **The CPU limit found in Stage C0:** an alarm restarts the 60 Hz match loop every 15 seconds, so the loop's CPU
+  always belongs to a fresh event and a quiet match (everyone dead) can't run out of its 30 seconds.
+- **Sleeping lobbies:** connections use the Hibernation API, and nothing runs in a lobby, so an idle lobby can sleep
+  and costs no duration. The lobby (map, mode, host, teams, bots) is saved at every change and rebuilt when it wakes.
+- **The same account from another tab** takes the old tab's place in the room (the old one goes back to the menu).
+- **Not yet (Stage C4, the central object):** a party joining its leader's room, the admin's list of matches and
+  joining one from there, friends seeing "in a match", and reporting a player after leaving the room. The version
+  fingerprint of `shared/` is written at build time (`tools/write-shared-version.mjs`), since a Worker can't read files.
+
+### Cloudflare: playing a match through the Worker locally
+Run each in its own terminal, from this folder:
+1. `npm run neon:local` (or put a Neon branch in both `.env` and `.dev.vars`, and skip this)
+2. `npm run worker:dev`
+3. `API_TARGET=http://localhost:8787 npm run dev` (with `.env` holding the same database as `.dev.vars`; for the
+   local stand-in: `DATABASE_URL=postgres://local:local@localhost/breachline` and
+   `NEON_FETCH_ENDPOINT=http://localhost:4444/sql`)
+
+Then http://localhost:5173: log-in, the shop and rooms go to the Worker, the menus' live features to the Node server.
+`TIME_SCALE=0.2` in `.dev.vars` makes every phase five times shorter for testing.
+
+### Earlier: Stage C2 (database driver, PBKDF2 passwords, the API on a Worker)
 
 The second step of moving from Render to Cloudflare. The game still runs on Render exactly as before; this adds the
 pieces the Cloudflare Worker needs and runs them on Render too.
@@ -664,6 +698,8 @@ server/
   httpApi.js       mounts api.js into Express
   passwords.js     PBKDF2 password hashes, and upgrading old bcrypt ones
   dbHttp.js        the database in the Cloudflare Worker (Neon over HTTP)
+  roomEvents.js    everything a player does in a room (shared by Render and the Cloudflare match rooms)
+  protocol.js      reading the realtime protocol's messages (shared too)
   bots.js          the bots' brains (server side)
   nav.js           the walking grid and distance fields bots move by
   killcam.js       the last 4.5 s of everyone's movement and shots, sent to a player who is killed

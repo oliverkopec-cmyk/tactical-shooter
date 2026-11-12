@@ -6,6 +6,9 @@ the list from the menu.
 
 Format: `## <id> · <date> · <title>`, then one bullet per change. The id has to be unique and is what the game remembers.
 
+## C3 · 2026-11-12 · Getting ready for the new servers
+- Behind the scenes: matches can now run on the game's new home. Nothing changes for you yet.
+
 ## C2 · 2026-11-11 · Passwords stored a new way
 - Passwords are now stored with a newer method. Yours switches over by itself the next time you log in, and nothing else changes: same password, same Money and skins.
 

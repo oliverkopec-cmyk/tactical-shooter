@@ -16,6 +16,7 @@ import { Moderation } from './moderation.js';
 import { staticFiles } from './staticFiles.js';
 import { createApi } from './api.js';
 import { httpApi } from './httpApi.js';
+import { roomEvents } from './roomEvents.js';
 
 // Local secrets (e.g. DATABASE_URL) can live in a .env file, which git ignores.
 try { process.loadEnvFile(); } catch { /* no .env file */ }
@@ -45,8 +46,6 @@ const christmas = new Christmas({ db, accounts });
 const moderation = new Moderation({ db, accounts, io });
 accounts.moderation = moderation;   // suspended and banned accounts can't log in
 const SHARED_VERSION = sharedCodeVersion();
-// The in-match events a batch may carry (each is also handled below as an event of its own)
-const BATCH_EVENTS = new Set(['action', 'actionEnd', 'teamPing', 'pickOperator', 'pickUtility', 'voteSite', 'spawnChoice', 'refreshLook']);
 // Pages built from different shared code would mispredict movement: send them back to reload.
 // ('dev' is the Vite dev server, which always runs the current files.)
 io.use((socket, next) => {
@@ -127,9 +126,7 @@ io.on('connection', (socket) => {
   socket.on('christmasDevDate', safely((date) => christmas.devDate(date)));
   socket.on('christmasDevReset', safely(() => christmas.devReset(socket)));
 
-  // ---- chat, reports and the owner's moderation tools (the owner-only ones re-check the caller on the server)
-  socket.on('chat', (req, ack) => reply(ack, moderation.chat(socket, obj(req))));
-  socket.on('report', safely((req) => moderation.report(socket, obj(req))));
+  // ---- the owner's moderation tools (the owner-only ones re-check the caller on the server)
   socket.on('warnings', safely(() => moderation.deliverWarnings(socket)));
   socket.on('warningsSeen', safely((ids) => moderation.markWarningsSeen(socket, ids)));
   socket.on('modReports', safely((req) => moderation.reports(socket, obj(req))));
@@ -142,76 +139,8 @@ io.on('connection', (socket) => {
 
   socket.on('adminJoin', (req, ack) => reply(ack, admin.join(socket, req && typeof req === 'object' ? { code: String(req.code || ''), mode: String(req.mode || '') } : {})));
 
-  socket.on('setTeam', (team, ack) => {
-    const room = socket.data.room;
-    reply(ack, room ? room.setTeam(socket.id, team) : { error: 'Not in a room.' });
-  });
-
-  socket.on('setMap', (mapId, ack) => {
-    const room = socket.data.room;
-    reply(ack, room ? room.setMap(socket.id, String(mapId)) : { error: 'Not in a room.' });
-  });
-
-  socket.on('addBot', ({ team, difficulty } = {}, ack) => {
-    const room = socket.data.room;
-    reply(ack, room ? room.addBot(socket.id, String(team), String(difficulty)) : { error: 'Not in a room.' });
-  });
-  socket.on('fillBots', ({ difficulty } = {}, ack) => {
-    const room = socket.data.room;
-    reply(ack, room ? room.fillBots(socket.id, String(difficulty)) : { error: 'Not in a room.' });
-  });
-  socket.on('removeBot', (botId, ack) => {
-    const room = socket.data.room;
-    reply(ack, room ? room.removeBot(socket.id, String(botId)) : { error: 'Not in a room.' });
-  });
-
-  socket.on('setMode', (mode, ack) => {
-    const room = socket.data.room;
-    reply(ack, room ? room.setMode(socket.id, String(mode)) : { error: 'Not in a room.' });
-  });
-
-  socket.on('startMatch', (ack) => {
-    const room = socket.data.room;
-    reply(ack, room ? room.start(socket.id) : { error: 'Not in a room.' });
-  });
-
-  // A match batch (Stage C1): the client sends one about 7 times a second while it has something to send, and nothing
-  // while dead, spectating or in the menus. Inputs first, then the in-match events in the order they happened, then
-  // the ping time to send straight back.
-  socket.on('batch', (b) => {
-    if (Array.isArray(b.i) && b.i.length) socket.data.room?.handleInputs(socket.id, b.i);
-    if (Array.isArray(b.a)) {
-      for (const ev of b.a.slice(0, 24)) {
-        if (Array.isArray(ev) && BATCH_EVENTS.has(ev[0])) socket.dispatch(ev[0], ev.length > 1 ? [ev[1]] : []);
-      }
-    }
-    if (typeof b.p === 'number') socket.emit('pong', b.p);
-  });
-
-  socket.on('action', (type) => {
-    if (type === 'breach' || type === 'reinforce' || type === 'droneNext' || type === 'ping' || type === 'ability' || type === 'utility' || type === 'camView' || type === 'barricade' || type === 'melee') socket.data.room?.handleAction(socket.id, type);
-  });
-
-  // A held key went up (placing takes time while the key is held: Stage 27)
-  socket.on('actionEnd', (type) => {
-    if (type === 'breach' || type === 'reinforce' || type === 'ability' || type === 'utility' || type === 'barricade') socket.data.room?.handleActionEnd(socket.id, type);
-  });
-
-  socket.on('teamPing', (type) => socket.data.room?.game?.teamPing(socket.id, String(type)));
-
-  socket.on('pickOperator', (opId) => socket.data.room?.game?.pickOperator(socket.id, String(opId)));
-
-  socket.on('pickUtility', (id) => socket.data.room?.game?.pickUtility(socket.id, String(id)));
-
-  socket.on('voteSite', (i) => socket.data.room?.game?.voteSite(socket.id, i));
-
-  socket.on('spawnChoice', (n) => socket.data.room?.game?.setSpawnChoice(socket.id, n));
-
-  // Skins or charms changed on the loadout screen mid-match: everyone sees the new look
-  socket.on('refreshLook', () => socket.data.room?.refreshLook(socket));
-
-  socket.on('leaveRoom', () => { socket.data.room?.remove(socket); socket.data.spectating?.removeSpectator(socket); });
-  socket.on('disconnect', () => { socket.data.room?.remove(socket); socket.data.spectating?.removeSpectator(socket); });
+  // ---- everything in a room's lobby and match (shared with the Cloudflare match rooms)
+  roomEvents(socket, { moderation });
 });
 
 server.listen(PORT, () => {

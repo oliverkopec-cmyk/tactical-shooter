@@ -34,7 +34,8 @@ const json = (status, body, cookie = null) => {
 const sessionCookie = (token, secure) => `${COOKIE}=${encodeURIComponent(token)}; Max-Age=${SESSION_DAYS * 24 * 60 * 60}; Path=/; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}`;
 const clearedCookie = () => `${COOKIE}=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT`;
 
-export function createApi(accounts) {
+/** options.session: extra fields for /api/session (the Worker says its rooms are on Cloudflare: { rooms: 'worker' }). */
+export function createApi(accounts, { session: sessionExtras = {} } = {}) {
   const db = accounts.db;
   const progression = accounts.progression;
   const social = accounts.social;
@@ -51,7 +52,7 @@ export function createApi(accounts) {
 
   route('GET', '/session', async (ctx) => {
     const found = await accounts.fromCookie(ctx.cookies, { withBlocked: true });
-    if (found?.block) return json(200, { account: null, blocked: accounts.moderation.blockMessage(found.block), storage: db.kind });
+    if (found?.block) return json(200, { account: null, blocked: accounts.moderation.blockMessage(found.block), storage: db.kind, ...sessionExtras });
     let cookie = null;
     if (found) {
       // Each visit pushes the expiry back, so regular players never get logged out.
@@ -59,7 +60,7 @@ export function createApi(accounts) {
       cookie = sessionCookie(readCookie(ctx.cookies, COOKIE), ctx.secure);
     }
     const row = found ? await progression.ensureQuests(found.row) : null;
-    return json(200, { account: row ? profileOf(row) : null, storage: db.kind }, cookie);
+    return json(200, { account: row ? profileOf(row) : null, storage: db.kind, ...sessionExtras }, cookie);
   });
 
   route('POST', '/signup', async (ctx) => {

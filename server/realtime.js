@@ -25,6 +25,7 @@
 
 import crypto from 'node:crypto';
 import { WebSocketServer } from 'ws';
+import { encode, receive } from './protocol.js';
 
 const PING_MS = 25_000;
 const MAX_MESSAGE_BYTES = 64 * 1024;
@@ -112,8 +113,6 @@ export class Realtime {
   }
 }
 
-const encode = (event, payload) => JSON.stringify(payload === undefined ? [event] : [event, payload]);
-
 class RealtimeSocket {
   constructor(io, ws, req, url) {
     this.io = io;
@@ -173,26 +172,7 @@ class RealtimeSocket {
     }
   }
 
-  receive(text) {
-    let msg;
-    try { msg = JSON.parse(text); } catch { return; }
-    if (!Array.isArray(msg) || typeof msg[0] !== 'string') return;
-    const [kind] = msg;
-    if (kind === 'e' && typeof msg[1] === 'string' && !RESERVED.has(msg[1])) {
-      this.dispatch(msg[1], msg.length > 2 ? [msg[2]] : []);
-    } else if (kind === 'r' && typeof msg[2] === 'string' && !RESERVED.has(msg[2])) {
-      const id = msg[1];
-      let answered = false;
-      const reply = (result) => {
-        if (answered) return;
-        answered = true;
-        this.sendText(JSON.stringify(['~ack', id, result === undefined ? null : result]));
-      };
-      this.dispatch(msg[2], msg.length > 3 ? [msg[3], reply] : [reply]);
-    } else if (kind === 'b' && msg[1] && typeof msg[1] === 'object') {
-      this.dispatch('batch', [msg[1]]);
-    }
-  }
+  receive(text) { receive(this, text); }
 
   closed() {
     if (!this.connected) return;
@@ -202,6 +182,3 @@ class RealtimeSocket {
     if (this.ready) this.dispatch('disconnect', ['transport close']);
   }
 }
-
-// Events only the server raises: a client can't send them
-const RESERVED = new Set(['disconnect', 'batch', 'connection']);

@@ -6,3 +6,4 @@ dist/
 .data/
 .wrangler/
 .dev.vars
+worker/generated/
