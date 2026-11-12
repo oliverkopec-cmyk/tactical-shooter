@@ -1,10 +1,11 @@
-// Breachline on Cloudflare Workers. So far: the HTTP API (Stage C2) and the match rooms (Stage C3). The menus' live
-// features (friends online, parties, gifts, admin) still run on the Node server until Stage C4, and the game's files
-// come here in Stage C5.
+// Breachline on Cloudflare Workers. So far: the HTTP API (Stage C2), the match rooms (Stage C3) and the central object
+// for the menus (Stage C4). The game's files come here in Stage C5.
 //
-// - /api/...: server/api.js, the same code the Node server serves, with Neon through HTTP (server/dbHttp.js).
-// - POST /api/rooms: a new room. Claims a free 4-letter code; that code's MatchRoom Durable Object is the room.
-// - /room/<CODE>/ws: a player's connection to a room (worker/matchRoom.js), once the login cookie is checked.
+// - /api/...: server/api.js, the same code the Node server serves, with Neon through HTTP (server/dbHttp.js). The
+//   friends routes go to the central object, which knows who is online.
+// - /ws: a page's main connection, to the central object (worker/central.js), once the login cookie is checked.
+// - /room/<CODE>/ws: a player's connection to a room (worker/matchRoom.js), the same way. The central object claims
+//   the code when a player creates a room.
 // - Password checks run in a Durable Object (Passwords, below). A plain Worker request on the free plan gets 10 ms
 //   of CPU, and checking a password takes 17 ms (PBKDF2) or 176 ms (an old bcrypt hash) (Stage C0). A Durable
 //   Object gets 30 seconds.
@@ -19,15 +20,12 @@ import { Accounts, loadoutOf } from '../server/accounts.js';
 import { Moderation } from '../server/moderation.js';
 import { createApi } from '../server/api.js';
 import { hashPassword, verifyPassword, rejectSlowly } from '../server/passwords.js';
-import { ROOM_CODE_LENGTH } from '../shared/constants.js';
 import { SHARED_VERSION } from './generated/sharedVersion.js';
 import { refuseSocket } from './sockets.js';
 
 export { MatchRoom } from './matchRoom.js';
+export { Central } from './central.js';
 
-// No I or O, so codes can't be confused with 1 / 0 (as server/rooms.js)
-const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
-const randomCode = () => Array.from({ length: ROOM_CODE_LENGTH }, () => CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)]).join('');
 
 const PASSWORD_OBJECTS = 8;   // spread log-ins over a few objects, so a burst of them doesn't queue behind one
 
@@ -49,27 +47,47 @@ function remotePasswords(env) {
 
 const roomStub = (env, code) => env.MATCH_ROOMS.get(env.MATCH_ROOMS.idFromName(code));
 
-/** POST /api/rooms: a free code, claimed in its own MatchRoom object (it refuses a code that is in use). */
-async function createRoom(request, env, app) {
+const centralStub = (env) => env.CENTRAL.get(env.CENTRAL.idFromName('central'));
+
+/** Check a page's version and login for a WebSocket: { account, tokenHash } or a refused socket. */
+async function socketLogin(request, app, url) {
+  if (request.headers.get('upgrade') !== 'websocket') return { refused: new Response('Expected a WebSocket', { status: 426 }) };
+  const version = url.searchParams.get('v');
+  if (version !== SHARED_VERSION && version !== 'dev') return { refused: refuseSocket('outdated') };
+  const found = await app.accounts.fromCookie(request.headers.get('cookie'));
+  if (!found) return { refused: refuseSocket('unauthorized') };
+  return { account: { id: found.row.id, username: found.row.username, ...loadoutOf(found.row) }, tokenHash: found.tokenHash };
+}
+
+/** /ws: the page's main connection, to the central object. */
+async function joinCentral(request, env, app, url) {
+  const login = await socketLogin(request, app, url);
+  if (login.refused) return login.refused;
+  const headers = new Headers(request.headers);
+  headers.set('x-account', JSON.stringify(login.account));
+  headers.set('x-token', login.tokenHash);
+  return centralStub(env).fetch(new Request(request.url, { method: 'GET', headers }));
+}
+
+/** /api/friends...: run by the central object, which knows who is online and can tell them straight away. */
+async function friendsApi(request, env, app, url) {
   const found = await app.accounts.fromCookie(request.headers.get('cookie'));
   if (!found) return Response.json({ error: 'Not logged in.' }, { status: 401 });
-  for (let attempt = 0; attempt < 20; attempt++) {
-    const code = randomCode();
-    if ((await roomStub(env, code).claim(code)).ok) return Response.json({ ok: true, code });
-  }
-  return Response.json({ error: 'No free room codes. Try again.' }, { status: 503 });
+  const op = { 'GET /api/friends': 'list', 'GET /api/friends/search': 'search', 'POST /api/friends/request': 'request', 'POST /api/friends/respond': 'respond', 'POST /api/friends/remove': 'remove' }[`${request.method} ${url.pathname}`];
+  if (!op) return Response.json({ error: 'Not found.' }, { status: 404 });
+  if (op === 'search' && app.accounts.lookupLimited(request.headers.get('cf-connecting-ip') || '')) return Response.json({ error: 'Too many searches. Wait a minute.' }, { status: 429 });
+  let args = op === 'search' ? { q: url.searchParams.get('q') } : {};
+  if (request.method === 'POST') { try { args = await request.json(); } catch { return Response.json({ error: 'Bad request.' }, { status: 400 }); } }
+  const { status, body } = await centralStub(env).friends(found.row.id, op, args && typeof args === 'object' ? args : {});
+  return Response.json(body, { status, headers: { 'cache-control': 'no-store' } });
 }
 
 /** /room/<CODE>/ws: check the page's version and the login, then hand the WebSocket to that room. */
 async function joinRoom(request, env, app, code, url) {
-  if (request.headers.get('upgrade') !== 'websocket') return new Response('Expected a WebSocket', { status: 426 });
-  const version = url.searchParams.get('v');
-  if (version !== SHARED_VERSION && version !== 'dev') return refuseSocket('outdated');
-  const found = await app.accounts.fromCookie(request.headers.get('cookie'));
-  if (!found) return refuseSocket('unauthorized');
-  const account = { id: found.row.id, username: found.row.username, ...loadoutOf(found.row) };
+  const login = await socketLogin(request, app, url);
+  if (login.refused) return login.refused;
   const headers = new Headers(request.headers);
-  headers.set('x-account', JSON.stringify(account));
+  headers.set('x-account', JSON.stringify(login.account));
   headers.set('x-mode', ['spectate', 'attack', 'defense'].includes(url.searchParams.get('as')) ? url.searchParams.get('as') : 'play');
   return roomStub(env, code).fetch(new Request(request.url, { method: 'GET', headers }));
 }
@@ -81,6 +99,8 @@ function setup(env) {
     if (!env.DATABASE_URL) throw new Error('DATABASE_URL is not set (a Cloudflare secret, or .dev.vars locally).');
     const db = neonHttpDb(env.DATABASE_URL, { fetchEndpoint: env.NEON_FETCH_ENDPOINT });
     const accounts = new Accounts(db, { background: false, passwords: remotePasswords(env) });
+    // Logging out closes that session's connection, which is in the central object
+    accounts.kickSession = (accountId, tokenHash) => centralStub(env).kickSession(accountId, tokenHash).catch(() => {});
     accounts.moderation = new Moderation({ db, accounts, io: null, background: false });
     return { db, accounts, api: createApi(accounts, { session: { rooms: 'worker' } }) };
   })().catch((err) => { ready = null; throw err; });
@@ -92,18 +112,20 @@ export default {
     const url = new URL(request.url);
     if (url.pathname === '/healthz') return new Response('ok');
     const roomSocket = url.pathname.match(/^\/room\/([A-Za-z]{4})\/ws$/);
-    if (!url.pathname.startsWith('/api/') && !roomSocket) {
-      return new Response('Breachline on Cloudflare: the API and match rooms so far. The game comes in Stage C5.\n', {
+    const mainSocket = url.pathname === '/ws';
+    if (!url.pathname.startsWith('/api/') && !roomSocket && !mainSocket) {
+      return new Response('Breachline on Cloudflare: the API, match rooms and menus so far. The game comes in Stage C5.\n', {
         status: 404, headers: { 'content-type': 'text/plain; charset=utf-8' },
       });
     }
     let app;
     try { app = await setup(env); } catch (err) {
       console.error(err.message);
-      return roomSocket ? refuseSocket('server error') : Response.json({ error: 'The server is not set up yet.' }, { status: 503 });
+      return roomSocket || mainSocket ? refuseSocket('server error') : Response.json({ error: 'The server is not set up yet.' }, { status: 503 });
     }
+    if (mainSocket) return joinCentral(request, env, app, url);
     if (roomSocket) return joinRoom(request, env, app, roomSocket[1].toUpperCase(), url);
-    if (url.pathname === '/api/rooms' && request.method === 'POST') return createRoom(request, env, app);
+    if (url.pathname === '/api/friends' || url.pathname.startsWith('/api/friends/')) return friendsApi(request, env, app, url);
     return app.api.handle(request, {
       ip: request.headers.get('cf-connecting-ip') || '',
       secure: url.protocol === 'https:',

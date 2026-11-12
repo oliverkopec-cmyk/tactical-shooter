@@ -197,6 +197,7 @@ export class Moderation {
       [who.id, who.username, kind, why, socket.data.account.username, reportId ? Number(reportId) : null, until],
     );
     if (reportId) await this.db.query("UPDATE reports SET status = 'resolved', action = $2, resolved_by = $3, resolved_at = now() WHERE id = $1", [Number(reportId), kind, socket.data.account.username]);
+    if (kind !== 'warn') this.onBlocked?.(who.id);   // the Cloudflare central object also takes them out of their room
     const sock = this.accounts.online.get(who.id);
     if (sock && kind !== 'warn') {
       sock.emit('sanctioned', { message: this.blockMessage({ kind, until: until?.getTime() ?? null, reason: why }) });

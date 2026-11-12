@@ -11,93 +11,28 @@
 //     event may use 30 s of CPU, so a busy match whose players send nothing (all dead, say) would be stopped after a
 //     few minutes (Stage C0). An alarm restarts the loop every 15 seconds, so its CPU always belongs to a new event.
 //   - The room code is the object's name: worker/index.js claims a free one (claim) when a player creates a room.
-//   - Friends' status, parties and the admin's match list need the central object (Stage C4). Until then they don't
-//     see Cloudflare rooms.
+//   - The central object (worker/central.js, Stage C4) is told who is in the room and how the match is going
+//     (presence: friends' status, the admin's Matches list), and who was in each match (recent: reports from the
+//     menus). It claims rooms for parties (their members join the leader's team) and asks for blocked players to go.
 
 import { DurableObject } from 'cloudflare:workers';
 import { RoomManager } from '../server/rooms.js';
 import { roomEvents } from '../server/roomEvents.js';
-import { encode, receive } from '../server/protocol.js';
+import { receive } from '../server/protocol.js';
 import { Progression } from '../server/progression.js';
 import { Moderation } from '../server/moderation.js';
 import { loadoutOf } from '../server/accounts.js';
+import { roomSummary } from '../server/admin.js';
 import { isStaff } from '../server/roles.js';
 import { neonHttpDb } from '../server/dbHttp.js';
 import { TEAMS, MAX_PER_TEAM } from '../shared/constants.js';
 import { refuseSocket } from './sockets.js';
+import { DoSocket, DoIo } from './doSockets.js';
 
 const REHOME_MS = 15_000;           // restart the match loop this often (see above)
 const TICK_RATE = 60;               // server/gameState.js
 const CLAIM_HOLD_MS = 60_000;       // a claimed code waits this long for its creator to connect
-const KICKED = 4001;                // server/realtime.js CLOSE.KICKED
-
-/** One player's connection: the same calls as server/realtime.js's sockets, over a hibernatable WebSocket. */
-class RoomSocket {
-  constructor(io, ws, { id, account, spectator }) {
-    this.io = io;
-    this.ws = ws;
-    this.id = id;
-    this.data = { account };
-    this.spectator = !!spectator;
-    this.handlers = new Map();
-    this.channels = new Set();
-    this.connected = true;
-    io.sockets.sockets.set(id, this);
-  }
-
-  get conn() { return { transport: { writable: true } }; }
-  on(event, fn) { if (!this.handlers.has(event)) this.handlers.set(event, []); this.handlers.get(event).push(fn); }
-  emit(event, payload) { this.sendText(encode(event, payload)); }
-  sendText(text) { if (this.connected) try { this.ws.send(text); } catch { /* closing */ } }
-  join(channel) {
-    if (!this.io.channels.has(channel)) this.io.channels.set(channel, new Set());
-    this.io.channels.get(channel).add(this.id);
-    this.channels.add(channel);
-  }
-  leave(channel) {
-    const set = this.io.channels.get(channel);
-    if (set) { set.delete(this.id); if (!set.size) this.io.channels.delete(channel); }
-    this.channels.delete(channel);
-  }
-  dispatch(event, args) {
-    for (const fn of this.handlers.get(event) || []) {
-      try { fn(...args); } catch (err) { console.error(`Handler for "${event}" failed:`, err); }
-    }
-  }
-  /** The server ends this connection (the same account joined from another tab). The page closes it on "~kicked". */
-  disconnect() {
-    if (!this.connected) return;
-    this.sendText(JSON.stringify(['~kicked']));
-    try { this.ws.close(KICKED, 'disconnected by the server'); } catch { /* gone */ }
-    this.closed();
-  }
-  closed() {
-    if (!this.connected) return;
-    this.connected = false;
-    for (const channel of [...this.channels]) this.leave(channel);
-    if (this.io.sockets.sockets.get(this.id) === this) this.io.sockets.sockets.delete(this.id);
-    this.dispatch('disconnect', ['transport close']);
-  }
-}
-
-/** Socket.IO's io.to(...).emit and io.sockets.sockets, for this one room. */
-class RoomIo {
-  constructor() {
-    this.sockets = { sockets: new Map() };
-    this.channels = new Map();
-  }
-  to(target) {
-    return {
-      emit: (event, payload) => {
-        const members = this.channels.get(target);
-        if (members) {
-          const text = encode(event, payload);
-          for (const id of members) this.sockets.sockets.get(id)?.sendText(text);
-        } else this.sockets.sockets.get(target)?.emit(event, payload);
-      },
-    };
-  }
-}
+const PRESENCE_DELAY_MS = 300;      // changes close together go to the central object as one
 
 export class MatchRoom extends DurableObject {
   constructor(ctx, env) {
@@ -105,17 +40,21 @@ export class MatchRoom extends DurableObject {
     this.room = null;
     this.code = null;
     this.alarmSet = false;
-    this.bySocket = new Map();   // WebSocket -> RoomSocket
+    this.bySocket = new Map();   // WebSocket -> DoSocket
     const db = neonHttpDb(env.DATABASE_URL, { fetchEndpoint: env.NEON_FETCH_ENDPOINT });
     // What rooms.js, gameState.js and progression.js expect of `accounts`, for the players in this room
     this.accounts = {
       db,
-      online: new Map(),   // account id -> RoomSocket
+      online: new Map(),   // account id -> DoSocket
       refreshSocketLoadout: (row) => { const s = this.accounts.online.get(row.id); if (s) Object.assign(s.data.account, loadoutOf(row)); },
     };
     this.progression = new Progression(this.accounts);   // match payouts
-    this.social = { presenceChanged() {}, partyOf: new Map() };   // Stage C4 tells the central object
-    this.io = new RoomIo();
+    this.social = { presenceChanged: () => this.presenceSoon(), partyOf: new Map() };   // the central object is told
+    this.io = new DoIo();
+    // A round starting or ending changes the score and round the admin's Matches list shows
+    this.io.onEmit = (_target, event) => { if (event === 'roundStart' || event === 'roundEnd' || event === 'phase') this.presenceSoon(); };
+    this.presenceTimer = null;
+    this.recentTimer = null;
     this.moderation = new Moderation({ db, accounts: this.accounts, io: this.io, background: false });
     // Woken from hibernation with players still connected: rebuild the lobby
     ctx.blockConcurrencyWhile(async () => {
@@ -133,7 +72,10 @@ export class MatchRoom extends DurableObject {
     const manager = new RoomManager(this.io, this.progression, this.social);
     const room = manager.createRoom(code);
     const broadcast = room.broadcastState.bind(room);
-    room.broadcastState = () => { broadcast(); this.saveLobby(); };   // every lobby change is saved
+    room.broadcastState = () => { broadcast(); this.saveLobby(); this.presenceSoon(); };   // every lobby change is saved
+    // Who is in each match goes to the central object, so players can report each other from the menus afterwards
+    const note = room.noteMatchPlayer.bind(room);
+    room.noteMatchPlayer = (...args) => { note(...args); this.recentSoon(); };
     this.room = room;
     this.code = code;
     return room;
@@ -167,12 +109,20 @@ export class MatchRoom extends DurableObject {
     }
   }
 
-  /** A RoomSocket for a WebSocket, with every room event handler. */
+  /** A DoSocket for a WebSocket, with every room event handler. */
   wire(ws, attachment) {
-    const socket = new RoomSocket(this.io, ws, attachment);
+    const socket = new DoSocket(this.io, ws, attachment);
     this.bySocket.set(ws, socket);
     this.accounts.online.set(attachment.account.id, socket);
     roomEvents(socket, { moderation: this.moderation });
+    // Skins or charms changed mid-match: the shop and equipping go through the API, so read them from the database first
+    socket.handlers.set('refreshLook', [async () => {
+      try {
+        const row = await this.progression.load(attachment.account.id);
+        if (row) Object.assign(socket.data.account, loadoutOf(row));
+      } catch (e) { console.error('Loadout reload failed:', e.message); }
+      socket.data.room?.refreshLook(socket);
+    }]);
     socket.on('disconnect', () => {
       if (this.accounts.online.get(attachment.account.id) === socket) this.accounts.online.delete(attachment.account.id);
     });
@@ -181,12 +131,51 @@ export class MatchRoom extends DurableObject {
 
   humans() { return this.room ? [...this.room.members.values()].filter((m) => !m.bot).length : 0; }
 
+  // ---------------------------------------------------------------- telling the central object
+
+  central() { return this.env.CENTRAL.get(this.env.CENTRAL.idFromName('central')); }
+
+  /** Who is in this room and how its match is going, a moment after it changes. */
+  presenceSoon() {
+    if (this.presenceTimer || !this.code) return;
+    this.presenceTimer = setTimeout(() => {
+      this.presenceTimer = null;
+      const room = this.room;
+      const accountOf = (id) => this.io.sockets.sockets.get(id)?.data.account.id;
+      const payload = room
+        ? {
+          summary: roomSummary(room),
+          players: [...room.members.values()].filter((m) => !m.bot).map((m) => m.accountId ?? accountOf(m.id)).filter(Boolean),
+          spectators: [...room.spectators.keys()].map(accountOf).filter(Boolean),
+        }
+        : { closed: true };
+      this.ctx.waitUntil(this.central().presence(this.code, payload).catch((e) => console.error('Presence failed:', e.message)));
+    }, PRESENCE_DELAY_MS);
+  }
+
+  /** Each human in the match: who was in it (server/rooms.js noteMatchPlayer), for reports from the menus. */
+  recentSoon() {
+    if (this.recentTimer) return;
+    this.recentTimer = setTimeout(() => {
+      this.recentTimer = null;
+      for (const socket of this.accounts.online.values()) {
+        const r = socket.data.recent;
+        if (!r) continue;
+        const recent = { matchId: r.matchId, roomCode: r.roomCode, players: [...r.players] };
+        this.ctx.waitUntil(this.central().recent(socket.data.account.id, recent).catch(() => {}));
+      }
+    }, 1000);
+  }
+
   /** Nobody left (closing: a connection that is going away): the room is closed and its code is free again. */
   async closeIfEmpty(closing = null) {
     const open = this.ctx.getWebSockets().filter((w) => w !== closing && w.readyState === WebSocket.OPEN);
     if (this.humans() > 0 || open.length > 0) return;
     this.room?.game?.stop();
     this.room = null;
+    clearTimeout(this.presenceTimer);
+    this.presenceTimer = null;
+    if (this.code) await this.central().presence(this.code, { closed: true }).catch(() => {});
     await this.ctx.storage.deleteAlarm();
     await this.ctx.storage.deleteAll();
   }
@@ -210,14 +199,21 @@ export class MatchRoom extends DurableObject {
 
   // ---------------------------------------------------------------- called by worker/index.js
 
-  /** Make this code a new room, unless it is in use. */
-  async claim(code) {
+  /** Make this code a new room, unless it is in use. party: { leader, members } (account ids) to play together. */
+  async claim(code, party = null) {
     const meta = await this.ctx.storage.get('meta');
     if (meta && (this.ctx.getWebSockets().length > 0 || Date.now() - meta.claimedAt < CLAIM_HOLD_MS)) return { ok: false };
     await this.ctx.storage.deleteAll();
-    await this.ctx.storage.put('meta', { code, claimedAt: Date.now() });
+    await this.ctx.storage.put('meta', { code, claimedAt: Date.now(), party });
     this.room = null;
+    this.code = code;
     return { ok: true };
+  }
+
+  /** Suspended or banned (the central object asks): out of this room. */
+  kick(accountId) {
+    const socket = this.accounts.online.get(accountId);
+    if (socket) socket.disconnect('blocked');
   }
 
   /** A player's WebSocket. worker/index.js has checked the login and passes the account in X-Account. */
@@ -252,6 +248,13 @@ export class MatchRoom extends DurableObject {
       if (res.error) { socket.disconnect(); return new Response(null, { status: 101, webSocket: client }); }
     } else {
       room.add(socket, mode === 'play' ? null : mode);
+      // A party member joining the room their leader made: onto the leader's team, as on the Node server
+      const party = meta.party;
+      if (party && party.members.includes(account.id)) {
+        const leader = this.accounts.online.get(party.leader);
+        const leaderTeam = leader && room.members.get(leader.id)?.team;
+        if (leaderTeam) room.setTeam(socket.id, leaderTeam);
+      }
     }
     previous?.disconnect();
     await this.ctx.storage.put('meta', { ...meta, claimedAt: 0 });   // in use now: no longer just claimed

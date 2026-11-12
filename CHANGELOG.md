@@ -6,6 +6,9 @@ the list from the menu.
 
 Format: `## <id> · <date> · <title>`, then one bullet per change. The id has to be unique and is what the game remembers.
 
+## C4 · 2026-11-12 · Getting ready for the new servers, part 2
+- Behind the scenes: friends, parties, gifts, Christmas presents and the menus can now run on the game's new home. Nothing changes for you yet.
+
 ## C3 · 2026-11-12 · Getting ready for the new servers
 - Behind the scenes: matches can now run on the game's new home. Nothing changes for you yet.
 

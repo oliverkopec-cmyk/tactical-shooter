@@ -243,7 +243,12 @@ export class AdminPanel {
     if (!btn) return;
     this.message = '';
     const res = await this.network.request('adminJoin', { code: btn.dataset.code, mode: btn.dataset.join });
-    if (res.error) { this.message = res.error; this.render(); }
+    if (res.error) { this.message = res.error; this.render(); return; }
+    if (this.network.rooms === 'worker') {
+      // On Cloudflare the room is its own object: connect to it to watch or play
+      const joined = await this.network.openRoom(res.code, res.as);
+      if (!joined.ok) { this.message = joined.error || 'Could not join that room.'; this.render(); }
+    }
   }
 
   render() {

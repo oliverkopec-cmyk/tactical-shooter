@@ -68,6 +68,7 @@ export class Network {
   disconnect() {
     this.wanted = false;
     clearTimeout(this.retry.timer);
+    this.closeRoom();   // logging out (or blocked): a Cloudflare room's connection goes too
     const ws = this.ws, was = this.connected;
     if (!ws) return;
     this.dropped();
@@ -114,12 +115,20 @@ export class Network {
         this.fire('connect');
       } else if (event === '~error') {
         refused = String(a || 'refused');
+      } else if (event === '~kicked') {
+        // The server ended this connection (another tab took over, or the account was blocked): don't reconnect, and
+        // don't wait for the close to arrive
+        const was = this.connected;
+        this.wanted = false;
+        this.dropped();
+        try { ws.close(1000); } catch { /* closing */ }
+        if (was) this.fire('disconnect', 'io server disconnect');
       } else {
         this.handle(event, a, b);
       }
     };
     ws.onclose = (e) => {
-      if (this.ws !== ws) return;   // disconnect() already dealt with it
+      if (this.ws !== ws) return;   // disconnect() or a kick already dealt with it
       const was = this.connected;
       this.dropped();
       if (refused) {
@@ -192,7 +201,7 @@ export class Network {
             this.snapState = null;
             this.inputs.length = 0;
             this.events.length = 0;
-            this.fire('roomClosed', 'replaced');
+            this.fire('roomClosed', a === 'blocked' ? 'blocked' : 'replaced');
           }
           try { ws.close(1000); } catch { /* closing */ }
         } else {
