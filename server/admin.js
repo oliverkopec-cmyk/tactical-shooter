@@ -6,12 +6,26 @@ import { rankInfo } from '../shared/progression.js';
 import { getMap } from '../shared/map.js';
 import { isStaff, badgeFlags } from './roles.js';
 
+/** One room as the admin's Matches list shows it. A Cloudflare match room sends this to the central object. */
+export function roomSummary(room) {
+  const info = room.game?.rounds.info();
+  const team = (t) => [...room.members.values()].filter((m) => m.team === t).map((m) => ({ name: m.name, owner: !!m.owner, tester: !!m.tester }));
+  return {
+    code: room.code, phase: room.phase, map: getMap(room.mapId).name,
+    attack: team(TEAMS.ATTACK), defense: team(TEAMS.DEFENSE),
+    scores: info ? info.scores : null, round: info ? info.round : null,
+    spectators: room.spectators.size,
+  };
+}
+
 export class Admin {
-  constructor({ db, accounts, rooms, social }) {
+  /** matchList: the rooms to list, as roomSummary()s (the central object passes its own; here: this process's rooms). */
+  constructor({ db, accounts, rooms, social, matchList = null }) {
     this.db = db;
     this.accounts = accounts;
     this.rooms = rooms;
     this.social = social;
+    this.matchList = matchList || (() => [...this.rooms.rooms.values()].map(roomSummary));
   }
 
   allowed(socket) {
@@ -38,18 +52,7 @@ export class Admin {
   /** Every room with its map, players, score and round. */
   matches(socket) {
     if (!this.allowed(socket)) return { error: 'Not allowed.' };
-    const out = [];
-    for (const room of this.rooms.rooms.values()) {
-      const info = room.game?.rounds.info();
-      const team = (t) => [...room.members.values()].filter((m) => m.team === t).map((m) => ({ name: m.name, owner: !!m.owner, tester: !!m.tester }));
-      out.push({
-        code: room.code, phase: room.phase, map: getMap(room.mapId).name,
-        attack: team(TEAMS.ATTACK), defense: team(TEAMS.DEFENSE),
-        scores: info ? info.scores : null, round: info ? info.round : null,
-        spectators: room.spectators.size,
-      });
-    }
-    return { matches: out };
+    return { matches: this.matchList() };
   }
 
   /** mode: 'spectate' (invisible, can see everything) | 'attack' | 'defense' (join as a player if there is space). */

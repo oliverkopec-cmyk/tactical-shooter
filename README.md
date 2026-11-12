@@ -2,7 +2,35 @@
 
 A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite on the client, Node.js on an authoritative server, talking over plain WebSockets. One Node process serves both the game client and the realtime server, so the whole thing deploys as a single Render web service.
 
-## Status: Stage C3 (a Durable Object for each match room)
+## Status: Stage C4 (the central Durable Object)
+
+The fourth step of moving from Render to Cloudflare. The game on Render is unchanged (its menu code now lives in
+shared files). On the Cloudflare Worker, the menus' live features now run in one central Durable Object.
+
+- **The central object** (`worker/central.js`, class `Central`, one for the whole game): every page's main
+  connection (`/ws`) goes here, once the Worker has checked the login and version. It runs the same code as Render's
+  menus, now shared in `server/menuEvents.js`: who is online, friends' status, parties, gifts and Christmas presents,
+  announcements, the admin and owner tools, warnings, reports and suspensions. The Worker's `/api/friends` routes run
+  here too, so friend requests reach the other player at once and the list shows who is online.
+- **Rooms and the central object** (`worker/matchRoom.js`): each room tells it who is in it and how the match is going
+  (friends see "lobby" / "in a match"; the admin's Matches and Online lists), and who was in each match (so a player can
+  still report someone from the menus after leaving the room). The central object claims the room code when a player
+  creates a room: a party's leader brings the party, whose members are told to join (`partyRoom`) and are put on the
+  leader's team. An admin's Spectate / Join opens the room for them. A suspension or ban takes the player out of their
+  room as well as the menus, and logging out closes that session's connection.
+- **Sleeping when idle:** a page in the menus sends nothing, so the central object hibernates between events and
+  costs no duration. Which room each player is in, the parties, and everyone's last match are kept in its storage and
+  rebuilt when it wakes; the connections stay open while it sleeps.
+- **Render:** `server/menuEvents.js` (the menu handlers, moved out of `server/index.js` unchanged) and
+  `server/nodeRooms.js` (creating, joining and admin-joining rooms in this process). `server/admin.js` has
+  `roomSummary(room)`, which the Cloudflare rooms send to the central object.
+
+### Cloudflare: everything through the Worker locally
+`npm run worker:dev`, then `API_TARGET=http://localhost:8787 REALTIME_TARGET=http://localhost:8787 npm run dev`: the
+page at http://localhost:5173 then uses the Worker for the API, its main connection and rooms (the Node server that
+`npm run dev` also starts isn't used). `.dev.vars` needs a database (see below).
+
+### Earlier: Stage C3 (a Durable Object for each match room)
 
 The third step of moving from Render to Cloudflare. The game on Render is unchanged; the Cloudflare Worker can now run
 rooms and matches itself.
@@ -699,6 +727,8 @@ server/
   passwords.js     PBKDF2 password hashes, and upgrading old bcrypt ones
   dbHttp.js        the database in the Cloudflare Worker (Neon over HTTP)
   roomEvents.js    everything a player does in a room (shared by Render and the Cloudflare match rooms)
+  menuEvents.js    everything a player does from the menus (shared by Render and the Cloudflare central object)
+  nodeRooms.js     creating, joining and admin-joining rooms on Render
   protocol.js      reading the realtime protocol's messages (shared too)
   bots.js          the bots' brains (server side)
   nav.js           the walking grid and distance fields bots move by

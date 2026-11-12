@@ -1,4 +1,4 @@
-// Breachline on Cloudflare Workers (the move from Render: stages C2 to C7). So far: the HTTP API (C2), match rooms (C3).
+// Breachline on Cloudflare Workers (the move from Render: stages C2 to C7). So far: the HTTP API (C2), match rooms (C3), the central object (C4).
 // Run locally:  npm run worker:dev    Deploy:  npm run worker:deploy    (see "Cloudflare" in README.md)
 // wrangler isn't a dependency (Render would download it on every build): the scripts fetch a fixed version.
 {
@@ -10,13 +10,15 @@
   "durable_objects": {
     "bindings": [
       { "name": "PASSWORDS", "class_name": "Passwords" },
-      { "name": "MATCH_ROOMS", "class_name": "MatchRoom" }
+      { "name": "MATCH_ROOMS", "class_name": "MatchRoom" },
+      { "name": "CENTRAL", "class_name": "Central" }
     ]
   },
   // Workers Free only allows Durable Objects with the SQLite storage backend
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["Passwords"] },
-    { "tag": "v2", "new_sqlite_classes": ["MatchRoom"] }
+    { "tag": "v2", "new_sqlite_classes": ["MatchRoom"] },
+    { "tag": "v3", "new_sqlite_classes": ["Central"] }
   ],
   // The fingerprint of shared/*.js, which pages send when they connect (tools/write-shared-version.mjs)
   "build": { "command": "node tools/write-shared-version.mjs", "watch_dir": ["shared", "server", "worker"] },

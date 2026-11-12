@@ -103,17 +103,13 @@ ui.bindAuth({
 async function createRoom() {
   ui.homeError('');
   if (!(await network.ensureConnected())) return ui.homeError(outdated || 'Could not connect to the server.');
-  if (network.rooms === 'worker') {
-    // Rooms on Cloudflare (Stage C3): claim a code, then connect to that room's own Durable Object.
-    // (Bringing a party along comes with Stage C4.)
-    const made = await fetch('/api/rooms', { method: 'POST', credentials: 'same-origin' }).then((r) => r.json()).catch(() => ({}));
-    if (!made.ok) return ui.homeError(made.error || 'Could not create room.');
-    const res = await network.openRoom(made.code);
-    if (!res.ok) return ui.homeError(res.error || 'Could not create room.');
-    return;
-  }
   const res = await network.request('createRoom');
   if (!res.ok) return ui.homeError(res.error || 'Could not create room.');
+  if (network.rooms === 'worker') {
+    // Rooms on Cloudflare: the central object claimed a code (and told the party); connect to that room's own object
+    const joined = await network.openRoom(res.code);
+    if (!joined.ok) return ui.homeError(joined.error || 'Could not create room.');
+  }
 }
 
 ui.bindHome({
@@ -200,9 +196,15 @@ network.on('announcement', (a) => ui.showAnnouncement(a));
 network.on('matchSummary', (summary) => ui.showMatchSummary({ ...summary, name: account?.username, owner: !!account?.owner, tester: !!account?.tester, reportable: game.reportablePlayers() }));
 
 network.on('sessionReplaced', () => { replaced = true; });
+// Our party's leader made a room on Cloudflare: join it (on Render the server puts us in it itself)
+network.on('partyRoom', async ({ code } = {}) => {
+  if (room || !code) return;
+  const res = await network.openRoom(code);
+  if (!res.ok) ui.homeError(res.error || 'Could not join your party\'s room.');
+});
 // A Cloudflare room's connection dropped (the main one may still be fine): back to the menu
 network.on('roomClosed', (why) => {
-  if (!room) return;
+  if (!room || why === 'blocked') return;   // blocked: 'sanctioned' on the main connection says why
   room = null;
   game.stop();
   ui.show('home');

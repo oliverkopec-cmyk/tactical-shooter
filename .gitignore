@@ -7,3 +7,5 @@ dist/
 .wrangler/
 .dev.vars
 worker/generated/
+.dev.vars.*
+!.dev.vars.example
