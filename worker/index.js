@@ -1,6 +1,6 @@
-// Breachline on Cloudflare Workers. So far: the HTTP API (Stage C2), the match rooms (Stage C3) and the central object
-// for the menus (Stage C4). The game's files come here in Stage C5.
-//
+// Breachline on Cloudflare Workers: the whole game on one site, so the login cookie works everywhere.
+// - The game's files (dist/, built by `npm run build`) are Workers static assets (wrangler.jsonc, Stage C5): served
+//   without running this code.
 // - /api/...: server/api.js, the same code the Node server serves, with Neon through HTTP (server/dbHttp.js). The
 //   friends routes go to the central object, which knows who is online.
 // - /ws: a page's main connection, to the central object (worker/central.js), once the login cookie is checked.
@@ -113,10 +113,9 @@ export default {
     if (url.pathname === '/healthz') return new Response('ok');
     const roomSocket = url.pathname.match(/^\/room\/([A-Za-z]{4})\/ws$/);
     const mainSocket = url.pathname === '/ws';
+    // The game's files are served before this runs (wrangler.jsonc "assets"): anything else unknown is a 404
     if (!url.pathname.startsWith('/api/') && !roomSocket && !mainSocket) {
-      return new Response('Breachline on Cloudflare: the API, match rooms and menus so far. The game comes in Stage C5.\n', {
-        status: 404, headers: { 'content-type': 'text/plain; charset=utf-8' },
-      });
+      return new Response('Not found\n', { status: 404, headers: { 'content-type': 'text/plain; charset=utf-8' } });
     }
     let app;
     try { app = await setup(env); } catch (err) {

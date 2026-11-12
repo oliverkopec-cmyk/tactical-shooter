@@ -1,0 +1,9 @@
+# Cloudflare Workers static assets (Stage C5): the same caching as Render (server/staticFiles.js).
+# Files in /assets have a hash in their name that changes whenever they do: browsers keep them for a year.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+# The page itself is checked every time (a quick "not modified" when nothing changed), so a new version is seen at once
+/
+  Cache-Control: no-cache
+/index.html
+  Cache-Control: no-cache

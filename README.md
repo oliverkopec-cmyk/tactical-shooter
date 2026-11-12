@@ -2,7 +2,47 @@
 
 A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite on the client, Node.js on an authoritative server, talking over plain WebSockets. One Node process serves both the game client and the realtime server, so the whole thing deploys as a single Render web service.
 
-## Status: Stage C4 (the central Durable Object)
+## Status: Stage C5 (the game's files on the Worker, and its secrets)
+
+The fifth step of moving from Render to Cloudflare. Render is unchanged. The Cloudflare Worker now serves the whole game
+on one site: the page, its scripts and textures, the API, the main connection and the match rooms, so the login
+cookie works everywhere without anything special.
+
+- **Static assets** (`wrangler.jsonc` `"assets"`): `dist/`, built by `npm run build`, which wrangler now runs before
+  every deploy and in `wrangler dev`. A request for a file that exists is answered by Cloudflare without running the
+  Worker, and *"Requests to static assets are free and unlimited"* (Cloudflare's docs), so only `/api`, `/ws` and
+  `/room` use the free plan's daily requests.
+- **Caching** (`client/public/_headers`): the same as Render. `/assets/*` (names change when the files do) are kept
+  for a year; the page is checked every time. `client/public/.assetsignore` leaves Render's `.br` / `.gz` copies out
+  of the upload.
+- **Settings** are Cloudflare secrets (below). The Worker reads them through `process.env`, like the Node server.
+
+### Cloudflare: secrets
+The Worker needs these, set on Cloudflare (never in a file in the repo). From this folder, each command asks for the
+value; paste it and press Enter:
+
+```bash
+npx wrangler@4.153.0 secret put DATABASE_URL
+npx wrangler@4.153.0 secret put OWNER_USERNAME
+npx wrangler@4.153.0 secret put TESTER_USERNAMES
+npx wrangler@4.153.0 secret put ADMIN_USERNAMES
+npx wrangler@4.153.0 secret list
+```
+
+- `DATABASE_URL`: the Neon connection string (Neon console, the project, **Connect**, copy). While testing, a
+  **branch's**; for the real move (Stage C7), the main branch's (the one Render uses now).
+- `OWNER_USERNAME`: your username. `TESTER_USERNAMES` / `ADMIN_USERNAMES`: comma-separated usernames (only if you use
+  them; skip the command otherwise).
+- If the Worker doesn't exist on Cloudflare yet, wrangler asks to create it: answer `y`.
+- `secret list` shows the names (never the values).
+
+**Or in the dashboard:** dash.cloudflare.com, **Workers & Pages**, the `breachline` Worker, **Settings**,
+**Variables and Secrets**, **Add**: type **Secret**, the name (e.g. `DATABASE_URL`) and the value, then **Deploy**.
+Changing one later the same way takes effect at once, with no new deploy needed.
+
+`npm run worker:deploy` builds the game and deploys everything to `https://breachline.<your-subdomain>.workers.dev`.
+
+### Earlier: Stage C4 (the central Durable Object)
 
 The fourth step of moving from Render to Cloudflare. The game on Render is unchanged (its menu code now lives in
 shared files). On the Cloudflare Worker, the menus' live features now run in one central Durable Object.
