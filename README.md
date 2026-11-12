@@ -14,19 +14,19 @@ The sixth step of moving from Render to Cloudflare. Render is unchanged (the Adm
   once a minute. The central object keeps the day's totals (UTC days) and 14 days of history in its storage.
 - **The free plan's daily allowances:** 100,000 Durable Object requests, 100,000 Worker requests and 13,000 GB-s of
   duration. The game's files are static assets: free and not counted.
-- **"Full for today"** (`FULL_AT`, 80% of any allowance): new rooms and new matches are refused with a friendly message,
-  and every page shows a banner until the reset at 00:00 UTC (11:00 in Sydney during daylight time). **Matches already
-  running are never stopped**; the 20% left over is for them and the menus.
+- **For information only:** nothing is refused because of usage, and players never see it. If an allowance runs out,
+  Cloudflare itself starts refusing requests until the reset at 00:00 UTC (11:00 in Sydney during daylight time), so
+  keep an eye on the bars.
 - **Memory (128 MB):** at most `MAX_LIVE_MATCHES` (6) matches run at once (a match keeps 15–30 MB live, Stage C0);
-  a seventh has to wait a few minutes. A room that stops reporting (its object restarted by a deploy, say) is checked
+  a seventh has to wait a few minutes. A match counts as running from the moment it is allowed, so several starting
+  at once can't slip past the limit. A room that stops reporting (its object restarted by a deploy, say) is checked
   after 90 seconds, so it doesn't count as running for ever.
-- **Admin tab, "Daily usage"** (staff): each allowance as a bar (green, amber from 60%, red from 80%), whether the
-  servers are open or full, when it resets (in hours and in your local time), matches started today and running now,
+- **Admin tab, "Daily usage"** (staff): each allowance as a bar (green, amber from 60%, red from 80%), when it resets (in hours and in your local time), matches started today and running now,
   who is online, and the last 7 days.
 - These are estimates. Cloudflare's own numbers are in the dashboard: **Workers & Pages**, `breachline`, **Metrics**,
   and for Durable Objects **Storage & Databases**, **Durable Objects**.
 - **Testing:** `DAILY_LIMIT_SCALE=0.002` (in `.dev.vars`, never on Cloudflare) shrinks the allowances to 0.2%, so one
-  match fills them in a few minutes.
+  match fills the bars in a few minutes.
 
 ### Earlier: Stage C5 (the game's files on the Worker, and its secrets)
 

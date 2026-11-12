@@ -1,4 +1,5 @@
-// Daily usage against the Workers Free plan (Stage C6), and when to call the servers "full for today".
+// Daily usage against the Workers Free plan (Stage C6), counted so the admin panel can show it. Nothing is refused
+// because of it: players never see it, and only the memory limit (MAX_LIVE_MATCHES) can make a new match wait.
 //
 // Cloudflare doesn't tell a Worker how much of its daily allowance it has used, so the game counts it itself: every
 // Durable Object counts what it receives, the Worker counts its own requests, and the central object adds it all up per
@@ -9,21 +10,17 @@
 //     static assets: free and not counted.
 //   - Duration (13,000 GB-s a day): a Durable Object is charged as 128 MB for every second it is awake. A match room
 //     is awake for the whole match (its 60 Hz loop); a lobby or the central object sleeps between events.
-// They are estimates: Cloudflare's own dashboard is the final word. FULL_AT leaves room for the matches already running
-// to finish (a 15-minute match of 10 players is about 3,000 requests) and for the menus.
+// They are estimates: Cloudflare's own dashboard is the final word.
 //
-// DAILY_LIMIT_SCALE (a setting, for testing only) shrinks the allowances, e.g. 0.001 fills up after 100 requests.
+// DAILY_LIMIT_SCALE (a setting, for testing only) shrinks the allowances, so the admin panel's bars fill up quickly.
 
 export const FREE = { doRequests: 100_000, workerRequests: 100_000, durationGBs: 13_000 };
-export const FULL_AT = 0.8;             // from 80% of any allowance: no new matches or rooms until the reset
 export const MAX_LIVE_MATCHES = 6;      // matches running at once (memory: 15–30 MB each, Stage C0)
 const MESSAGES_PER_REQUEST = 20;
 const GB_PER_OBJECT = 0.125;            // 128 MB
 const HISTORY_DAYS = 14;
 
 export const utcDay = (t = Date.now()) => new Date(t).toISOString().slice(0, 10);
-/** Next 00:00 UTC, when Cloudflare resets the daily allowances. */
-export const nextReset = (t = Date.now()) => { const d = new Date(t); return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1); };
 
 /** What one object counted since it last reported. */
 export const emptyCounts = () => ({ wsMessages: 0, doCalls: 0, workerRequests: 0, durationSec: 0, matches: 0, connections: 0 });
@@ -52,13 +49,11 @@ export function usageView(day, counts, scale = 1) {
   const worst = Math.max(...Object.values(share));
   return {
     day, used, limits: b, share, worst,
-    full: worst >= FULL_AT,
     matches: counts.matches, connections: counts.connections, wsMessages: counts.wsMessages,
     resetsAt: Date.parse(`${day}T00:00:00Z`) + 24 * 3600 * 1000,
   };
 }
 
-export const FULL_MESSAGE = 'Breachline\'s servers are full for today, so new matches can\'t start. Matches already running will finish. Come back after the daily reset!';
 export const BUSY_MESSAGE = `All the match servers are busy (${MAX_LIVE_MATCHES} matches are running). Try again in a few minutes.`;
 
 /** The central object's running total, saved to its storage now and then (row writes are limited too). */
@@ -77,9 +72,8 @@ export class UsageBook {
     if (saved) addCounts(this.counts, saved);
   }
 
-  /** Add counts; returns true when that changed whether the servers are full. */
+  /** Add counts (a new UTC day starts from zero). */
   add(delta) {
-    const before = this.view().full;
     if (utcDay() !== this.day) {
       this.save(true);
       this.day = utcDay();
@@ -89,7 +83,6 @@ export class UsageBook {
     addCounts(this.counts, delta);
     this.dirty = true;
     this.save();
-    return this.view().full !== before;
   }
 
   save(now = false) {

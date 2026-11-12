@@ -268,7 +268,7 @@ export class AdminPanel {
     const local = new Date(t.resetsAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
     card.innerHTML = `
       <h2>Daily usage <span class="muted">(Cloudflare free plan, estimated)</span></h2>
-      <div class="${t.full ? 'error' : 'muted'}">${t.full ? 'Full for today: new matches can\'t start; running ones finish.' : 'Open: new matches can start until 80% of any limit.'} Resets in ${resets} (${esc(local)}).</div>
+      <div class="muted">For your information only: players are never refused because of it. Resets in ${resets} (${esc(local)}).</div>
       ${bar('Durable Object requests', t.used.doRequests, t.limits.doRequests, t.share.doRequests)}
       ${bar('Worker requests', t.used.workerRequests, t.limits.workerRequests, t.share.workerRequests)}
       ${bar('Duration (GB-s)', t.used.durationGBs, t.limits.durationGBs, t.share.durationGBs)}

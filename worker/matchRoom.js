@@ -16,7 +16,7 @@
 //     menus). It claims rooms for parties (their members join the leader's team) and asks for blocked players to go.
 //   - Usage (Stage C6, worker/usage.js): the room counts what it costs (messages, connections, alarms, awake time) and
 //     sends it with its presence or every minute of a match. Before a match starts it asks the central object, which
-//     says no when the servers are full for today or too many matches are running. A running match is never stopped.
+//     says no only when too many matches are running (memory). A running match is never stopped.
 
 import { DurableObject } from 'cloudflare:workers';
 import { RoomManager } from '../server/rooms.js';
@@ -122,8 +122,8 @@ export class MatchRoom extends DurableObject {
     this.bySocket.set(ws, socket);
     this.accounts.online.set(attachment.account.id, socket);
     roomEvents(socket, { moderation: this.moderation });
-    // Starting a match: only if the central object agrees (not when the servers are full for today, or too many matches
-    // are running). Matches already running are never stopped.
+    // Starting a match: only if the central object agrees (not when too many matches are running, for memory).
+    // Matches already running are never stopped.
     socket.handlers.set('startMatch', [async (ack) => {
       const reply = (res) => { if (typeof ack === 'function') ack(res); };
       const room = socket.data.room;
