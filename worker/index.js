@@ -22,10 +22,24 @@ import { createApi } from '../server/api.js';
 import { hashPassword, verifyPassword, rejectSlowly } from '../server/passwords.js';
 import { SHARED_VERSION } from './generated/sharedVersion.js';
 import { refuseSocket } from './sockets.js';
+import { emptyCounts, hasCounts } from './usage.js';
 
 export { MatchRoom } from './matchRoom.js';
 export { Central } from './central.js';
 
+
+// Usage (Stage C6): this Worker instance's requests (and its calls to the Passwords objects) since it last told the
+// central object, which keeps the day's total (worker/usage.js). Told about once a minute, or every 50 requests.
+let meter = emptyCounts();
+let meterSentAt = Date.now();
+function countRequest(env, ctx) {
+  meter.workerRequests++;
+  if (meter.workerRequests < 50 && Date.now() - meterSentAt < 60_000) return;
+  const delta = meter;
+  meter = emptyCounts();
+  meterSentAt = Date.now();
+  if (hasCounts(delta)) ctx.waitUntil(centralStub(env).usageReport(delta).catch(() => {}));
+}
 
 const PASSWORD_OBJECTS = 8;   // spread log-ins over a few objects, so a burst of them doesn't queue behind one
 
@@ -37,7 +51,10 @@ export class Passwords extends DurableObject {
 
 /** The password functions, each call run in one of the Passwords objects. */
 function remotePasswords(env) {
-  const stub = () => env.PASSWORDS.get(env.PASSWORDS.idFromName(`passwords-${Math.floor(Math.random() * PASSWORD_OBJECTS)}`));
+  const stub = () => {
+    meter.doCalls++;   // each check is a request to a Durable Object
+    return env.PASSWORDS.get(env.PASSWORDS.idFromName(`passwords-${Math.floor(Math.random() * PASSWORD_OBJECTS)}`));
+  };
   return {
     hash: (password) => stub().hash(password),
     verify: (password, stored) => stub().verify(password, stored),
@@ -108,7 +125,8 @@ function setup(env) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
+    countRequest(env, ctx);   // everything that reaches this code is a Worker request (the game's files never do)
     const url = new URL(request.url);
     if (url.pathname === '/healthz') return new Response('ok');
     const roomSocket = url.pathname.match(/^\/room\/([A-Za-z]{4})\/ws$/);
@@ -133,6 +151,7 @@ export default {
 
   // Hourly: delete expired sessions (the Node server also does this while it runs)
   async scheduled(_event, env, ctx) {
+    countRequest(env, ctx);
     const { db } = await setup(env);
     ctx.waitUntil(db.query('DELETE FROM sessions WHERE expires_at < now()'));
   },

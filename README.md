@@ -2,7 +2,33 @@
 
 A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite on the client, Node.js on an authoritative server, talking over plain WebSockets. One Node process serves both the game client and the realtime server, so the whole thing deploys as a single Render web service.
 
-## Status: Stage C5 (the game's files on the Worker, and its secrets)
+## Status: Stage C6 (staying within Cloudflare's free plan)
+
+The sixth step of moving from Render to Cloudflare. Render is unchanged (the Admin tab's new card stays hidden there).
+
+- **Counting** (`worker/usage.js`): Cloudflare doesn't tell a Worker how much of its free allowance it has used, so the
+  game counts it, following the billing rules measured in Stage C0. Every Durable Object counts what it receives (an
+  incoming WebSocket message is 1/20 of a request; a connection, a call between objects and an alarm are 1 each) and
+  how long a match keeps it awake (charged as 128 MB per second); the Worker counts its own requests. Rooms send their
+  counts with the updates they already send to the central object (or once a minute during a match), the Worker about
+  once a minute. The central object keeps the day's totals (UTC days) and 14 days of history in its storage.
+- **The free plan's daily allowances:** 100,000 Durable Object requests, 100,000 Worker requests and 13,000 GB-s of
+  duration. The game's files are static assets: free and not counted.
+- **"Full for today"** (`FULL_AT`, 80% of any allowance): new rooms and new matches are refused with a friendly message,
+  and every page shows a banner until the reset at 00:00 UTC (11:00 in Sydney during daylight time). **Matches already
+  running are never stopped**; the 20% left over is for them and the menus.
+- **Memory (128 MB):** at most `MAX_LIVE_MATCHES` (6) matches run at once (a match keeps 15–30 MB live, Stage C0);
+  a seventh has to wait a few minutes. A room that stops reporting (its object restarted by a deploy, say) is checked
+  after 90 seconds, so it doesn't count as running for ever.
+- **Admin tab, "Daily usage"** (staff): each allowance as a bar (green, amber from 60%, red from 80%), whether the
+  servers are open or full, when it resets (in hours and in your local time), matches started today and running now,
+  who is online, and the last 7 days.
+- These are estimates. Cloudflare's own numbers are in the dashboard: **Workers & Pages**, `breachline`, **Metrics**,
+  and for Durable Objects **Storage & Databases**, **Durable Objects**.
+- **Testing:** `DAILY_LIMIT_SCALE=0.002` (in `.dev.vars`, never on Cloudflare) shrinks the allowances to 0.2%, so one
+  match fills them in a few minutes.
+
+### Earlier: Stage C5 (the game's files on the Worker, and its secrets)
 
 The fifth step of moving from Render to Cloudflare. Render is unchanged. The Cloudflare Worker now serves the whole game
 on one site: the page, its scripts and textures, the API, the main connection and the match rooms, so the login

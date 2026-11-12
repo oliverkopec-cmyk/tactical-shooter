@@ -232,6 +232,7 @@ export class AdminPanel {
   }
 
   async refresh() {
+    if ((this.usageTicks = (this.usageTicks || 0) + 1) % 5 === 1) this.loadUsage();   // every 15 s
     const [online, matches] = await Promise.all([this.network.request('adminOnline'), this.network.request('adminMatches')]);
     if (online.error || matches.error) { this.message = online.error || matches.error; }
     else { this.message = ''; this.online = online.players; this.matches = matches.matches; }   // back after a dropped connection: clear the error
@@ -249,6 +250,31 @@ export class AdminPanel {
       const joined = await this.network.openRoom(res.code, res.as);
       if (!joined.ok) { this.message = joined.error || 'Could not join that room.'; this.render(); }
     }
+  }
+
+  /** Daily usage against Cloudflare's free plan (Stage C6). Only the Cloudflare server counts it: hidden on Render. */
+  async loadUsage() {
+    const res = await this.network.request('adminUsage');
+    const card = $('admin-usage');
+    if (!res.available) { card.classList.add('hidden'); return; }
+    card.classList.remove('hidden');
+    const t = res.today;
+    const pct = (x) => Math.min(100, Math.round(x * 100));
+    const bar = (label, used, limit, share) => `
+      <div class="usage-row"><div class="usage-label"><span>${label}</span><span class="muted">${used.toLocaleString()} / ${limit.toLocaleString()} · ${pct(share)}%</span></div>
+        <div class="usage-bar"><div class="usage-fill${share >= 0.8 ? ' full' : share >= 0.6 ? ' warn' : ''}" style="width:${pct(share)}%"></div></div></div>`;
+    const left = Math.max(0, t.resetsAt - Date.now());
+    const resets = `${Math.floor(left / 3600000)}h ${Math.floor(left / 60000) % 60}m`;
+    const local = new Date(t.resetsAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    card.innerHTML = `
+      <h2>Daily usage <span class="muted">(Cloudflare free plan, estimated)</span></h2>
+      <div class="${t.full ? 'error' : 'muted'}">${t.full ? 'Full for today: new matches can\'t start; running ones finish.' : 'Open: new matches can start until 80% of any limit.'} Resets in ${resets} (${esc(local)}).</div>
+      ${bar('Durable Object requests', t.used.doRequests, t.limits.doRequests, t.share.doRequests)}
+      ${bar('Worker requests', t.used.workerRequests, t.limits.workerRequests, t.share.workerRequests)}
+      ${bar('Duration (GB-s)', t.used.durationGBs, t.limits.durationGBs, t.share.durationGBs)}
+      <div class="muted">Matches started today: ${t.matches} · running now: ${res.liveMatches} of ${res.maxLiveMatches} · online: ${res.online}</div>
+      ${res.history.length ? `<table class="usage-history"><tr><th>Day (UTC)</th><th>DO req.</th><th>Worker req.</th><th>GB-s</th><th>Matches</th></tr>
+        ${res.history.map((d) => `<tr><td>${esc(d.day)}</td><td>${d.used.doRequests.toLocaleString()}</td><td>${d.used.workerRequests.toLocaleString()}</td><td>${d.used.durationGBs.toLocaleString()}</td><td>${d.matches}</td></tr>`).join('')}</table>` : ''}`;
   }
 
   render() {

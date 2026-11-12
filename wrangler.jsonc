@@ -26,7 +26,7 @@
   ],
   // Before every deploy (and in `wrangler dev`): build the game into dist/, and write the fingerprint of shared/*.js
   // that pages send when they connect (tools/write-shared-version.mjs)
-  "build": { "command": "npm run build && node tools/write-shared-version.mjs", "watch_dir": ["shared", "server", "worker", "client/src"] },
+  "build": { "command": "npm run build && node tools/write-shared-version.mjs", "watch_dir": ["shared", "server", "worker", "client"] },
   // Hourly clean-up of expired sessions
   "triggers": { "crons": ["17 * * * *"] },
   "observability": { "enabled": true, "head_sampling_rate": 0.1 }

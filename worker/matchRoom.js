@@ -14,6 +14,9 @@
 //   - The central object (worker/central.js, Stage C4) is told who is in the room and how the match is going
 //     (presence: friends' status, the admin's Matches list), and who was in each match (recent: reports from the
 //     menus). It claims rooms for parties (their members join the leader's team) and asks for blocked players to go.
+//   - Usage (Stage C6, worker/usage.js): the room counts what it costs (messages, connections, alarms, awake time) and
+//     sends it with its presence or every minute of a match. Before a match starts it asks the central object, which
+//     says no when the servers are full for today or too many matches are running. A running match is never stopped.
 
 import { DurableObject } from 'cloudflare:workers';
 import { RoomManager } from '../server/rooms.js';
@@ -28,6 +31,7 @@ import { neonHttpDb } from '../server/dbHttp.js';
 import { TEAMS, MAX_PER_TEAM } from '../shared/constants.js';
 import { refuseSocket } from './sockets.js';
 import { DoSocket, DoIo } from './doSockets.js';
+import { emptyCounts, hasCounts } from './usage.js';
 
 const REHOME_MS = 15_000;           // restart the match loop this often (see above)
 const TICK_RATE = 60;               // server/gameState.js
@@ -40,6 +44,9 @@ export class MatchRoom extends DurableObject {
     this.room = null;
     this.code = null;
     this.alarmSet = false;
+    this.meter = emptyCounts();          // usage since the last report to the central object
+    this.meter.durationSec += 10;        // waking up: about this long awake for each event, a rough allowance
+    this.alarmsSinceReport = 0;
     this.bySocket = new Map();   // WebSocket -> DoSocket
     const db = neonHttpDb(env.DATABASE_URL, { fetchEndpoint: env.NEON_FETCH_ENDPOINT });
     // What rooms.js, gameState.js and progression.js expect of `accounts`, for the players in this room
@@ -115,6 +122,19 @@ export class MatchRoom extends DurableObject {
     this.bySocket.set(ws, socket);
     this.accounts.online.set(attachment.account.id, socket);
     roomEvents(socket, { moderation: this.moderation });
+    // Starting a match: only if the central object agrees (not when the servers are full for today, or too many matches
+    // are running). Matches already running are never stopped.
+    socket.handlers.set('startMatch', [async (ack) => {
+      const reply = (res) => { if (typeof ack === 'function') ack(res); };
+      const room = socket.data.room;
+      if (!room) return reply({ error: 'Not in a room.' });
+      if (room.hostId !== socket.id) return reply(room.start(socket.id));   // the room's own answer (not the host...)
+      const allowed = await this.central().allowMatch(this.code).catch(() => ({ ok: true }));
+      if (!allowed.ok) return reply({ error: allowed.error });
+      const res = room.start(socket.id);
+      if (!res.error) { this.meter.matches++; await this.keepLoopFresh(); }
+      reply(res);
+    }]);
     // Skins or charms changed mid-match: the shop and equipping go through the API, so read them from the database first
     socket.handlers.set('refreshLook', [async () => {
       try {
@@ -135,21 +155,40 @@ export class MatchRoom extends DurableObject {
 
   central() { return this.env.CENTRAL.get(this.env.CENTRAL.idFromName('central')); }
 
+  /** Who is in this room and how its match is going (server/admin.js roomSummary), or closed. */
+  presencePayload() {
+    const room = this.room;
+    if (!room || this.humans() === 0) return { closed: true };
+    const accountOf = (id) => this.io.sockets.sockets.get(id)?.data.account.id;
+    return {
+      summary: roomSummary(room),
+      players: [...room.members.values()].filter((m) => !m.bot).map((m) => m.accountId ?? accountOf(m.id)).filter(Boolean),
+      spectators: [...room.spectators.keys()].map(accountOf).filter(Boolean),
+    };
+  }
+
+  /** The central object hasn't heard from this room for a while: is it still there? (After a deploy, say.) */
+  async currentPresence() {
+    this.meter.doCalls++;
+    const meta = await this.ctx.storage.get('meta');
+    if (meta && !this.room && this.ctx.getWebSockets().length) await this.restore(meta);
+    return this.presencePayload();
+  }
+
+  /** What this room counted since it last reported, and start again. */
+  takeMeter() {
+    const out = this.meter;
+    this.meter = emptyCounts();
+    return out;
+  }
+
   /** Who is in this room and how its match is going, a moment after it changes. */
   presenceSoon() {
     if (this.presenceTimer || !this.code) return;
     this.presenceTimer = setTimeout(() => {
       this.presenceTimer = null;
-      const room = this.room;
-      const accountOf = (id) => this.io.sockets.sockets.get(id)?.data.account.id;
-      const payload = room
-        ? {
-          summary: roomSummary(room),
-          players: [...room.members.values()].filter((m) => !m.bot).map((m) => m.accountId ?? accountOf(m.id)).filter(Boolean),
-          spectators: [...room.spectators.keys()].map(accountOf).filter(Boolean),
-        }
-        : { closed: true };
-      this.ctx.waitUntil(this.central().presence(this.code, payload).catch((e) => console.error('Presence failed:', e.message)));
+      const payload = this.presencePayload();
+      this.ctx.waitUntil(this.central().presence(this.code, payload, this.takeMeter()).catch((e) => console.error('Presence failed:', e.message)));
     }, PRESENCE_DELAY_MS);
   }
 
@@ -175,7 +214,7 @@ export class MatchRoom extends DurableObject {
     this.room = null;
     clearTimeout(this.presenceTimer);
     this.presenceTimer = null;
-    if (this.code) await this.central().presence(this.code, { closed: true }).catch(() => {});
+    if (this.code) await this.central().presence(this.code, { closed: true }, this.takeMeter()).catch(() => {});
     await this.ctx.storage.deleteAlarm();
     await this.ctx.storage.deleteAll();
   }
@@ -190,8 +229,15 @@ export class MatchRoom extends DurableObject {
 
   async alarm() {
     this.alarmSet = false;
+    this.meter.doCalls++;
     const game = this.room?.game;
     if (!game?.timer) return;
+    // A match keeps the object awake: 15 more seconds of it. Every minute, tell the central object what was used.
+    this.meter.durationSec += REHOME_MS / 1000;
+    if (++this.alarmsSinceReport >= 4 && hasCounts(this.meter)) {
+      this.alarmsSinceReport = 0;
+      this.ctx.waitUntil(this.central().usageReport(this.takeMeter(), this.code).catch(() => {}));
+    }
     clearInterval(game.timer);
     game.timer = setInterval(() => game.update(), 1000 / TICK_RATE);
     await this.keepLoopFresh();
@@ -201,6 +247,7 @@ export class MatchRoom extends DurableObject {
 
   /** Make this code a new room, unless it is in use. party: { leader, members } (account ids) to play together. */
   async claim(code, party = null) {
+    this.meter.doCalls++;
     const meta = await this.ctx.storage.get('meta');
     if (meta && (this.ctx.getWebSockets().length > 0 || Date.now() - meta.claimedAt < CLAIM_HOLD_MS)) return { ok: false };
     await this.ctx.storage.deleteAll();
@@ -212,12 +259,14 @@ export class MatchRoom extends DurableObject {
 
   /** Suspended or banned (the central object asks): out of this room. */
   kick(accountId) {
+    this.meter.doCalls++;
     const socket = this.accounts.online.get(accountId);
     if (socket) socket.disconnect('blocked');
   }
 
   /** A player's WebSocket. worker/index.js has checked the login and passes the account in X-Account. */
   async fetch(request) {
+    this.meter.doCalls++;
     let account, mode;
     try {
       account = JSON.parse(request.headers.get('x-account'));
@@ -271,6 +320,7 @@ export class MatchRoom extends DurableObject {
   }
 
   async webSocketMessage(ws, message) {
+    this.meter.wsMessages++;
     const socket = this.socketOf(ws);
     if (!socket || typeof message !== 'string' || message.length > 64 * 1024) return;
     receive(socket, message);
