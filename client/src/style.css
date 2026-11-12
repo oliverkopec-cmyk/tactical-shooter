@@ -1554,3 +1554,16 @@ button.primary:hover:not(:disabled) { background: linear-gradient(180deg, #ffd47
 .ws-stat.worse .ws-bar em { background: #e8604a; }
 @media (max-width: 900px) { .ws-left, .ws-right { top: auto; bottom: 8px; height: 42vh; width: calc(50% - 12px); } .ws-left { left: 8px; } .ws-right { right: 8px; } .ws-head { width: calc(100% - 16px); top: 8px; } }
 .gun-open { margin-left: auto; font-size: 11px; color: var(--accent); white-space: nowrap; }
+
+/* Stage C6: daily usage in the Admin tab, and the "servers are full for today" banner */
+.usage-row { display: flex; flex-direction: column; gap: 4px; }
+.usage-label { display: flex; justify-content: space-between; gap: 8px; font-size: 14px; }
+.usage-bar { height: 8px; border-radius: 4px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
+.usage-fill { height: 100%; background: #6fdc7a; border-radius: 4px; }
+.usage-fill.warn { background: #e8b44a; }
+.usage-fill.full { background: var(--error); }
+.usage-history { width: 100%; border-collapse: collapse; font-size: 13px; }
+.usage-history th, .usage-history td { text-align: right; padding: 3px 6px; border-bottom: 1px solid var(--line); }
+.usage-history th:first-child, .usage-history td:first-child { text-align: left; }
+#server-full { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); z-index: 60; max-width: min(640px, calc(100vw - 32px));
+  background: rgba(30, 20, 10, 0.92); border: 1px solid #e8b44a; color: #f3d9a4; border-radius: 10px; padding: 10px 16px; font-size: 14px; text-align: center; }

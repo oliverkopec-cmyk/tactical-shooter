@@ -5,11 +5,12 @@
 //   rooms.create(socket) -> { ok, code, party } | { error }
 //   rooms.join(socket, code) -> { ok, code } | { error }
 //   rooms.adminJoin(socket, { code, mode }) -> { ok, code, ... } | { error }
+// usage(socket): the Cloudflare free plan's daily usage for the admin panel (the central object only).
 
 const reply = (ack, payload) => { if (typeof ack === 'function') ack(payload); };
 const obj = (v) => (v && typeof v === 'object' ? v : {});
 
-export function menuEvents(socket, { social, admin, gifts, christmas, moderation, rooms }) {
+export function menuEvents(socket, { social, admin, gifts, christmas, moderation, rooms, usage = null }) {
   const safely = (fn) => async (...args) => {
     const ack = typeof args.at(-1) === 'function' ? args.pop() : null;
     try { reply(ack, await fn(...args)); } catch (err) { console.error('Request failed:', err.message); reply(ack, { error: 'Server error.' }); }
@@ -29,6 +30,8 @@ export function menuEvents(socket, { social, admin, gifts, christmas, moderation
   socket.on('adminOnline', safely(() => admin.online(socket)));
   socket.on('adminMatches', safely(() => admin.matches(socket)));
   socket.on('adminJoin', safely((req) => rooms.adminJoin(socket, { code: String(obj(req).code || ''), mode: String(obj(req).mode || '') })));
+  // Daily usage against Cloudflare's free plan (only the Cloudflare central object counts it)
+  socket.on('adminUsage', safely(() => (usage ? usage(socket) : { available: false })));
 
   // ---- announcements and gifts (admins send, anyone opens their own)
   socket.on('adminAnnounce', safely((req) => gifts.announce(socket, obj(req))));

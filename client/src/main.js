@@ -196,6 +196,18 @@ network.on('announcement', (a) => ui.showAnnouncement(a));
 network.on('matchSummary', (summary) => ui.showMatchSummary({ ...summary, name: account?.username, owner: !!account?.owner, tester: !!account?.tester, reportable: game.reportablePlayers() }));
 
 network.on('sessionReplaced', () => { replaced = true; });
+// Cloudflare's free plan is nearly used up for today (Stage C6): a banner in the menus until the daily reset.
+// New matches are refused by the server meanwhile; matches already running carry on.
+network.on('serverStatus', (status) => {
+  let banner = document.getElementById('server-full');
+  if (!status?.full) { banner?.remove(); return; }
+  if (!banner) { banner = document.createElement('div'); banner.id = 'server-full'; document.body.appendChild(banner); }
+  const at = new Date(status.resetsAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  banner.textContent = `${status.message || 'The servers are full for today.'} The reset is at ${at} your time.`;
+  clearTimeout(banner.timer);
+  banner.timer = setTimeout(() => banner.remove(), Math.max(0, status.resetsAt - Date.now()) + 5000);
+});
+
 // Our party's leader made a room on Cloudflare: join it (on Render the server puts us in it itself)
 network.on('partyRoom', async ({ code } = {}) => {
   if (room || !code) return;

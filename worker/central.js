@@ -4,6 +4,10 @@
 // admin and owner tools, warnings, reports and suspensions. Match rooms are their own objects (worker/matchRoom.js);
 // they tell this one who is in them and how their match is going (presence), and who was in each match (recent).
 //
+// It also keeps the day's usage against the free plan (worker/usage.js, Stage C6): every object reports what it
+// counted, and from 80% of any daily allowance new rooms and matches are refused ("full for today") while the matches
+// already running finish. Pages are told (serverStatus), and the admin panel shows it (adminUsage).
+//
 // It hibernates when idle: a page in the menus sends nothing, so most of the time nothing runs here and no duration is
 // charged. What must survive that (which room each player is in, parties, everyone's last match for reports) is in
 // its storage, and rebuilt when it wakes. The connections stay open while it sleeps.
@@ -20,6 +24,7 @@ import { isStaff } from '../server/roles.js';
 import { neonHttpDb } from '../server/dbHttp.js';
 import { ROOM_CODE_LENGTH, TEAMS } from '../shared/constants.js';
 import { DoSocket, DoIo } from './doSockets.js';
+import { UsageBook, FULL_MESSAGE, BUSY_MESSAGE, MAX_LIVE_MATCHES, nextReset } from './usage.js';
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ';   // no I or O (as server/rooms.js)
 const randomCode = () => Array.from({ length: ROOM_CODE_LENGTH }, () => CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)]).join('');
@@ -41,6 +46,7 @@ export class Central extends DurableObject {
     this.gifts = new Gifts({ db, accounts: this.accounts });
     this.christmas = new Christmas({ db, accounts: this.accounts });
     this.bySocket = new Map();   // WebSocket -> DoSocket
+    this.usage = new UsageBook(ctx.storage, env.DAILY_LIMIT_SCALE);
     this.savedParties = '';
     // Parties live in server/social.js's memory: save them after every change (some come after a database wait, and
     // an invite running out comes from a timer), so they survive this object sleeping
@@ -62,6 +68,7 @@ export class Central extends DurableObject {
   // ---------------------------------------------------------------- waking up
 
   async restore() {
+    await this.usage.load();
     const [rooms, parties] = await Promise.all([this.ctx.storage.get('rooms'), this.ctx.storage.get('parties')]);
     for (const [code, r] of rooms || []) this.setRoom(code, r, false);
     const sockets = this.ctx.getWebSockets();
@@ -105,6 +112,7 @@ export class Central extends DurableObject {
     menuEvents(socket, {
       social: this.social, admin: this.admin, gifts: this.gifts, christmas: this.christmas, moderation: this.moderation,
       rooms: this.roomOps(),
+      usage: (s) => this.usageFor(s),
     });
     // A report from the menus (after leaving the room): the room told us who was in that match
     socket.on('report', async (req, ack) => {
@@ -147,6 +155,7 @@ export class Central extends DurableObject {
 
   /** A new room on a free code. A party's leader brings the party: they are told to join it, on the leader's team. */
   async createRoom(socket) {
+    if (this.usage.view().full) return { ok: false, error: FULL_MESSAGE };
     const me = socket.data.account.id;
     const party = this.social.partyOf.get(me);
     if (party && party.leader !== me) {
@@ -182,7 +191,7 @@ export class Central extends DurableObject {
   }
 
   setRoom(code, r, save = true) {
-    if (r) this.rooms.set(code, r); else this.rooms.delete(code);
+    if (r) this.rooms.set(code, { ...r, seenAt: r.seenAt || Date.now() }); else this.rooms.delete(code);
     if (save) this.ctx.storage.put('rooms', [...this.rooms]);
     // Who is where, rebuilt from every room
     this.whereIs.clear();
@@ -192,10 +201,72 @@ export class Central extends DurableObject {
     }
   }
 
+  // ---------------------------------------------------------------- usage (worker/usage.js)
+
+  /** Add to today's usage; when the servers become full (or the day resets), every page is told. */
+  count(delta) {
+    if (this.usage.add(delta)) this.broadcastStatus();
+  }
+
+  status() {
+    const v = this.usage.view();
+    return { full: v.full, resetsAt: nextReset(), message: v.full ? FULL_MESSAGE : null };
+  }
+
+  broadcastStatus() {
+    const status = this.status();
+    for (const socket of this.accounts.online.values()) socket.emit('serverStatus', status);
+  }
+
+  liveMatches(except = null) {
+    let n = 0;
+    for (const [code, r] of this.rooms) if (code !== except && r.summary?.phase === 'match') n++;
+    return n;
+  }
+
+  /** The admin panel's Daily usage (staff only). */
+  async usageFor(socket) {
+    if (!isStaff(socket.data.account.username)) return { error: 'Not allowed.' };
+    await this.checkQuietRooms();
+    return {
+      available: true, today: this.usage.view(), history: await this.usage.history(7),
+      liveMatches: this.liveMatches(), maxLiveMatches: MAX_LIVE_MATCHES, online: this.accounts.online.size,
+    };
+  }
+
   // ---------------------------------------------------------------- called by match rooms (worker/matchRoom.js)
 
+  /** What a room (code) or the Worker counted since it last reported. A running match reports every minute. */
+  usageReport(delta, code = null) {
+    this.count({ ...delta, doCalls: (Number(delta?.doCalls) || 0) + 1 });
+    const room = code && this.rooms.get(code);
+    if (room) room.seenAt = Date.now();
+  }
+
+  /**
+   * Rooms that haven't reported for a while (onlyMatches: just the ones in a match) are asked whether they still exist.
+   * A room whose object was restarted (a deploy, say) can't say goodbye, and would otherwise count as running for ever.
+   */
+  async checkQuietRooms(onlyMatches = false) {
+    const quiet = [...this.rooms].filter(([, r]) => Date.now() - (r.seenAt || 0) > 90_000 && (!onlyMatches || r.summary?.phase === 'match'));
+    await Promise.all(quiet.map(async ([code]) => {
+      const now = await this.roomStub(code).currentPresence().catch(() => ({ closed: true }));
+      this.presence(code, now);
+    }));
+  }
+
+  /** May this room start a match? Not when the servers are full for today, or too many matches are running. */
+  async allowMatch(code) {
+    this.count({ doCalls: 1 });
+    if (this.usage.view().full) return { ok: false, error: FULL_MESSAGE };
+    if (this.liveMatches(code) >= MAX_LIVE_MATCHES) await this.checkQuietRooms(true);
+    if (this.liveMatches(code) >= MAX_LIVE_MATCHES) return { ok: false, error: BUSY_MESSAGE };
+    return { ok: true };
+  }
+
   /** A room's players, spectators and match (summary: server/admin.js roomSummary). closed: the room has gone. */
-  presence(code, { summary = null, players = [], spectators = [], closed = false } = {}) {
+  presence(code, { summary = null, players = [], spectators = [], closed = false } = {}, usage = null) {
+    this.usageReport(usage);
     const before = this.rooms.get(code);
     const was = new Map([...(before?.players || [])].map((id) => [id, before.summary.phase]));
     this.setRoom(code, closed ? null : { summary, players, spectators });
@@ -215,6 +286,7 @@ export class Central extends DurableObject {
 
   /** Who was in an account's latest match, so it can still report them from the menus. */
   async recent(accountId, recent) {
+    this.count({ doCalls: 1 });
     await this.ctx.storage.put(`recent:${accountId}`, recent);
     const socket = this.accounts.online.get(accountId);
     if (socket) socket.data.recent = { ...recent, players: new Map(recent.players) };
@@ -223,10 +295,11 @@ export class Central extends DurableObject {
   // ---------------------------------------------------------------- called by worker/index.js
 
   /** Logged out: close that session's connection. */
-  kickSession(accountId, tokenHash) { this.accounts.kickSession(accountId, tokenHash); }
+  kickSession(accountId, tokenHash) { this.count({ doCalls: 1 }); this.accounts.kickSession(accountId, tokenHash); }
 
   /** The friends API (/api/friends...) runs here, where who is online is known. -> { status, body } */
   async friends(accountId, op, args = {}) {
+    this.count({ doCalls: 1 });
     const s = this.social;
     let out;
     if (op === 'list') out = await s.list(accountId);
@@ -260,6 +333,8 @@ export class Central extends DurableObject {
     if (recent) socket.data.recent = { ...recent, players: new Map(recent.players) };
     this.gifts.sendPending(socket);
     this.christmas.sendState(socket);
+    this.count({ doCalls: 1, connections: 1 });
+    if (this.usage.view().full) socket.emit('serverStatus', this.status());
     return new Response(null, { status: 101, webSocket: client });
   }
 
@@ -274,6 +349,7 @@ export class Central extends DurableObject {
 
   async webSocketMessage(ws, message) {
     const socket = this.socketOf(ws);
+    this.count({ wsMessages: 1 });
     if (!socket || typeof message !== 'string' || message.length > 64 * 1024) return;
     receive(socket, message);
     this.saveParties();

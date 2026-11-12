@@ -2,7 +2,73 @@
 
 A browser-based multiplayer 3D tactical attack/defend shooter. Three.js + Vite on the client, Node.js on an authoritative server, talking over plain WebSockets. One Node process serves both the game client and the realtime server, so the whole thing deploys as a single Render web service.
 
-## Status: Stage C4 (the central Durable Object)
+## Status: Stage C6 (staying within Cloudflare's free plan)
+
+The sixth step of moving from Render to Cloudflare. Render is unchanged (the Admin tab's new card stays hidden there).
+
+- **Counting** (`worker/usage.js`): Cloudflare doesn't tell a Worker how much of its free allowance it has used, so the
+  game counts it, following the billing rules measured in Stage C0. Every Durable Object counts what it receives (an
+  incoming WebSocket message is 1/20 of a request; a connection, a call between objects and an alarm are 1 each) and
+  how long a match keeps it awake (charged as 128 MB per second); the Worker counts its own requests. Rooms send their
+  counts with the updates they already send to the central object (or once a minute during a match), the Worker about
+  once a minute. The central object keeps the day's totals (UTC days) and 14 days of history in its storage.
+- **The free plan's daily allowances:** 100,000 Durable Object requests, 100,000 Worker requests and 13,000 GB-s of
+  duration. The game's files are static assets: free and not counted.
+- **"Full for today"** (`FULL_AT`, 80% of any allowance): new rooms and new matches are refused with a friendly message,
+  and every page shows a banner until the reset at 00:00 UTC (11:00 in Sydney during daylight time). **Matches already
+  running are never stopped**; the 20% left over is for them and the menus.
+- **Memory (128 MB):** at most `MAX_LIVE_MATCHES` (6) matches run at once (a match keeps 15–30 MB live, Stage C0);
+  a seventh has to wait a few minutes. A room that stops reporting (its object restarted by a deploy, say) is checked
+  after 90 seconds, so it doesn't count as running for ever.
+- **Admin tab, "Daily usage"** (staff): each allowance as a bar (green, amber from 60%, red from 80%), whether the
+  servers are open or full, when it resets (in hours and in your local time), matches started today and running now,
+  who is online, and the last 7 days.
+- These are estimates. Cloudflare's own numbers are in the dashboard: **Workers & Pages**, `breachline`, **Metrics**,
+  and for Durable Objects **Storage & Databases**, **Durable Objects**.
+- **Testing:** `DAILY_LIMIT_SCALE=0.002` (in `.dev.vars`, never on Cloudflare) shrinks the allowances to 0.2%, so one
+  match fills them in a few minutes.
+
+### Earlier: Stage C5 (the game's files on the Worker, and its secrets)
+
+The fifth step of moving from Render to Cloudflare. Render is unchanged. The Cloudflare Worker now serves the whole game
+on one site: the page, its scripts and textures, the API, the main connection and the match rooms, so the login
+cookie works everywhere without anything special.
+
+- **Static assets** (`wrangler.jsonc` `"assets"`): `dist/`, built by `npm run build`, which wrangler now runs before
+  every deploy and in `wrangler dev`. A request for a file that exists is answered by Cloudflare without running the
+  Worker, and *"Requests to static assets are free and unlimited"* (Cloudflare's docs), so only `/api`, `/ws` and
+  `/room` use the free plan's daily requests.
+- **Caching** (`client/public/_headers`): the same as Render. `/assets/*` (names change when the files do) are kept
+  for a year; the page is checked every time. `client/public/.assetsignore` leaves Render's `.br` / `.gz` copies out
+  of the upload.
+- **Settings** are Cloudflare secrets (below). The Worker reads them through `process.env`, like the Node server.
+
+### Cloudflare: secrets
+The Worker needs these, set on Cloudflare (never in a file in the repo). From this folder, each command asks for the
+value; paste it and press Enter:
+
+```bash
+npx wrangler@4.153.0 secret put DATABASE_URL
+npx wrangler@4.153.0 secret put OWNER_USERNAME
+npx wrangler@4.153.0 secret put TESTER_USERNAMES
+npx wrangler@4.153.0 secret put ADMIN_USERNAMES
+npx wrangler@4.153.0 secret list
+```
+
+- `DATABASE_URL`: the Neon connection string (Neon console, the project, **Connect**, copy). While testing, a
+  **branch's**; for the real move (Stage C7), the main branch's (the one Render uses now).
+- `OWNER_USERNAME`: your username. `TESTER_USERNAMES` / `ADMIN_USERNAMES`: comma-separated usernames (only if you use
+  them; skip the command otherwise).
+- If the Worker doesn't exist on Cloudflare yet, wrangler asks to create it: answer `y`.
+- `secret list` shows the names (never the values).
+
+**Or in the dashboard:** dash.cloudflare.com, **Workers & Pages**, the `breachline` Worker, **Settings**,
+**Variables and Secrets**, **Add**: type **Secret**, the name (e.g. `DATABASE_URL`) and the value, then **Deploy**.
+Changing one later the same way takes effect at once, with no new deploy needed.
+
+`npm run worker:deploy` builds the game and deploys everything to `https://breachline.<your-subdomain>.workers.dev`.
+
+### Earlier: Stage C4 (the central Durable Object)
 
 The fourth step of moving from Render to Cloudflare. The game on Render is unchanged (its menu code now lives in
 shared files). On the Cloudflare Worker, the menus' live features now run in one central Durable Object.
