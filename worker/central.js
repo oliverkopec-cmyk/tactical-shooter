@@ -5,8 +5,8 @@
 // they tell this one who is in them and how their match is going (presence), and who was in each match (recent).
 //
 // It also keeps the day's usage against the free plan (worker/usage.js, Stage C6): every object reports what it
-// counted, and from 80% of any daily allowance new rooms and matches are refused ("full for today") while the matches
-// already running finish. Pages are told (serverStatus), and the admin panel shows it (adminUsage).
+// counted, and the admin panel shows it (adminUsage). It is for information only: nothing is refused because of it. The
+// one limit is memory: at most MAX_LIVE_MATCHES matches run at once.
 //
 // It hibernates when idle: a page in the menus sends nothing, so most of the time nothing runs here and no duration is
 // charged. What must survive that (which room each player is in, parties, everyone's last match for reports) is in
@@ -24,8 +24,9 @@ import { isStaff } from '../server/roles.js';
 import { neonHttpDb } from '../server/dbHttp.js';
 import { ROOM_CODE_LENGTH, TEAMS } from '../shared/constants.js';
 import { DoSocket, DoIo } from './doSockets.js';
-import { UsageBook, FULL_MESSAGE, BUSY_MESSAGE, MAX_LIVE_MATCHES, nextReset } from './usage.js';
+import { UsageBook, BUSY_MESSAGE, MAX_LIVE_MATCHES } from './usage.js';
 
+const STARTING_MS = 15_000;   // a match just allowed counts as running until its room reports it
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ';   // no I or O (as server/rooms.js)
 const randomCode = () => Array.from({ length: ROOM_CODE_LENGTH }, () => CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)]).join('');
 
@@ -41,6 +42,7 @@ export class Central extends DurableObject {
     this.accounts.moderation = this.moderation;
     this.moderation.onBlocked = (accountId) => this.kickFromRoom(accountId);
     this.rooms = new Map();     // code -> { summary, players: [account ids], spectators: [account ids] }
+    this.starting = new Map();  // code -> when allowMatch said yes (the room reports its match a moment later)
     this.whereIs = new Map();   // account id -> { code, spectator }
     this.admin = new Admin({ db, accounts: this.accounts, rooms: null, social: this.social, matchList: () => [...this.rooms.values()].map((r) => r.summary) });
     this.gifts = new Gifts({ db, accounts: this.accounts });
@@ -155,7 +157,6 @@ export class Central extends DurableObject {
 
   /** A new room on a free code. A party's leader brings the party: they are told to join it, on the leader's team. */
   async createRoom(socket) {
-    if (this.usage.view().full) return { ok: false, error: FULL_MESSAGE };
     const me = socket.data.account.id;
     const party = this.social.partyOf.get(me);
     if (party && party.leader !== me) {
@@ -203,25 +204,20 @@ export class Central extends DurableObject {
 
   // ---------------------------------------------------------------- usage (worker/usage.js)
 
-  /** Add to today's usage; when the servers become full (or the day resets), every page is told. */
+  /** Add to today's usage (for the admin panel only). */
   count(delta) {
-    if (this.usage.add(delta)) this.broadcastStatus();
+    this.usage.add(delta);
   }
 
-  status() {
-    const v = this.usage.view();
-    return { full: v.full, resetsAt: nextReset(), message: v.full ? FULL_MESSAGE : null };
-  }
-
-  broadcastStatus() {
-    const status = this.status();
-    for (const socket of this.accounts.online.values()) socket.emit('serverStatus', status);
-  }
-
+  /** Matches running now: the ones rooms have reported, and the ones just allowed that haven't reported yet. */
   liveMatches(except = null) {
-    let n = 0;
-    for (const [code, r] of this.rooms) if (code !== except && r.summary?.phase === 'match') n++;
-    return n;
+    const live = new Set();
+    for (const [code, r] of this.rooms) if (r.summary?.phase === 'match') live.add(code);
+    for (const [code, at] of this.starting) {
+      if (Date.now() - at < STARTING_MS) live.add(code); else this.starting.delete(code);
+    }
+    live.delete(except);
+    return live.size;
   }
 
   /** The admin panel's Daily usage (staff only). */
@@ -255,12 +251,12 @@ export class Central extends DurableObject {
     }));
   }
 
-  /** May this room start a match? Not when the servers are full for today, or too many matches are running. */
+  /** May this room start a match? Not when too many matches are running (memory). Usage never refuses one. */
   async allowMatch(code) {
     this.count({ doCalls: 1 });
-    if (this.usage.view().full) return { ok: false, error: FULL_MESSAGE };
     if (this.liveMatches(code) >= MAX_LIVE_MATCHES) await this.checkQuietRooms(true);
     if (this.liveMatches(code) >= MAX_LIVE_MATCHES) return { ok: false, error: BUSY_MESSAGE };
+    this.starting.set(code, Date.now());
     return { ok: true };
   }
 
@@ -334,7 +330,6 @@ export class Central extends DurableObject {
     this.gifts.sendPending(socket);
     this.christmas.sendState(socket);
     this.count({ doCalls: 1, connections: 1 });
-    if (this.usage.view().full) socket.emit('serverStatus', this.status());
     return new Response(null, { status: 101, webSocket: client });
   }
 

@@ -7,7 +7,7 @@ the list from the menu.
 Format: `## <id> · <date> · <title>`, then one bullet per change. The id has to be unique and is what the game remembers.
 
 ## C6 · 2026-11-12 · A fair share for everyone
-- On very busy days the servers can fill up. If that happens you'll see a message saying so: matches already being played always finish, and new ones can start again after the daily reset.
+- If a lot of matches are being played at the same time, a new one may have to wait a few minutes before it can start. Matches already being played always finish.
 
 ## C5 · 2026-11-12 · Getting ready for the new servers, part 3
 - Behind the scenes: the game's new home can now serve the whole game itself. Nothing changes for you yet.
