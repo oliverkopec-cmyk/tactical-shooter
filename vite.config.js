@@ -17,7 +17,8 @@ export default defineConfig(({ command }) => ({
     fs: { allow: ['..'] },
     proxy: {
       '/ws': { target: 'ws://localhost:3000', ws: true },
-      '/api': 'http://localhost:3000',
+      // API_TARGET=http://localhost:8787 sends the API to the Cloudflare Worker (npm run worker:dev) instead
+      '/api': process.env.API_TARGET || 'http://localhost:3000',
     },
   },
 }));

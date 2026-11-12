@@ -6,6 +6,9 @@ the list from the menu.
 
 Format: `## <id> · <date> · <title>`, then one bullet per change. The id has to be unique and is what the game remembers.
 
+## C2 · 2026-11-11 · Passwords stored a new way
+- Passwords are now stored with a newer method. Yours switches over by itself the next time you log in, and nothing else changes: same password, same Money and skins.
+
 ## C1 · 2026-11-11 · A lighter connection to the server
 - The game talks to the server in a new, lighter way, ready for its move to a new home. It sends far fewer messages, and nothing at all while you're in the menus or waiting to respawn.
 - Everything plays the same: other players still move smoothly.

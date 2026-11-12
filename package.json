@@ -13,13 +13,16 @@
     "dev:client": "vite",
     "build": "vite build && node tools/precompress.mjs",
     "start": "node server/index.js",
-    "check:maps": "node tools/check-map.mjs"
+    "check:maps": "node tools/check-map.mjs",
+    "worker:dev": "npx --yes wrangler@4.153.0 dev",
+    "worker:deploy": "npx --yes wrangler@4.153.0 deploy",
+    "neon:local": "node tools/neon-local.mjs"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.13",
-    "bcrypt": "^6.0.0",
+    "@neondatabase/serverless": "^1.1.0",
+    "bcryptjs": "^3.0.3",
     "express": "^5.3.0",
-    "pg": "^8.23.1",
     "three": "^0.186.1",
     "ws": "^8.21.3"
   },
